@@ -13,6 +13,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/schedule", label: "Schedule", icon: "calendar" },
   { href: "/staff", label: "Staff", icon: "users" },
   { href: "/materials", label: "Materials", icon: "box" },
+  { href: "/pricing", label: "Pricing", icon: "chart" },
+  { href: "/invoices", label: "Invoices", icon: "clipboard" },
   { href: "/tasks", label: "Tasks", icon: "check" },
   { href: "/new-business", label: "New Business", icon: "spark" },
   { href: "/reports", label: "Reports", icon: "chart" },

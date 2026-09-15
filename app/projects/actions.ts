@@ -9,6 +9,7 @@ import {
   createPhotoRecord,
   createTask,
   reassignOrReleaseBid,
+  saveProjectEstimatedValue,
   updateBidStatus,
   updateProjectPipelineStage,
   updateProjectStatus,
@@ -155,4 +156,11 @@ export async function addProjectPhotoAction(projectId: string, formData: FormDat
     storage_unavailable,
   });
   revalidatePath(`/projects/${projectId}`);
+}
+
+/** Saves a computed suggested price from the Estimate Calculator onto the
+ * project's `project_value` field. */
+export async function saveProjectEstimateAction(id: string, value: number) {
+  await saveProjectEstimatedValue(id, value);
+  revalidatePath(`/projects/${id}`);
 }

@@ -6,7 +6,10 @@ import {
   listClientCompanies,
   listCrewRequirements,
   listEmployees,
+  listMaterialRateItems,
   listOfficeUsers,
+  listPricingFormulaComponents,
+  listPricingFormulas,
   listProjectMaterials,
   listProjectNotes,
   listProjects,
@@ -17,6 +20,7 @@ import {
 import { getActingUser } from "@/lib/current-user";
 import { Card, PageHeader, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { BidOwnership } from "@/components/BidOwnership";
+import { EstimateCalculator } from "@/components/EstimateCalculator";
 import {
   compareCrewForProjectDate,
   computeProjectCosting,
@@ -33,6 +37,7 @@ import {
   addProjectPhotoAction,
   addProjectTaskAction,
   movePipelineStageFormAction,
+  saveProjectEstimateAction,
   setProjectStatusAction,
 } from "../actions";
 import { PHOTO_CATEGORIES } from "@/lib/types";
@@ -56,6 +61,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     actingUser,
     activityLog,
     photos,
+    pricingFormulas,
+    formulaComponents,
+    materialRateItems,
   ] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -71,6 +79,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     getActingUser(),
     listActivityLog(),
     listPhotos(),
+    listPricingFormulas(),
+    listPricingFormulaComponents(),
+    listMaterialRateItems(),
   ]);
 
   const project = projects.find((p) => p.id === id);
@@ -79,6 +90,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const building = buildings.find((b) => b.id === project.building_id);
   const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
   const projectWorkTypes = workTypes.filter((wt) => wt.project_id === id);
+  const projectWorkTypeSet = new Set(projectWorkTypes.map((wt) => wt.work_type));
+  const matchingFormulas = pricingFormulas.filter((f) => f.active && projectWorkTypeSet.has(f.work_type));
+  const calculatorFormulas = matchingFormulas.length > 0 ? matchingFormulas : pricingFormulas.filter((f) => f.active);
   const projectAssignments = assignments.filter((a) => a.project_id === id).sort((a, b) => a.schedule_date.localeCompare(b.schedule_date));
   const scheduledDates = Array.from(new Set(projectAssignments.map((a) => a.schedule_date))).sort();
   const projectCrewReqs = crewRequirements.filter((r) => r.project_id === id);
@@ -402,6 +416,19 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               View building profile →
             </Link>
           )}
+        </Card>
+
+        <Card className="p-4 space-y-3 lg:col-span-3">
+          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Estimate Calculator</h2>
+          <EstimateCalculator
+            formulas={calculatorFormulas}
+            components={formulaComponents}
+            materialRateItems={materialRateItems}
+            onSave={saveProjectEstimateAction.bind(null, project.id)}
+            saveLabel="Save as Project Value"
+            currentValue={project.project_value}
+            currentValueLabel="Current project value"
+          />
         </Card>
       </div>
     </div>

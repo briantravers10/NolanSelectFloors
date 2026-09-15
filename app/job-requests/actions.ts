@@ -7,6 +7,7 @@ import {
   createJobRequest,
   findOpenDuplicateBids,
   logDuplicateBidOverride,
+  saveJobRequestEstimatedValue,
   updateJobRequestStatus,
   convertJobRequestToProject,
 } from "@/lib/db";
@@ -69,4 +70,11 @@ export async function convertToProjectAction(id: string) {
   revalidatePath("/job-requests");
   revalidatePath("/projects");
   redirect(`/projects/${project.id}`);
+}
+
+/** Saves a computed suggested price from the Estimate Calculator onto the
+ * job request's `estimated_value` field. */
+export async function saveJobRequestEstimateAction(id: string, value: number) {
+  await saveJobRequestEstimatedValue(id, value);
+  revalidatePath(`/job-requests/${id}`);
 }

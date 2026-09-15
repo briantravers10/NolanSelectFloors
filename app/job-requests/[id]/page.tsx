@@ -1,19 +1,30 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { listBuildings, listClientCompanies, listContacts, listJobRequests, listOfficeUsers, listProjects } from "@/lib/db";
+import {
+  listBuildings,
+  listClientCompanies,
+  listContacts,
+  listJobRequests,
+  listMaterialRateItems,
+  listOfficeUsers,
+  listPricingFormulaComponents,
+  listPricingFormulas,
+  listProjects,
+} from "@/lib/db";
 import { Card, PageHeader, StatusBadge, PhoneLink, Button } from "@/components/ui";
 import { BidOwnership } from "@/components/BidOwnership";
+import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { getActingUser } from "@/lib/current-user";
 import { formatDateLong } from "@/lib/dates";
 import { formatCurrency } from "@/lib/calculations";
 import { JOB_REQUEST_STATUSES } from "@/lib/types";
-import { convertToProjectAction, createBidAction, setJobRequestStatusAction } from "../actions";
+import { convertToProjectAction, createBidAction, saveJobRequestEstimateAction, setJobRequestStatusAction } from "../actions";
 
 const BIDDABLE_STATUSES = new Set(["New Request", "Site Visit Required", "Site Visit Scheduled", "Estimate Required"]);
 
 export default async function JobRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [jobRequests, buildings, clients, contacts, projects, officeUsers, actingUser] = await Promise.all([
+  const [jobRequests, buildings, clients, contacts, projects, officeUsers, actingUser, pricingFormulas, formulaComponents, materialRateItems] = await Promise.all([
     listJobRequests(),
     listBuildings(),
     listClientCompanies(),
@@ -21,7 +32,11 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
     listProjects(),
     listOfficeUsers(),
     getActingUser(),
+    listPricingFormulas(),
+    listPricingFormulaComponents(),
+    listMaterialRateItems(),
   ]);
+  const activeFormulas = pricingFormulas.filter((f) => f.active);
   const jr = jobRequests.find((j) => j.id === id);
   if (!jr) notFound();
   const building = buildings.find((b) => b.id === jr.building_id);
@@ -67,6 +82,19 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
               )}
             </div>
             {jr.notes && <p className="text-sm text-slate-600 mt-3 italic">{jr.notes}</p>}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Estimate Calculator</h2>
+            <EstimateCalculator
+              formulas={activeFormulas}
+              components={formulaComponents}
+              materialRateItems={materialRateItems}
+              onSave={saveJobRequestEstimateAction.bind(null, jr.id)}
+              saveLabel="Save as Estimated Value"
+              currentValue={jr.estimated_value}
+              currentValueLabel="Saved calculator estimate"
+            />
           </Card>
 
           <Card className="p-4">
