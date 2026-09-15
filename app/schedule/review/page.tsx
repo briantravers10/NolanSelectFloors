@@ -12,8 +12,11 @@ import {
   listScheduleAssignments,
   listWorkTypes,
 } from "@/lib/db";
-import { Card, PageHeader, Button } from "@/components/ui";
+import { Card, PageHeader, Button, Stat } from "@/components/ui";
 import { buildScheduleJobRows } from "@/lib/schedule";
+import { dayLaborCostTotal } from "@/lib/labor-cost";
+import { canViewLaborCost, getActingUser } from "@/lib/current-user";
+import { formatCurrency } from "@/lib/calculations";
 import { addDays, dayLabel, formatDateShort, isoDate, todayIso } from "@/lib/dates";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { DailyList } from "@/components/schedule/DailyList";
@@ -25,7 +28,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const today = todayIso();
   const date = dateParam ?? today;
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, actualLaborEntries, confirmations] =
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, actualLaborEntries, confirmations, actingUser] =
     await Promise.all([
       listProjects(),
       listBuildings(),
@@ -38,11 +41,14 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
       listWorkTypes(),
       listActualLaborEntries(),
       listDailyScheduleConfirmations(),
+      getActingUser(),
     ]);
 
   const rows = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes });
   const activeProjects = projects.filter((p) => rows.some((r) => r.projectId === p.id));
   const confirmation = confirmations.find((c) => c.work_date === date);
+  const canViewCost = canViewLaborCost(actingUser);
+  const dayCost = dayLaborCostTotal(date, actualLaborEntries);
 
   return (
     <div>
@@ -55,6 +61,12 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
         <Link href={`/schedule/review?date=${isoDate(addDays(new Date(date + "T00:00:00"), 1))}`}><Button variant="secondary">Next Day →</Button></Link>
         <div className="ml-2 font-medium text-slate-900">{dayLabel(date)} <span className="text-slate-400 font-normal">{formatDateShort(date)}</span></div>
       </div>
+
+      {canViewCost && (
+        <div className="mb-4 max-w-xs">
+          <Stat label="Total Labor Cost — This Day (Actual)" value={formatCurrency(dayCost)} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <div className="xl:col-span-2 space-y-4">

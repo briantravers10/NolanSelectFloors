@@ -14,6 +14,7 @@ import {
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { compileCompletedJobSummary } from "@/lib/schedule";
+import { canViewLaborCost, getActingUser } from "@/lib/current-user";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { CompletedJobCard } from "@/components/schedule/CompletedJobCard";
 
@@ -23,7 +24,7 @@ export default async function CompletedJobsPage({
   searchParams: Promise<{ q?: string; employee?: string; workType?: string; date?: string }>;
 }) {
   const { q, employee, workType, date } = await searchParams;
-  const [projects, buildings, clients, contacts, buildingContacts, assignments, scheduleDays, actualLaborEntries, employees, projectNotes, workTypes] =
+  const [projects, buildings, clients, contacts, buildingContacts, assignments, scheduleDays, actualLaborEntries, employees, projectNotes, workTypes, actingUser] =
     await Promise.all([
       listProjects(),
       listBuildings(),
@@ -36,7 +37,9 @@ export default async function CompletedJobsPage({
       listEmployees(),
       listProjectNotes(),
       listWorkTypes(),
+      getActingUser(),
     ]);
+  const canViewCost = canViewLaborCost(actingUser);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -124,7 +127,7 @@ export default async function CompletedJobsPage({
         <EmptyState message="No completed jobs match these filters." />
       ) : (
         <div className="space-y-2">
-          {filtered.map((s) => <CompletedJobCard key={s.project.id} summary={s} />)}
+          {filtered.map((s) => <CompletedJobCard key={s.project.id} summary={s} canViewLaborCost={canViewCost} />)}
         </div>
       )}
     </div>

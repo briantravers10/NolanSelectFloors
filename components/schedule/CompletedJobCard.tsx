@@ -3,10 +3,11 @@
 import { useState } from "react";
 import type { CompletedJobSummary } from "@/lib/schedule";
 import { Button, PhoneLink, StatusBadge } from "@/components/ui";
+import { formatCurrency } from "@/lib/calculations";
 import { formatDateShort } from "@/lib/dates";
 import { saveCompletionNotesAction } from "@/app/schedule/actions";
 
-export function CompletedJobCard({ summary }: { summary: CompletedJobSummary }) {
+export function CompletedJobCard({ summary, canViewLaborCost }: { summary: CompletedJobSummary; canViewLaborCost: boolean }) {
   const [open, setOpen] = useState(false);
   const { project, building, client, contactName, contactPhone } = summary;
 
@@ -47,7 +48,7 @@ export function CompletedJobCard({ summary }: { summary: CompletedJobSummary }) 
           </div>
 
           <div>
-            <div className="text-[11px] font-medium text-slate-500 uppercase mb-1">Labor</div>
+            <div className="text-[11px] font-medium text-slate-500 uppercase mb-1">Labor Cost by Employee</div>
             {summary.labor.length === 0 ? (
               <div className="text-sm text-slate-400">No crew recorded.</div>
             ) : (
@@ -55,12 +56,24 @@ export function CompletedJobCard({ summary }: { summary: CompletedJobSummary }) 
                 {summary.labor.map((l) => (
                   <div key={l.employee_id} className="flex items-center justify-between text-sm border-b border-slate-100 py-1">
                     <span className="text-slate-800">{l.employeeName}</span>
-                    <span className="text-slate-500">{l.daysWorked} day{l.daysWorked === 1 ? "" : "s"} · {l.totalHours} hrs{l.source === "planned-fallback" ? " (from plan)" : ""}</span>
+                    <span className="text-slate-500">
+                      {l.daysWorked} day{l.daysWorked === 1 ? "" : "s"} · {l.totalHours} hrs
+                      {l.source === "planned-fallback" ? " (from plan)" : ""}
+                      {canViewLaborCost && l.laborCost !== undefined ? ` · ${formatCurrency(l.laborCost)}` : ""}
+                    </span>
                   </div>
                 ))}
               </div>
             )}
-            <div className="text-sm font-medium text-slate-900 mt-2">Total: {summary.totalCrew} crew · {summary.totalManHours} man-hours</div>
+            <div className="text-sm font-medium text-slate-900 mt-2">
+              Total: {summary.totalCrew} crew · {summary.totalManHours} man-hours
+              {canViewLaborCost && ` · Total Labor Cost: ${formatCurrency(summary.totalLaborCost)}`}
+            </div>
+            {canViewLaborCost && (
+              <div className="text-[11px] text-slate-400 mt-1">
+                Total Labor Cost reflects actual-hours entries only (rows marked &quot;from plan&quot; had no actual hours logged and aren&apos;t included).
+              </div>
+            )}
           </div>
 
           {summary.notes.length > 0 && (

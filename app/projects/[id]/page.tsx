@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
   listActivityLog,
+  listActualLaborEntries,
   listBuildings,
   listClientCompanies,
   listCrewRequirements,
@@ -17,7 +18,8 @@ import {
   listScheduleAssignments,
   listTasks,
 } from "@/lib/db";
-import { getActingUser } from "@/lib/current-user";
+import { canViewLaborCost, getActingUser } from "@/lib/current-user";
+import { jobLaborSummary } from "@/lib/labor-cost";
 import { Card, PageHeader, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { BidOwnership } from "@/components/BidOwnership";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
@@ -64,6 +66,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     pricingFormulas,
     formulaComponents,
     materialRateItems,
+    actualLaborEntries,
   ] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -82,6 +85,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listPricingFormulas(),
     listPricingFormulaComponents(),
     listMaterialRateItems(),
+    listActualLaborEntries(),
   ]);
 
   const project = projects.find((p) => p.id === id);
@@ -107,6 +111,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const photoStorageConfigured = isPhotoStorageConfigured();
 
   const costing = computeProjectCosting(project, assignments, materials, id);
+  const canViewCost = canViewLaborCost(actingUser);
+  const laborSummary = jobLaborSummary(id, actualLaborEntries, employees);
 
   return (
     <div>
@@ -252,6 +258,51 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </div>
             )}
           </Card>
+
+          {canViewCost && (
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Job Labor Summary — Actual Cost</h2>
+                <Link href="/schedule/completed" className="text-sm text-sky-600 hover:underline">Completed jobs →</Link>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">
+                Computed from actual hours logged on the Schedule&apos;s End-of-Day Review — not the planned crew above. Answers &quot;how much did we
+                actually spend on labor here.&quot;
+              </p>
+              {laborSummary.rows.length === 0 ? (
+                <EmptyState message="No actual hours logged for this job yet." />
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-slate-500 uppercase border-b border-slate-200">
+                      <th className="py-1.5">Employee</th>
+                      <th className="py-1.5 text-right">Days Worked</th>
+                      <th className="py-1.5 text-right">Actual Hours</th>
+                      <th className="py-1.5 text-right">Labor Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {laborSummary.rows.map((r) => (
+                      <tr key={r.employee_id} className="border-b border-slate-100 last:border-0">
+                        <td className="py-1.5">{r.employeeName}</td>
+                        <td className="py-1.5 text-right">{r.daysWorked}</td>
+                        <td className="py-1.5 text-right">{r.totalHours}</td>
+                        <td className="py-1.5 text-right">{formatCurrency(r.totalCost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="font-semibold text-slate-900">
+                      <td className="py-1.5">Total</td>
+                      <td className="py-1.5 text-right">—</td>
+                      <td className="py-1.5 text-right">{laborSummary.totalManHours}</td>
+                      <td className="py-1.5 text-right">{formatCurrency(laborSummary.totalLaborCost)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </Card>
+          )}
 
           <Card className="p-4">
             <div className="flex items-center justify-between mb-3">
