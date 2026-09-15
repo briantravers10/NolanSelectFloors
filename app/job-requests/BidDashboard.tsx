@@ -2,8 +2,6 @@ import Link from "next/link";
 import {
   listBuildings,
   listClientCompanies,
-  listContacts,
-  listJobRequests,
   listOfficeUsers,
   listProjects,
 } from "@/lib/db";
@@ -37,20 +35,16 @@ function derivePriority(p: Project): "High" | "Normal" {
 }
 
 export async function BidDashboard() {
-  const [projects, buildings, clients, contacts, jobRequests, officeUsers, actingUser] = await Promise.all([
+  const [projects, buildings, clients, officeUsers, actingUser] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
-    listContacts(),
-    listJobRequests(),
     listOfficeUsers(),
     getActingUser(),
   ]);
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
-  const contactById = new Map(contacts.map((c) => [c.id, c]));
   const officeUserById = new Map(officeUsers.map((u) => [u.id, u]));
-  const jobRequestById = new Map(jobRequests.map((j) => [j.id, j]));
 
   return (
     <div>
@@ -60,57 +54,52 @@ export async function BidDashboard() {
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
         {COLUMNS.map((col) => {
-          const items = projects.filter((p) => col.filter(p, actingUser.id));
+          const items = projects
+            .filter((p) => col.filter(p, actingUser.id))
+            .slice()
+            .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)); // most recent first, per section
           return (
             <div key={col.key}>
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                 {col.label} ({items.length})
               </div>
-              <div className="space-y-2.5">
-                {items.length === 0 && <EmptyState message="Nothing here." />}
-                {items.map((p) => {
-                  const building = buildingById.get(p.building_id);
-                  const client = building ? clientById.get(building.client_company_id) : undefined;
-                  const pm = building?.primary_contact_id ? contactById.get(building.primary_contact_id) : undefined;
-                  const estimator = p.assigned_estimator_id ? officeUserById.get(p.assigned_estimator_id) : undefined;
-                  const jr = p.job_request_id ? jobRequestById.get(p.job_request_id) : undefined;
-                  const priority = derivePriority(p);
-                  return (
-                    <Link key={p.id} href={`/projects/${p.id}`}>
-                      <Card className="p-3 hover:border-sky-300 transition-colors">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <div className="min-w-0 text-sm font-medium text-slate-900 truncate">
-                            {building?.name}
-                            {p.unit_number && ` — ${p.unit_number}`}
+              <Card>
+                {items.length === 0 ? (
+                  <EmptyState message="Nothing here." />
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {items.map((p) => {
+                      const building = buildingById.get(p.building_id);
+                      const client = building ? clientById.get(building.client_company_id) : undefined;
+                      const estimator = p.assigned_estimator_id ? officeUserById.get(p.assigned_estimator_id) : undefined;
+                      const priority = derivePriority(p);
+                      return (
+                        <Link key={p.id} href={`/projects/${p.id}`} className="block px-3 py-2.5 hover:bg-slate-50">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-slate-900 truncate">
+                                {building?.name}{p.unit_number && ` — ${p.unit_number}`}
+                              </div>
+                              <div className="text-xs text-slate-500 truncate">{client?.name}</div>
+                            </div>
+                            {priority === "High" && (
+                              <span className="text-[10px] font-semibold uppercase text-rose-600 shrink-0">High</span>
+                            )}
                           </div>
-                          {priority === "High" && (
-                            <span className="text-[10px] font-semibold uppercase text-rose-600 shrink-0">High</span>
-                          )}
-                        </div>
-                        <div className="text-xs text-slate-500 mb-1">
-                          {client?.name}
-                          {pm ? ` · ${pm.first_name} ${pm.last_name}` : ""}
-                        </div>
-                        <p className="text-xs text-slate-600 line-clamp-2 mb-1.5">{p.description}</p>
-                        <div className="flex flex-wrap gap-1.5 mb-1.5">
-                          <StatusBadge status={p.bid_status} />
-                          <StatusBadge status={p.pipeline_stage} />
-                        </div>
-                        <div className="text-[11px] text-slate-400 space-y-0.5">
-                          <div>Received {formatDateLong((jr?.received_at ?? p.created_at).slice(0, 10))}</div>
-                          <div>
-                            Estimator: {estimator?.full_name ?? "Unassigned"}
+                          <div className="flex items-center justify-between mt-1.5">
+                            <StatusBadge status={p.bid_status} />
+                            <span className="text-[11px] text-slate-400">{formatCurrency(p.project_value)}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-1">
+                            {estimator?.full_name ?? "Unassigned"}
                             {p.claimed_at ? ` · claimed ${formatDateLong(p.claimed_at.slice(0, 10))}` : ""}
                           </div>
-                          <div>
-                            Value {formatCurrency(p.project_value)} · updated {formatDateLong(p.updated_at.slice(0, 10))}
-                          </div>
-                        </div>
-                      </Card>
-                    </Link>
-                  );
-                })}
-              </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
             </div>
           );
         })}
