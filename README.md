@@ -404,6 +404,152 @@ priced instead of every estimator eyeballing a number.
   2–3 component line items, a labor rate, and a markup — enough to
   exercise the calculator with realistic numbers out of the box.
 
+## Schedule Redesign (build 5)
+
+The Schedule section was rebuilt on top of the existing data model per a
+detailed client spec. `schedule_assignments` (per-employee planned crew,
+with `base_day_rate`/`rate_multiplier`/`assignment_cost`/`role_on_job`/
+`call_time`) is kept exactly as-is — it's still the single planned-schedule
+record. Everything below is additive; see
+`supabase/migrations/0005_schedule_redesign.sql` for the SQL and
+`lib/schedule.ts` for the calculation/sorting/summary logic.
+
+### Key data-model decision: "one row per job per day"
+
+The Daily view renders **one row per job per day**, not one row per crew
+assignment. A job can have several `schedule_assignments` rows (one per
+employee) sharing the same `project_id` + `schedule_date`, and they all
+need to share *one* schedule color, *one* COI status, *one* materials
+status and *one* job status. Putting those fields directly on
+`schedule_assignments` would mean reconciling them across every crew row
+for the same job/day, and would leave a job with **zero** crew assigned
+nowhere to hold a color/status at all — a real case (the PINK "waiting on
+scheduling" priority explicitly described in the spec). So a new
+lightweight join table, **`project_schedule_days`** (unique on
+`project_id` + `schedule_date`), *is* the "job/day entry" the Daily list
+renders: `schedule_color`, `coi_status`, `materials_status`, `job_status`,
+`work_type_id`, `notes`. `schedule_assignments` continues to hold the
+per-employee crew rows underneath it, untouched. `getOrCreateProjectScheduleDay()`
+in `lib/db.ts` lazily creates one (defaulting to Pink) the first time a
+job/day's color or any status is touched, so a job with no explicit entry
+yet still renders sensibly.
+
+### Job status ↔ pipeline_stage mapping
+
+`job_status` (`Scheduled` / `In Progress` / `Complete`) is a separate field
+from `schedule_color` and from the existing `pipeline_stage` — never
+conflated. Setting it from the Schedule always writes through to the real
+`projects.pipeline_stage` (via the existing `updateProjectPipelineStage()`,
+so the existing set-once lifecycle timestamps still stamp correctly) —
+never an isolated duplicate. The mapping (`lib/schedule.ts`
+`mapJobStatusToPipelineStage` / `mapPipelineStageToJobStatus`):
+
+| job_status    | pipeline_stage                              |
+|---------------|----------------------------------------------|
+| Scheduled     | Project Bid, Bid Accepted, **Scheduled**      |
+| In Progress   | Sent to Crew, **Project In Process**          |
+| Complete      | **Project Completed**                         |
+
+(Bold = the stage `job_status` writes when set from the Schedule; the
+others are simply the stages that read back as that same `job_status`
+before the schedule ever touches it.)
+
+### Work types: a new table, scoped to the Schedule
+
+The existing `work_type` Postgres enum (used by `project_work_types` and
+`pricing_formulas`) is left untouched — turning an enum used by two live,
+unrelated features into a table is a much bigger and riskier migration
+than this phase's scope. Instead, the Schedule's own per-job-per-day work
+type field gets its own small, editable **`work_types`** table (id,
+company_id, name, active), seeded from the same value set as the existing
+enum plus the two minimum values the spec calls for (Repair, Installation).
+It's managed from **Company Setup** (add/rename/deactivate, no code
+changes) via `app/schedule/actions.ts`'s `addWorkTypeAction` /
+`renameWorkTypeAction` / `toggleWorkTypeActiveAction`.
+
+### Materials status: a schedule-facing rollup, not the detailed enum
+
+The existing `project_materials.status` enum (7 values: Needed, Quote
+Requested, Ordered, Partially Delivered, Delivered, Problem, Returned)
+stays exactly as-is for the Materials feature. The schedule's quick-glance
+control needs to be "dead simple" per the spec, so `project_schedule_days`
+gets its own 3-value `schedule_materials_status` rollup instead (Not
+Ordered / Ordered / Sent-Delivered) — a deliberate simplification, not a
+replacement.
+
+### Actual hours vs. planned crew
+
+`schedule_assignments` = planned. A new **`actual_labor_entries`** table
+(employee_id, project_id, work_date, hours, start_time, end_time, notes)
+holds what actually happened — an employee can have multiple entries on
+the same day across different jobs, and logging actual hours never
+overwrites the plan. `lib/schedule.ts#actualHoursWarnings()` produces
+**soft, non-blocking** warnings (never a hard validation error) for a
+day's total hours over 16, or two same-employee/same-job/same-hours
+entries logged within 15 minutes of each other (likely an accidental
+duplicate) — both shown as inline banners on the End of Day Review.
+
+### End-of-Day Review & "Confirm Day"
+
+`/schedule/review` walks through the day's jobs (crew, statuses) plus an
+actual-hours log, ending in a "Confirm Day" action. A new
+**`daily_schedule_confirmations`** table (one row per company+date,
+upsert-style) records who confirmed and when. Confirming does **not**
+lock the day — later edits stay possible and are audit-logged like any
+other change, and re-confirming just updates the same row.
+
+### Change History / Activity
+
+Reuses the existing `activity_log` table and pattern exactly — no schema
+change (it already has free-text `action`/`detail` and a nullable
+`related_type`/`related_id`, which already covers everything this phase
+logs). `lib/schedule.ts#isScheduleActivity()` recognizes the new schedule
+action strings (crew assignment changes, schedule color/COI/materials/job
+status changes, actual-hours entries/edits, day confirmations, work-type
+admin changes) so `/schedule/history` shows only schedule activity, not
+the whole app's log. Filterable by date, user, job/project, and employee.
+
+### Completed Job Summary
+
+`/schedule/completed` lists every project at `pipeline_stage: "Project
+Completed"`. `lib/schedule.ts#compileCompletedJobSummary()` compiles
+everything — job info, timeline (derived from the earliest/latest
+`schedule_assignments` + `actual_labor_entries` + `project_schedule_days`
+dates), per-employee labor, COI/materials snapshot, accumulated project
+notes — from existing data. **Per-employee hours use `actual_labor_entries`
+when present, falling back to a planned-schedule hours-equivalent (one
+`schedule_assignments` day = 8 hours) when an employee has no actual-hours
+logged for that job** — a deliberate choice so the summary isn't empty for
+older/lightly-tracked jobs (seed data's actual-hours logging is
+intentionally sparse, matching a real office's habits). The **only**
+manually-entered field is "Completion Notes" — reuses the existing
+`project_notes` table with a marker `author_name` of `"Completion Notes"`
+rather than a new column, so no schema change was needed for it.
+Searchable/filterable by address/unit/management company, employee, work
+type, and date (within the job's date range).
+
+### Schedule UI
+
+Daily view is a **single full-width vertical list**, one row per job (not
+a grid, not side-by-side cards), sorted by schedule color priority
+(Yellow → Blue → Gray → Pink) then by earliest crew call time
+(`lib/schedule.ts#sortScheduleDayRows`). Each row is collapsed by default
+showing exactly the scannable field set from the spec — building/address/
+unit, management company, contact + clickable phone, crew count, COI,
+materials, job status, schedule color — with everything else (full crew
+names, work type, notes, add/remove crew) in the expandable detail area.
+Crew always shows **plain full names only** — no capability/skill label
+next to a name, and no "missing installer"/"missing driver" warnings
+anywhere on the Schedule (those still exist on the project's crew
+requirements comparison, just not surfaced here, per the spec). Every
+inline control (color/COI/materials/job status/work type) is a
+select-that-saves-itself-on-change (`components/schedule/InlineSelect.tsx`)
+— no separate screen, no extra clicks. Weekly view is compact
+color-dot rows per day (see-the-week-at-a-glance, not full detail),
+clicking a job opens that day's Daily view. Monthly view is a standard
+calendar grid with a lightweight per-day color-dot indicator, clicking a
+date opens that date's Daily view.
+
 ## Email Assistant & Invoice Routing (Architecture, Not Yet Live)
 
 The long-term goal is an AI assistant watching the owner's Gmail that
@@ -572,10 +718,21 @@ shaped so each is a self-contained addition:
   pipeline. A real implementation would add a Supabase Storage bucket per
   table and an upload route; the UI notes this clearly wherever a file
   action would normally live.
-- **Schedule Day/Month views** — the Week view (the most important screen
-  per the spec) is fully built with live computed data; Day and Month
-  views were not built out as separate routes in this pass. The Week view
-  already highlights "today" and lets you jump ±1 week.
+- **Schedule Day/Week/Month views** — all three are built (see "Schedule
+  Redesign" above); they share one route (`/schedule?view=day|week|month`)
+  rather than three separate page files, since they all read the same
+  `buildScheduleJobRows()` view model and a query param is simpler than
+  three near-identical layout shells for this app's scale.
+- **Actual-hours entry editing** — entries can be added and deleted from
+  the End of Day Review, but there's no in-place "edit an existing entry's
+  hours" form; `lib/db.ts#updateActualLaborEntry()` exists and is ready to
+  wire to one, but deleting and re-adding covers the same real-world
+  correction ("I mis-typed the hours") with far less UI for a first pass.
+- **Weekend days on the Weekly view** — rendered like any other day (the
+  underlying data has no special-cased weekday filtering), but the current
+  seed data's weekday-only crews mean Saturday/Sunday mostly show as
+  empty unless a Saturday push (like the seeded `p-11` time-and-half day)
+  is scheduled.
 - **Communications log** — the `communications` table and seed rows exist
   and are used on a couple of detail views, but there's no dedicated
   standalone communications page in this pass.
