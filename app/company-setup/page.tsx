@@ -1,10 +1,11 @@
-import { listCompanySetupAnswers } from "@/lib/db";
+import { listCompanySetupAnswers, listWorkTypes } from "@/lib/db";
 import { QUESTIONNAIRE } from "@/lib/questionnaire";
 import { Card, PageHeader, Button } from "@/components/ui";
 import { saveQuestionnaireAction } from "./actions";
+import { addWorkTypeAction, renameWorkTypeAction, toggleWorkTypeActiveAction } from "@/app/schedule/actions";
 
 export default async function CompanySetupPage() {
-  const answers = await listCompanySetupAnswers();
+  const [answers, workTypes] = await Promise.all([listCompanySetupAnswers(), listWorkTypes()]);
   const answerMap = new Map(answers.map((a) => [`${a.section}__${a.question_key}`, a.answer]));
 
   return (
@@ -13,6 +14,33 @@ export default async function CompanySetupPage() {
         title="Company Setup"
         subtitle="A one-time discovery questionnaire. Answers are saved and used to tailor the platform to how your office actually runs today."
       />
+
+      <Card className="p-4 mb-6">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Work Types</h2>
+        <p className="text-xs text-slate-500 mb-3">
+          The work-type options shown on the Schedule. Add, rename, or deactivate as your services change — no code changes needed.
+        </p>
+        <div className="space-y-1.5 mb-3">
+          {workTypes.map((wt) => (
+            <div key={wt.id} className="flex items-center gap-2">
+              <form action={renameWorkTypeAction.bind(null, wt.id)} className="flex-1 flex items-center gap-2">
+                <input name="name" defaultValue={wt.name} className={`flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm ${wt.active ? "" : "text-slate-400"}`} />
+                <button type="submit" className="text-xs text-sky-600 hover:underline">Rename</button>
+              </form>
+              <form action={toggleWorkTypeActiveAction.bind(null, wt.id, !wt.active)}>
+                <button type="submit" className={`text-xs rounded-full px-2.5 py-1 font-medium ${wt.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>
+                  {wt.active ? "Active" : "Inactive"}
+                </button>
+              </form>
+            </div>
+          ))}
+        </div>
+        <form action={addWorkTypeAction} className="flex items-center gap-2">
+          <input name="name" required placeholder="New work type…" className="flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
+          <Button type="submit" variant="secondary">Add</Button>
+        </form>
+      </Card>
+
       <form action={saveQuestionnaireAction} className="space-y-6">
         {QUESTIONNAIRE.map((section) => (
           <Card key={section.key} className="p-4">
