@@ -583,6 +583,159 @@ this was an interface-only correction.
   View Schedule, Create / Edit Schedule, End of Day Review, Change
   History, Completed Jobs.
 
+## Labor Cost Tracking (build 6)
+
+Adds ACTUAL-hours labor cost tracking as an addition to the existing
+employee/actual-hours/Completed Job systems. Nothing about the just-built
+Schedule redesign (View/Create-Edit split, `schedule_assignments`) changed —
+see `supabase/migrations/0006_labor_cost_tracking.sql`, `lib/labor-cost.ts`
+and `lib/current-user.ts`.
+
+### Reconciling planned vs. actual labor cost
+
+There are now, deliberately, **two separate labor-cost systems**:
+
+| | PLANNED cost (builds 1-2) | ACTUAL cost (build 6) |
+|---|---|---|
+| Source table | `schedule_assignments` | `actual_labor_entries` |
+| Driven by | the crew that was **scheduled** | the hours someone **actually worked** |
+| Rate fields | `base_day_rate` / `rate_multiplier` / `time_and_half` / `assignment_cost` (snapshotted at assignment time) | `rate_type` / `rate_amount` (snapshotted at entry-creation time, see below) |
+| Computed by | `lib/calculations.ts` (`projectLaborCost`, `summarizeDay`, `computeProjectCosting`) | `lib/labor-cost.ts` |
+| Still used by | Project Costing box, Dashboard, Reports — **unchanged, untouched** | Job Labor Summary, Completed Job Summary's "Labor Cost by Employee", End-of-Day Review's per-day total, per-employee Labor History |
+
+Both stay on the project detail page: the existing "Costing" card still
+shows the planned `laborCost`, and the new "Job Labor Summary — Actual Cost"
+card shows the actual figure right below it, clearly labeled, so nobody
+confuses the two. The spec calls for actual cost to be the headline number
+wherever "how much did we actually spend" is being asked (Completed Job
+Summary, Job Labor Summary, End-of-Day Review) — the planned system keeps
+its existing job (estimating/budgeting before the fact) everywhere else.
+
+### Employee pay rate
+
+`employees` gained `pay_type` (`'daily' | 'hourly'`), `daily_rate` and
+`hourly_rate` (nullable — only the one matching `pay_type` is meaningful).
+The pre-existing `day_rate` column is untouched and keeps backing the
+planned-cost system above; a migration backfill seeds `daily_rate`/`pay_type`
+from it so nothing shows $0 the moment the migration runs, but the two are
+independent from that point on — editing one never touches the other.
+
+### The allocation formula
+
+All of it lives in `lib/labor-cost.ts#computeActualLaborCosts`, which is the
+single function every other calculation (`jobLaborSummary`,
+`dayLaborCostTotal`, `employeeLaborHistory`, the Completed Job Summary's
+labor section) is built on top of.
+
+- **Hourly employees**: `cost = hours × rate_amount`, independently per
+  job/entry — no allocation needed. *Example: John, hourly $30 — Job A 5h =
+  $150, Job B 3h = $90.*
+- **Daily-rate employees**: the day's entries for that employee are grouped
+  by `work_date`, and the daily rate is allocated **proportionally by
+  hours worked** across them. *Example: Paul, daily $300 — Tuesday: Job A
+  6h + Job B 2h (8h total) → Job A gets 6/8×$300=$225, Job B gets
+  2/8×$300=$75.* If Paul only worked one job that day, that job's hours ARE
+  the day's total hours, so the proportion is 100% and it gets the full
+  $300 — never a partial "assumed 8-hour day" rate, and never more than one
+  job billed the full daily rate on the same day (amounts are adjusted with
+  a rounding-remainder rule so they always sum to *exactly* the daily rate,
+  never overcharging).
+
+### Historical Pay Rate Accuracy — the rate snapshot
+
+The spec's key tension: labor cost must be a **live, derived** calculation
+(never something the office employee types in or that could drift out of
+sync) — but a later raise must **never** retroactively change an
+already-logged job's cost. Both are satisfied by snapshotting the
+*applicable* rate onto each entry, not by storing a dollar total:
+
+- `actual_labor_entries` gained `rate_type` and `rate_amount`.
+- `lib/db.ts#createActualLaborEntry` copies the employee's **current**
+  `pay_type`/rate onto the new row at the moment it's saved (mirroring
+  exactly what `createScheduleAssignment` already does for
+  `schedule_assignments.base_day_rate` in the planned system).
+- Editing an entry's hours (`updateActualLaborEntry`) never touches the
+  rate snapshot — only hours/times/notes can change.
+- Editing an employee's rate (`lib/db.ts#updateEmployee`) never touches any
+  existing `actual_labor_entries` row.
+- Every cost calculation reads `entry.rate_type`/`entry.rate_amount` —
+  **never** the employee's live current rate — so the math is always
+  correct for the day it happened, no matter how many raises follow.
+
+Verified in the seed data: Sal Marchetti (`e-8`)'s current `daily_rate` is
+$330, but his three old `actual_labor_entries` rows for the completed job
+`p-7` (~12 days ago) are snapshotted at $300 (his rate before a raise).
+`jobLaborSummary('p-7', ...)` correctly totals his cost at $900 (3 × $300),
+not $990 — changing his profile rate today does not change that number.
+
+### Access Control — role mapping
+
+There's still no real login (per every prior phase's "no real auth yet"
+constraint) — pay rates and labor-cost dollar figures are gated the same
+way bid-claiming already is: via the existing `office_users` "acting as"
+dev-user concept (`lib/current-user.ts`). A new field, **`access_role`**
+(separate from the pre-existing `role` field, which only governs
+bid-claim/estimator-vs-manager permissions), was added to `office_users`:
+
+| `access_role` | Maps to spec's | Can view pay rates / labor $ | Can edit pay rates |
+|---|---|---|---|
+| `owner_admin` | Owner/Admin | Yes | Yes |
+| `office_staff` | Authorized Office Staff | Yes (view only) | No |
+| `field_employee` | (lower tier, hidden by default) | **No — hidden entirely** | No |
+
+The dev "acting as" sentinel Owner persona (`OWNER_ACTING_ID`, standing in
+for the real company owner) is hardcoded to `owner_admin`. Seed data maps
+the three office users: Sarah Bennett → `owner_admin`, Emma Castillo →
+`office_staff`, David Okoye → `field_employee` — switch between them with
+the TopBar's "Acting as" selector to see the gating live.
+
+`lib/current-user.ts` exports the two checks every page/component uses:
+`canViewLaborCost(actingUser)` (owner_admin OR office_staff) and
+`canEditPayRates(actingUser)` (owner_admin only). This is enforced by
+**not rendering** the field/section at all for a disqualified user — e.g.
+a `field_employee`-role acting user sees no Pay Rate stat, no rate column
+on the Staff list, no Job Labor Summary card, no per-day labor cost figure
+on End-of-Day Review, and no Labor Cost section on the Completed Job
+Summary. **This is a UI-level gate only** — exactly like the rest of this
+app's permission model, there is no session/auth layer preventing a
+determined user from hitting an API route directly; that's out of scope
+until real auth ships (see "How auth will be added later" below, which
+this access_role tier is designed to map onto directly — a real login
+would resolve to one of these three tiers instead of a cookie).
+
+Gated surfaces: Staff list (`app/staff/page.tsx`) and profile
+(`app/staff/[id]/page.tsx`) pay-rate fields + edit form + Labor History;
+New Staff form's pay-rate section; project detail page's "Job Labor
+Summary — Actual Cost" card; Completed Job Summary's "Labor Cost by
+Employee" / "Total Labor Cost"; End-of-Day Review's "Total Labor Cost —
+This Day" figure. **View Schedule itself shows no dollar figures at all**,
+per the spec's explicit instruction not to clutter the just-redesigned
+read-only schedule view with financial data.
+
+### Audit logging
+
+`lib/db.ts#updateEmployee` logs any change to `pay_type`/`daily_rate`/
+`hourly_rate` to the existing `activity_log` table — employee name, old
+pay type + rate, new pay type + rate, effective date (today's date, since
+rates apply going forward — the entry-level snapshot above is what makes
+old jobs immune, so a separate rate-history table isn't needed), and the
+acting user. This reuses the same `logActivity()` helper as every other
+audited change in the app (crew assignments, status changes, etc.).
+
+### Where each spec requirement lives
+
+- **Job Labor Summary** (employees, days worked, hours, cost per employee,
+  totals) — `lib/labor-cost.ts#jobLaborSummary`, surfaced on the project
+  detail page.
+- **Completed Job Summary update** — `lib/schedule.ts#compileCompletedJobSummary`
+  now calls `jobLaborSummary` internally and adds `laborCost` per employee
+  row + `totalLaborCost`; rendered in `CompletedJobCard.tsx`.
+- **Per-day labor cost** — `lib/labor-cost.ts#dayLaborCostTotal`, shown on
+  End-of-Day Review (`app/schedule/review/page.tsx`), never on View
+  Schedule.
+- **Per-employee history** — `lib/labor-cost.ts#employeeLaborHistory`, shown
+  on the staff profile page.
+
 ## Email Assistant & Invoice Routing (Architecture, Not Yet Live)
 
 The long-term goal is an AI assistant watching the owner's Gmail that
@@ -807,6 +960,21 @@ shaped so each is a self-contained addition:
   reliable, and correct even for edge cases like Stamford, CT (falls back
   to "Other" since it's outside the requested NYC-boroughs/NJ/LI list).
   later.
+- **Labor cost access control is UI-level only** — like every permission
+  check in this app (bid claiming, reassign/release), `canViewLaborCost`/
+  `canEditPayRates` hide fields/sections for a disqualified acting user;
+  there is no session/API-level enforcement yet (no real auth exists — see
+  "How auth will be added later"). See "Labor Cost Tracking" above.
+- **No separate rate-history table** — the spec explicitly allows this:
+  `actual_labor_entries.rate_type`/`rate_amount` already snapshots the rate
+  that mattered for every historical entry, so a full audit trail is just
+  `activity_log` (old rate → new rate, who, when) plus those per-entry
+  snapshots, not a third table tracking every rate over time.
+- **New Staff form's pay-rate section is hidden, not disabled, for a
+  non-Owner/Admin acting user** — a new hire created by Office Staff or
+  below gets a sane daily-rate default (mirroring the legacy `day_rate`
+  field) that an Owner/Admin can then set correctly from the profile,
+  rather than showing a rate input that silently wouldn't save.
 - **Duplicate-check UX is a full-page round trip, not client-side** — the
   New Job Request form re-checks for duplicates as a server action and
   redirects back with the warning + prefilled fields, instead of a
