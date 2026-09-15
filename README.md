@@ -528,27 +528,60 @@ rather than a new column, so no schema change was needed for it.
 Searchable/filterable by address/unit/management company, employee, work
 type, and date (within the job's date range).
 
-### Schedule UI
+### Schedule UI: a hard split between View Schedule and Create/Edit Schedule (build 5.1)
 
-Daily view is a **single full-width vertical list**, one row per job (not
-a grid, not side-by-side cards), sorted by schedule color priority
-(Yellow → Blue → Gray → Pink) then by earliest crew call time
-(`lib/schedule.ts#sortScheduleDayRows`). Each row is collapsed by default
-showing exactly the scannable field set from the spec — building/address/
-unit, management company, contact + clickable phone, crew count, COI,
-materials, job status, schedule color — with everything else (full crew
-names, work type, notes, add/remove crew) in the expandable detail area.
-Crew always shows **plain full names only** — no capability/skill label
-next to a name, and no "missing installer"/"missing driver" warnings
-anywhere on the Schedule (those still exist on the project's crew
-requirements comparison, just not surfaced here, per the spec). Every
-inline control (color/COI/materials/job status/work type) is a
-select-that-saves-itself-on-change (`components/schedule/InlineSelect.tsx`)
-— no separate screen, no extra clicks. Weekly view is compact
-color-dot rows per day (see-the-week-at-a-glance, not full detail),
-clicking a job opens that day's Daily view. Monthly view is a standard
-calendar grid with a lightweight per-day color-dot indicator, clicking a
-date opens that date's Daily view.
+A follow-up client pass corrected the first cut of the Schedule UI, which
+mixed viewing and editing (inline color/COI/materials/work-type dropdowns
+directly on each Daily row). The data model, audit logging, actual hours,
+End-of-Day Review and Completed Job Summary logic are all **unchanged** —
+this was an interface-only correction.
+
+- **View Schedule** (`/schedule`) is now strictly **read-only**. Daily is
+  a single full-width vertical list of large, spacious job blocks — one
+  per row, not a grid, not side-by-side cards — sorted by schedule color
+  priority (Yellow → Blue → Gray → Pink) then by earliest crew call time
+  (`lib/schedule.ts#sortScheduleDayRows`, unchanged). Every field from the
+  spec is plain labeled text/badges and **always visible**, no
+  expand/collapse: building/unit/address, management company, point of
+  contact with clickable `tel:`/`mailto:` links, crew (count + full names
+  only, no skills), "Certificate of Insurance" spelled out in full with
+  status text (Approved gets a clear green treatment), "Materials" status,
+  "Work Type", and the job notes/work description. **The schedule color
+  now tints the entire job block's background** (`components/schedule/
+  badges.ts#SCHEDULE_COLOR_BLOCK_CLASSES`) instead of appearing as a
+  dropdown or a small dot — this was the client's single most important
+  correction. The only interactive elements left on a block are
+  navigation links ("View Project" and "Edit This Entry" — the latter
+  jumps to Create/Edit Schedule for that exact job/date), which aren't
+  editing controls. Weekly stays a compact color-dot-per-day view and
+  Monthly stays the calendar grid with color-dot indicators — both were
+  already read-only and needed no changes; clicking a day/date still opens
+  that date's Daily view.
+- **Create / Edit Schedule** (`/schedule/edit`, new) is where every
+  control now lives: a large single-column form (Date, Job, Schedule Type,
+  Crew as a checkbox list of employee names, Certificate of Insurance,
+  Materials, Work Type, Job Status, Job Notes, one "Save to Schedule"
+  button), plus a "load an existing entry" picker filterable by date. Its
+  `saveScheduleEntryAction` (`app/schedule/actions.ts`) reuses the exact
+  same per-field actions the old inline dropdowns called
+  (`setScheduleColorAction`/`setCoiStatusAction`/`setMaterialsStatusAction`/
+  `setJobStatusAction`/`setWorkTypeAction`/`setScheduleNotesAction`,
+  and `addAssignmentAction`/`removeAssignmentAction` for crew) — and so the
+  same `getOrCreateProjectScheduleDay`/`updateProjectScheduleDay`/
+  `createScheduleAssignment`/`deleteScheduleAssignment` calls and the same
+  `activity_log` audit trail — only calling each one when that field
+  actually changed, so re-saving an untouched value never creates a
+  spurious Change History entry, and editing never creates a duplicate
+  schedule record. Saving redirects back to View Schedule for that date.
+  `components/schedule/InlineSelect.tsx` and `AddCrewInline.tsx` (the old
+  inline-editing controls) were removed since nothing renders them anymore.
+- End of Day Review, Change History and Completed Job Summary are
+  unchanged functionally; Review's job list now uses the same read-only
+  blocks (with an "Edit This Entry" link) instead of the old inline
+  dropdowns, consistent with the hard split.
+- `components/schedule/ScheduleSubNav.tsx` now lists all five screens:
+  View Schedule, Create / Edit Schedule, End of Day Review, Change
+  History, Completed Jobs.
 
 ## Email Assistant & Invoice Routing (Architecture, Not Yet Live)
 
