@@ -54,6 +54,36 @@ export const PROJECT_STATUSES = [
 ] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
+// The 6 primary lifecycle stages a project moves through, entered once and
+// updated on the SAME projects row (never duplicated per stage). This is
+// separate from the more granular `ProjectStatus` above, which continues to
+// track fine-grained sub-states (materials, punch list, invoicing, etc.)
+// within these primary stages. See supabase/migrations/0002_bid_workflow.sql
+// for the reconciliation notes.
+export const PIPELINE_STAGES = [
+  "Project Bid",
+  "Bid Accepted",
+  "Scheduled",
+  "Sent to Crew",
+  "Project In Process",
+  "Project Completed",
+] as const;
+export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+
+export const BID_STATUSES = [
+  "Unclaimed",
+  "Claimed",
+  "In Progress",
+  "Ready for Review",
+  "Completed/Sent",
+  "Accepted",
+  "Rejected",
+] as const;
+export type BidStatus = (typeof BID_STATUSES)[number];
+
+export const OFFICE_USER_ROLES = ["estimator", "manager"] as const;
+export type OfficeUserRole = (typeof OFFICE_USER_ROLES)[number];
+
 export const WORK_TYPES = [
   "Hardwood Installation",
   "Floor Sanding",
@@ -247,6 +277,29 @@ export interface Project {
   notes?: string;
   created_at: string;
   updated_at: string;
+  // Bid workflow / pipeline (see 0002_bid_workflow.sql)
+  pipeline_stage: PipelineStage;
+  bid_status: BidStatus;
+  assigned_estimator_id?: string | null;
+  claimed_at?: string | null;
+  bid_claimed_at?: string | null;
+  bid_completed_at?: string | null;
+  bid_sent_at?: string | null;
+  bid_accepted_at?: string | null;
+  scheduled_at?: string | null;
+  sent_to_crew_at?: string | null;
+  project_started_at?: string | null;
+  project_completed_at?: string | null;
+}
+
+export interface OfficeUser {
+  id: string;
+  company_id: string;
+  full_name: string;
+  email?: string;
+  role: OfficeUserRole;
+  active: boolean;
+  created_at: string;
 }
 
 export interface ProjectWorkType {
