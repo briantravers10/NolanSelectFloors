@@ -1,0 +1,60 @@
+// Small date helpers used by seed data + scheduling logic.
+// Keep dependency-free (no date-fns) to keep the bundle lean.
+
+export function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export function addDays(d: Date, days: number): Date {
+  const copy = new Date(d);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+/** Monday of the week containing `d` (local server time). */
+export function startOfWeek(d: Date): Date {
+  const copy = new Date(d);
+  const day = copy.getDay(); // 0 = Sunday
+  const diff = day === 0 ? -6 : 1 - day; // shift back to Monday
+  copy.setDate(copy.getDate() + diff);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+export function todayIso(): string {
+  return isoDate(new Date());
+}
+
+export function formatDateLong(iso?: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+export function formatDateShort(iso?: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+export function dayLabel(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { weekday: "long" });
+}
+
+export function isPast(iso?: string): boolean {
+  if (!iso) return false;
+  return iso < todayIso();
+}
+
+/** 0 = Monday .. 6 = Sunday, for the given date's local weekday. */
+export function weekdayIndexMondayBased(d: Date): number {
+  const day = d.getDay();
+  return day === 0 ? 6 : day - 1;
+}
+
+export function daysBetween(a: string, b: string): number {
+  const da = new Date(a + "T00:00:00").getTime();
+  const db = new Date(b + "T00:00:00").getTime();
+  return Math.round((db - da) / (1000 * 60 * 60 * 24));
+}
