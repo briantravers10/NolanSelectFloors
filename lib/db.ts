@@ -13,6 +13,7 @@ import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
 import type {
   ActivityLogEntry,
+  BidStatus,
   Building,
   BuildingContact,
   ClientCompany,
@@ -27,7 +28,9 @@ import type {
   JobRequestStatus,
   Material,
   NewBusinessLead,
+  OfficeUser,
   PhotoRecord,
+  PipelineStage,
   Project,
   ProjectCrewRequirement,
   ProjectMaterial,
@@ -148,6 +151,19 @@ export async function listProjects(): Promise<Project[]> {
 
 export async function getProject(id: string): Promise<Project | undefined> {
   return (await listProjects()).find((p) => p.id === id);
+}
+
+export async function listOfficeUsers(): Promise<OfficeUser[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("office_users").select("*").order("full_name");
+    if (!error && data) return data as OfficeUser[];
+  }
+  return [...getStore().officeUsers].sort((a, b) => a.full_name.localeCompare(b.full_name));
+}
+
+export async function getOfficeUser(id: string): Promise<OfficeUser | undefined> {
+  return (await listOfficeUsers()).find((u) => u.id === id);
 }
 
 export async function listProjectWorkTypes(): Promise<ProjectWorkType[]> {
@@ -307,12 +323,38 @@ export async function getWeekStart(): Promise<string> {
 // ---------------------------------------------------------------------
 
 function logActivity(entry: Omit<ActivityLogEntry, "id" | "company_id" | "created_at">) {
-  const store = getStore();
-  store.activityLog.unshift({
+  const record: ActivityLogEntry = {
     id: `act-${randomUUID()}`,
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...entry,
+  };
+  const client = sb();
+  if (client) {
+    // Fire-and-forget from the caller's perspective — every write path
+    // above already returns void/void-ish, and a logging failure should
+    // never block the underlying write it's describing.
+    void client.from("activity_log").insert(record).then(({ error }) => {
+      if (error) getStore().activityLog.unshift(record);
+    });
+  } else {
+    getStore().activityLog.unshift(record);
+  }
+}
+
+/** Logs a "Create Anyway" override on the New Job Request duplicate-bid
+ * warning, so it counts toward the future "duplicate attempts prevented"
+ * report (see README). */
+export async function logDuplicateBidOverride(jobRequestId: string, reason: string, matches: DuplicateBidMatch[], actorName?: string): Promise<void> {
+  const summary = matches
+    .map((m) => `${m.type === "project" ? "Project" : "Job request"} ${m.id} (${m.status}${m.estimatorName ? `, claimed by ${m.estimatorName}` : ""})`)
+    .join("; ");
+  logActivity({
+    action: "Duplicate bid override — created anyway",
+    related_type: "job_request",
+    related_id: jobRequestId,
+    actor_name: actorName,
+    detail: `Possible duplicate against: ${summary}. Reason given: "${reason}"`,
   });
 }
 
@@ -364,13 +406,20 @@ export async function updateJobRequestStatus(id: string, status: JobRequestStatu
   logActivity({ action: `Job request status changed to ${status}`, related_type: "job_request", related_id: id });
 }
 
-export async function convertJobRequestToProject(
-  jobRequestId: string,
-  overrides?: Partial<Pick<Project, "name" | "project_value" | "start_date" | "target_end_date" | "needs_transportation">>
+/**
+ * Creates the project row for a job request exactly once — every later
+ * lifecycle change (claiming the bid, sending it, scheduling, sending to
+ * crew, starting/completing the work) updates this SAME row via the
+ * functions below; nothing here ever inserts a second project for the
+ * same job request.
+ */
+async function insertProjectFromJobRequest(
+  jr: JobRequest,
+  overrides: Partial<Pick<Project, "name" | "project_value" | "start_date" | "target_end_date" | "needs_transportation">> | undefined,
+  initialStage: PipelineStage,
+  initialBidStatus: BidStatus
 ): Promise<Project> {
   const store = getStore();
-  const jr = store.jobRequests.find((j) => j.id === jobRequestId);
-  if (!jr) throw new Error("Job request not found");
   const building = store.buildings.find((b) => b.id === jr.building_id);
   const now = new Date().toISOString();
   const project: Project = {
@@ -390,19 +439,52 @@ export async function convertJobRequestToProject(
     notes: jr.notes,
     created_at: now,
     updated_at: now,
+    pipeline_stage: initialStage,
+    bid_status: initialBidStatus,
+    bid_accepted_at: initialBidStatus === "Accepted" ? now : undefined,
   };
   const client = sb();
   if (client) {
     const { error } = await client.from("projects").insert(project);
     if (error) throw error;
-    await client.from("job_requests").update({ status: "Converted to Project", converted_project_id: project.id, updated_at: now }).eq("id", jobRequestId);
+    await client.from("job_requests").update({ status: "Converted to Project", converted_project_id: project.id, updated_at: now }).eq("id", jr.id);
   } else {
     store.projects.push(project);
     jr.status = "Converted to Project";
     jr.converted_project_id = project.id;
     jr.updated_at = now;
   }
-  logActivity({ action: "Converted job request to project", related_type: "project", related_id: project.id, detail: `From job request ${jobRequestId}` });
+  return project;
+}
+
+/**
+ * "Convert to Project" — used from an already-approved/ready job request.
+ * The bid is treated as already accepted (that approval happened at the
+ * job-request stage), so the new project row starts at pipeline_stage
+ * "Bid Accepted" with bid_status "Accepted".
+ */
+export async function convertJobRequestToProject(
+  jobRequestId: string,
+  overrides?: Partial<Pick<Project, "name" | "project_value" | "start_date" | "target_end_date" | "needs_transportation">>
+): Promise<Project> {
+  const jr = getStore().jobRequests.find((j) => j.id === jobRequestId);
+  if (!jr) throw new Error("Job request not found");
+  const project = await insertProjectFromJobRequest(jr, overrides, "Bid Accepted", "Accepted");
+  logActivity({ action: "Converted job request to project", related_type: "project", related_id: project.id, detail: `From job request ${jobRequestId} — bid accepted` });
+  return project;
+}
+
+/**
+ * "Create Bid" — used from an earlier-stage job request that still needs
+ * to be estimated. Creates the SAME kind of project row, but starts it
+ * unclaimed at pipeline_stage "Project Bid" so it shows up on the Bid
+ * Dashboard for an estimator to claim.
+ */
+export async function createBidFromJobRequest(jobRequestId: string): Promise<Project> {
+  const jr = getStore().jobRequests.find((j) => j.id === jobRequestId);
+  if (!jr) throw new Error("Job request not found");
+  const project = await insertProjectFromJobRequest(jr, undefined, "Project Bid", "Unclaimed");
+  logActivity({ action: "Created bid", related_type: "project", related_id: project.id, detail: `From job request ${jobRequestId} — unclaimed, awaiting an estimator` });
   return project;
 }
 
@@ -420,6 +502,217 @@ export async function updateProjectStatus(id: string, status: ProjectStatus): Pr
     }
   }
   logActivity({ action: `Project status changed to ${status}`, related_type: "project", related_id: id });
+}
+
+// ---------------------------------------------------------------------
+// BID WORKFLOW: pipeline stage, bid status, atomic claiming, reassignment
+// ---------------------------------------------------------------------
+
+// Which set-once lifecycle timestamp column a pipeline_stage transition
+// stamps, the first time a project reaches it. Never overwritten on a
+// later re-visit (e.g. moving back and forth), which is what keeps these
+// columns usable for future turnaround/duration reporting.
+const STAGE_TIMESTAMP_FIELD: Partial<Record<PipelineStage, keyof Project>> = {
+  Scheduled: "scheduled_at",
+  "Sent to Crew": "sent_to_crew_at",
+  "Project In Process": "project_started_at",
+  "Project Completed": "project_completed_at",
+};
+
+// Same idea for bid_status transitions.
+const BID_STATUS_TIMESTAMP_FIELD: Partial<Record<BidStatus, keyof Project>> = {
+  "Ready for Review": "bid_completed_at",
+  "Completed/Sent": "bid_sent_at",
+  Accepted: "bid_accepted_at",
+};
+
+function stampOnce(project: Project, field: keyof Project, iso: string) {
+  if (!project[field]) (project as unknown as Record<string, unknown>)[field] = iso;
+}
+
+export async function updateProjectPipelineStage(id: string, stage: PipelineStage): Promise<void> {
+  const client = sb();
+  const now = new Date().toISOString();
+  const timestampField = STAGE_TIMESTAMP_FIELD[stage];
+  if (client) {
+    const patch: Record<string, unknown> = { pipeline_stage: stage, updated_at: now };
+    if (timestampField) {
+      // Only stamp it if it isn't already set — read-then-conditionally-set
+      // is fine here (unlike claiming) because this isn't a race between
+      // two actors contending for exclusive ownership of one field.
+      const current = await getProject(id);
+      if (current && !current[timestampField]) patch[timestampField] = now;
+    }
+    const { error } = await client.from("projects").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const project = getStore().projects.find((p) => p.id === id);
+    if (project) {
+      project.pipeline_stage = stage;
+      project.updated_at = now;
+      if (timestampField) stampOnce(project, timestampField, now);
+    }
+  }
+  logActivity({ action: `Project stage changed to ${stage}`, related_type: "project", related_id: id });
+}
+
+export async function updateBidStatus(id: string, bidStatus: BidStatus, actorName?: string): Promise<void> {
+  const client = sb();
+  const now = new Date().toISOString();
+  const timestampField = BID_STATUS_TIMESTAMP_FIELD[bidStatus];
+  if (client) {
+    const patch: Record<string, unknown> = { bid_status: bidStatus, updated_at: now };
+    if (timestampField) {
+      const current = await getProject(id);
+      if (current && !current[timestampField]) patch[timestampField] = now;
+    }
+    if (bidStatus === "Accepted") patch.pipeline_stage = "Bid Accepted";
+    const { error } = await client.from("projects").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const project = getStore().projects.find((p) => p.id === id);
+    if (project) {
+      project.bid_status = bidStatus;
+      project.updated_at = now;
+      if (timestampField) stampOnce(project, timestampField, now);
+      if (bidStatus === "Accepted") project.pipeline_stage = "Bid Accepted";
+    }
+  }
+  logActivity({ action: `Bid marked ${bidStatus}`, related_type: "project", related_id: id, actor_name: actorName });
+}
+
+export type ClaimBidResult =
+  | { ok: true; project: Project }
+  | { ok: false; currentEstimatorId: string; currentEstimatorName?: string };
+
+/**
+ * Atomic bid claim. Only succeeds if the project is currently unclaimed.
+ *
+ * - Supabase path: a single `UPDATE ... WHERE assigned_estimator_id IS
+ *   NULL RETURNING *` — the database itself enforces the race, not a
+ *   read-then-write round trip from this process.
+ * - In-memory path: the unclaimed check and the claim are done in one
+ *   synchronous block with no `await` in between, so — because Node/JS
+ *   runs a single thread and nothing can interleave inside a synchronous
+ *   block — two "simultaneous" claim calls can never both see the bid as
+ *   unclaimed. Whichever call's synchronous block runs first wins; the
+ *   second sees the already-set assigned_estimator_id and fails.
+ */
+export async function claimBid(id: string, estimatorId: string, estimatorName?: string): Promise<ClaimBidResult> {
+  const client = sb();
+  const now = new Date().toISOString();
+  if (client) {
+    const { data, error } = await client
+      .from("projects")
+      .update({ assigned_estimator_id: estimatorId, bid_status: "Claimed", claimed_at: now, bid_claimed_at: now, updated_at: now })
+      .eq("id", id)
+      .is("assigned_estimator_id", null)
+      .select()
+      .single();
+    if (!error && data) {
+      logActivity({ action: "Bid claimed", related_type: "project", related_id: id, actor_name: estimatorName });
+      return { ok: true, project: data as Project };
+    }
+    const current = await getProject(id);
+    if (!current) throw new Error("Project not found");
+    const currentEstimator = current.assigned_estimator_id ? await getOfficeUser(current.assigned_estimator_id) : undefined;
+    return { ok: false, currentEstimatorId: current.assigned_estimator_id ?? "", currentEstimatorName: currentEstimator?.full_name };
+  }
+
+  // In-memory fallback — synchronous check-then-set, no await between them.
+  const store = getStore();
+  const project = store.projects.find((p) => p.id === id);
+  if (!project) throw new Error("Project not found");
+  if (project.assigned_estimator_id) {
+    const currentEstimator = store.officeUsers.find((u) => u.id === project.assigned_estimator_id);
+    return { ok: false, currentEstimatorId: project.assigned_estimator_id, currentEstimatorName: currentEstimator?.full_name };
+  }
+  project.assigned_estimator_id = estimatorId;
+  project.bid_status = "Claimed";
+  project.claimed_at = now;
+  stampOnce(project, "bid_claimed_at", now);
+  project.updated_at = now;
+  logActivity({ action: "Bid claimed", related_type: "project", related_id: id, actor_name: estimatorName });
+  return { ok: true, project };
+}
+
+/**
+ * Manager override: release a bid back to Unclaimed, or reassign it to a
+ * different estimator. Records previous estimator, actor, new estimator,
+ * and timestamp in the activity log regardless of which happened.
+ */
+export async function reassignOrReleaseBid(
+  id: string,
+  newEstimatorId: string | null,
+  actorName: string
+): Promise<Project> {
+  const client = sb();
+  const now = new Date().toISOString();
+  const project = await getProject(id);
+  if (!project) throw new Error("Project not found");
+  const previousEstimator = project.assigned_estimator_id ? await getOfficeUser(project.assigned_estimator_id) : undefined;
+  const newEstimator = newEstimatorId ? await getOfficeUser(newEstimatorId) : undefined;
+  const patch = {
+    assigned_estimator_id: newEstimatorId,
+    bid_status: (newEstimatorId ? "Claimed" : "Unclaimed") as BidStatus,
+    claimed_at: newEstimatorId ? now : null,
+    updated_at: now,
+  };
+  if (client) {
+    const { error } = await client.from("projects").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    Object.assign(project, patch);
+    if (newEstimatorId) stampOnce(project, "bid_claimed_at", now);
+  }
+  logActivity({
+    action: newEstimatorId ? "Bid reassigned" : "Bid released",
+    related_type: "project",
+    related_id: id,
+    actor_name: actorName,
+    detail: `From ${previousEstimator?.full_name ?? "unclaimed"} to ${newEstimator?.full_name ?? "unclaimed"} by ${actorName}`,
+  });
+  return { ...project, ...patch };
+}
+
+export interface DuplicateBidMatch {
+  type: "job_request" | "project";
+  id: string;
+  status: string;
+  buildingId: string;
+  unitNumber?: string;
+  estimatorName?: string;
+}
+
+/**
+ * Duplicate-bid check for the New Job Request flow: any OPEN job request
+ * or project (not completed/declined/cancelled) already matching the same
+ * building + unit. No new table needed — this just queries the two
+ * existing tables the same way the rest of the app already reads them.
+ */
+export async function findOpenDuplicateBids(buildingId: string, unitNumber?: string): Promise<DuplicateBidMatch[]> {
+  const norm = (s?: string) => (s ?? "").trim().toLowerCase();
+  const [jobRequests, projects, officeUsers] = await Promise.all([listJobRequests(), listProjects(), listOfficeUsers()]);
+  const officeUserById = new Map(officeUsers.map((u) => [u.id, u]));
+  const matches: DuplicateBidMatch[] = [];
+  for (const jr of jobRequests) {
+    if (jr.building_id !== buildingId || norm(jr.unit_number) !== norm(unitNumber)) continue;
+    if (jr.status === "Converted to Project" || jr.status === "Declined" || jr.status === "Cancelled") continue;
+    matches.push({ type: "job_request", id: jr.id, status: jr.status, buildingId: jr.building_id, unitNumber: jr.unit_number });
+  }
+  for (const p of projects) {
+    if (p.building_id !== buildingId || norm(p.unit_number) !== norm(unitNumber)) continue;
+    if (p.pipeline_stage === "Project Completed") continue;
+    matches.push({
+      type: "project",
+      id: p.id,
+      status: p.pipeline_stage,
+      buildingId: p.building_id,
+      unitNumber: p.unit_number,
+      estimatorName: p.assigned_estimator_id ? officeUserById.get(p.assigned_estimator_id)?.full_name : undefined,
+    });
+  }
+  return matches;
 }
 
 export async function createScheduleAssignment(input: {
