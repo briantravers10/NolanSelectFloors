@@ -11,8 +11,10 @@ import { randomUUID } from "crypto";
 import { getSupabaseClient } from "./supabaseClient";
 import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
+import { mapJobStatusToPipelineStage } from "./schedule";
 import type {
   ActivityLogEntry,
+  ActualLaborEntry,
   BidStatus,
   Building,
   BuildingContact,
@@ -20,6 +22,7 @@ import type {
   Communication,
   CompanySetupAnswer,
   Contact,
+  DailyScheduleConfirmation,
   DocumentRecord,
   EmailRoutingRule,
   Employee,
@@ -42,12 +45,14 @@ import type {
   ProjectCrewRequirement,
   ProjectMaterial,
   ProjectNote,
+  ProjectScheduleDay,
   ProjectStatus,
   ProjectWorkType,
   ScheduleAssignment,
   StaffCapability,
   Task,
   TaskStatus,
+  WorkTypeRecord,
 } from "./types";
 
 function sb() {
@@ -323,6 +328,284 @@ export async function listCompanySetupAnswers(): Promise<CompanySetupAnswer[]> {
 
 export async function getWeekStart(): Promise<string> {
   return getStore().weekStart;
+}
+
+// ---------------------------------------------------------------------
+// SCHEDULE REDESIGN — work types, project schedule days, actual labor,
+// daily confirmations (see supabase/migrations/0005_schedule_redesign.sql)
+// ---------------------------------------------------------------------
+
+export async function listWorkTypes(): Promise<WorkTypeRecord[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("work_types").select("*").order("name");
+    if (!error && data) return data as WorkTypeRecord[];
+  }
+  return [...getStore().workTypes].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function createWorkType(name: string): Promise<WorkTypeRecord> {
+  const record: WorkTypeRecord = {
+    id: `wt-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    name: name.trim(),
+    active: true,
+    created_at: new Date().toISOString(),
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("work_types").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().workTypes.push(record);
+  }
+  logActivity({ action: "Added work type", detail: record.name });
+  return record;
+}
+
+export async function updateWorkType(id: string, patch: { name?: string; active?: boolean }): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("work_types").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const wt = getStore().workTypes.find((w) => w.id === id);
+    if (wt) Object.assign(wt, patch);
+  }
+  logActivity({ action: "Updated work type", detail: `${id}: ${JSON.stringify(patch)}` });
+}
+
+export async function listProjectScheduleDays(): Promise<ProjectScheduleDay[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("project_schedule_days").select("*");
+    if (!error && data) return data as ProjectScheduleDay[];
+  }
+  return getStore().projectScheduleDays;
+}
+
+/** Finds the existing project_schedule_days row for a project+date, or
+ * creates a sensible default one (Pink — "waiting/pending scheduling
+ * progress" — until someone sets it) so every job/day row the Daily view
+ * needs to render always has one to read and update. */
+export async function getOrCreateProjectScheduleDay(projectId: string, date: string, actorName?: string): Promise<ProjectScheduleDay> {
+  const existing = (await listProjectScheduleDays()).find((d) => d.project_id === projectId && d.schedule_date === date);
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const record: ProjectScheduleDay = {
+    id: `psd-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    project_id: projectId,
+    schedule_date: date,
+    schedule_color: "Pink",
+    coi_status: "Not Sent",
+    materials_status: "Not Ordered",
+    job_status: "Scheduled",
+    created_by: actorName,
+    updated_by: actorName,
+    created_at: now,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("project_schedule_days").insert(record).select().single();
+    if (error) throw error;
+    return data as ProjectScheduleDay;
+  }
+  getStore().projectScheduleDays.push(record);
+  return record;
+}
+
+type ScheduleDayPatch = Partial<
+  Pick<ProjectScheduleDay, "schedule_color" | "coi_status" | "materials_status" | "job_status" | "work_type_id" | "notes">
+>;
+
+/**
+ * Updates one field set on a project_schedule_days row, audit-logging a
+ * before/after entry via the existing activity_log for each changed field.
+ * Setting `job_status` also writes through to the real
+ * `projects.pipeline_stage` (see lib/schedule.ts mapJobStatusToPipelineStage)
+ * — never an isolated duplicate status.
+ */
+export async function updateProjectScheduleDay(id: string, patch: ScheduleDayPatch, actorName: string): Promise<ProjectScheduleDay> {
+  const rows = await listProjectScheduleDays();
+  const before = rows.find((d) => d.id === id);
+  if (!before) throw new Error("Schedule day entry not found");
+  const now = new Date().toISOString();
+  const fullPatch = { ...patch, updated_by: actorName, updated_at: now };
+
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("project_schedule_days").update(fullPatch).eq("id", id);
+    if (error) throw error;
+  } else {
+    Object.assign(before, fullPatch);
+  }
+
+  const fieldLabels: Record<string, string> = {
+    schedule_color: "Schedule color",
+    coi_status: "COI status",
+    materials_status: "Materials status",
+    job_status: "Job status",
+    work_type_id: "Work type",
+    notes: "Notes",
+  };
+  for (const [field, newValue] of Object.entries(patch)) {
+    const label = fieldLabels[field] ?? field;
+    logActivity({
+      action: `${label} changed`,
+      related_type: "project",
+      related_id: before.project_id,
+      actor_name: actorName,
+      detail: `${before.schedule_date}: ${label} changed to "${newValue}"`,
+    });
+  }
+
+  if (patch.job_status) {
+    await updateProjectPipelineStage(before.project_id, mapJobStatusToPipelineStage(patch.job_status));
+  }
+
+  return client ? { ...before, ...fullPatch } as ProjectScheduleDay : before;
+}
+
+export async function listActualLaborEntries(): Promise<ActualLaborEntry[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("actual_labor_entries").select("*");
+    if (!error && data) return data as ActualLaborEntry[];
+  }
+  return getStore().actualLaborEntries;
+}
+
+export async function createActualLaborEntry(input: {
+  employee_id: string;
+  project_id: string;
+  work_date: string;
+  hours: number;
+  start_time?: string;
+  end_time?: string;
+  notes?: string;
+  actorName: string;
+}): Promise<ActualLaborEntry> {
+  const now = new Date().toISOString();
+  const record: ActualLaborEntry = {
+    id: `al-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    employee_id: input.employee_id,
+    project_id: input.project_id,
+    work_date: input.work_date,
+    hours: input.hours,
+    start_time: input.start_time,
+    end_time: input.end_time,
+    notes: input.notes,
+    created_by: input.actorName,
+    updated_by: input.actorName,
+    created_at: now,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("actual_labor_entries").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().actualLaborEntries.push(record);
+  }
+  const employee = (await listEmployees()).find((e) => e.id === input.employee_id);
+  logActivity({
+    action: "Logged actual hours",
+    related_type: "employee",
+    related_id: input.employee_id,
+    actor_name: input.actorName,
+    detail: `${employee ? `${employee.first_name} ${employee.last_name}` : input.employee_id} — ${input.hours} hrs on ${input.work_date} (project ${input.project_id})`,
+  });
+  return record;
+}
+
+export async function updateActualLaborEntry(
+  id: string,
+  patch: { hours?: number; start_time?: string; end_time?: string; notes?: string },
+  actorName: string
+): Promise<void> {
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("actual_labor_entries").update({ ...patch, updated_by: actorName, updated_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const entry = getStore().actualLaborEntries.find((e) => e.id === id);
+    if (entry) Object.assign(entry, patch, { updated_by: actorName, updated_at: now });
+  }
+  logActivity({ action: "Edited actual hours entry", related_type: "employee", related_id: id, actor_name: actorName, detail: JSON.stringify(patch) });
+}
+
+export async function deleteActualLaborEntry(id: string, actorName: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("actual_labor_entries").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    const idx = store.actualLaborEntries.findIndex((e) => e.id === id);
+    if (idx >= 0) store.actualLaborEntries.splice(idx, 1);
+  }
+  logActivity({ action: "Deleted actual hours entry", actor_name: actorName, detail: id });
+}
+
+export async function listDailyScheduleConfirmations(): Promise<DailyScheduleConfirmation[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("daily_schedule_confirmations").select("*");
+    if (!error && data) return data as DailyScheduleConfirmation[];
+  }
+  return getStore().dailyScheduleConfirmations;
+}
+
+/** "Confirm Day" from the End-of-Day Review — upsert-style, one row per
+ * (company, work_date). Does NOT lock the day; re-confirming just updates
+ * confirmed_by/confirmed_at, itself audit-logged like any other change. */
+export async function confirmDay(workDate: string, actorName: string, notes?: string): Promise<DailyScheduleConfirmation> {
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { data, error } = await client
+      .from("daily_schedule_confirmations")
+      .upsert(
+        { company_id: getCurrentCompanyId(), work_date: workDate, confirmed_by: actorName, confirmed_at: now, notes },
+        { onConflict: "company_id,work_date" }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    logActivity({ action: "Confirmed day", actor_name: actorName, detail: `Schedule confirmed for ${workDate}${notes ? ` — ${notes}` : ""}` });
+    return data as DailyScheduleConfirmation;
+  }
+  const store = getStore();
+  const existing = store.dailyScheduleConfirmations.find((c) => c.work_date === workDate);
+  if (existing) {
+    existing.confirmed_by = actorName;
+    existing.confirmed_at = now;
+    existing.notes = notes;
+    logActivity({ action: "Confirmed day", actor_name: actorName, detail: `Schedule confirmed for ${workDate}${notes ? ` — ${notes}` : ""}` });
+    return existing;
+  }
+  const record: DailyScheduleConfirmation = { id: `dsc-${randomUUID()}`, company_id: getCurrentCompanyId(), work_date: workDate, confirmed_by: actorName, confirmed_at: now, notes };
+  store.dailyScheduleConfirmations.push(record);
+  logActivity({ action: "Confirmed day", actor_name: actorName, detail: `Schedule confirmed for ${workDate}${notes ? ` — ${notes}` : ""}` });
+  return record;
+}
+
+/** The editable "completion notes" field on a Completed Job Summary — the
+ * one manually-entered field, everything else on the summary is computed.
+ * Reuses the existing project_notes table with a marker author_name so no
+ * new schema is needed; the latest such note is treated as "the" field. */
+export async function getCompletionNotes(projectId: string): Promise<string | undefined> {
+  const notes = await listProjectNotes();
+  return notes.find((n) => n.project_id === projectId && n.author_name === "Completion Notes")?.body;
+}
+
+export async function saveCompletionNotes(projectId: string, body: string, actorName: string): Promise<void> {
+  await createProjectNote({ project_id: projectId, author_name: "Completion Notes", body });
+  logActivity({ action: "Updated completion notes", related_type: "project", related_id: projectId, actor_name: actorName });
 }
 
 // ---------------------------------------------------------------------
@@ -979,6 +1262,7 @@ export async function createScheduleAssignment(input: {
   time_and_half: boolean;
   call_time?: string;
   notes?: string;
+  actorName?: string;
 }): Promise<ScheduleAssignment> {
   const store = getStore();
   const employee = store.employees.find((e) => e.id === input.employee_id);
@@ -1011,12 +1295,15 @@ export async function createScheduleAssignment(input: {
     action: "Assigned crew",
     related_type: "project",
     related_id: input.project_id,
+    actor_name: input.actorName,
     detail: `${employee.first_name} ${employee.last_name} on ${input.schedule_date} as ${input.role_on_job}`,
   });
   return record;
 }
 
-export async function deleteScheduleAssignment(id: string): Promise<void> {
+export async function deleteScheduleAssignment(id: string, actorName?: string): Promise<void> {
+  const assignments = await listScheduleAssignments();
+  const target = assignments.find((a) => a.id === id);
   const client = sb();
   if (client) {
     const { error } = await client.from("schedule_assignments").delete().eq("id", id);
@@ -1025,6 +1312,16 @@ export async function deleteScheduleAssignment(id: string): Promise<void> {
     const store = getStore();
     const idx = store.scheduleAssignments.findIndex((a) => a.id === id);
     if (idx >= 0) store.scheduleAssignments.splice(idx, 1);
+  }
+  if (target) {
+    const employee = (await listEmployees()).find((e) => e.id === target.employee_id);
+    logActivity({
+      action: "Removed crew assignment",
+      related_type: "project",
+      related_id: target.project_id,
+      actor_name: actorName,
+      detail: `${employee ? `${employee.first_name} ${employee.last_name}` : target.employee_id} removed from ${target.schedule_date} (${target.role_on_job})`,
+    });
   }
 }
 
