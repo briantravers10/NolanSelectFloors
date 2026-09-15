@@ -29,6 +29,7 @@ import type {
   Material,
   NewBusinessLead,
   OfficeUser,
+  PhotoCategory,
   PhotoRecord,
   PipelineStage,
   Project,
@@ -721,6 +722,7 @@ export async function createScheduleAssignment(input: {
   schedule_date: string;
   role_on_job: StaffCapability;
   time_and_half: boolean;
+  call_time?: string;
   notes?: string;
 }): Promise<ScheduleAssignment> {
   const store = getStore();
@@ -739,6 +741,7 @@ export async function createScheduleAssignment(input: {
     time_and_half: input.time_and_half,
     // Snapshotted now — never recalculated from the employee's current rate later.
     assignment_cost: Math.round(employee.day_rate * rate_multiplier * 100) / 100,
+    call_time: input.call_time ?? "7:00 AM",
     notes: input.notes,
     created_at: new Date().toISOString(),
   };
@@ -938,6 +941,128 @@ export async function createProjectNote(input: { project_id: string; author_name
   } else {
     getStore().projectNotes.unshift(record);
   }
+  return record;
+}
+
+// ---------------------------------------------------------------------
+// CREATE FORMS: Staff, Clients, Buildings (mirrors the Job Request "new"
+// pattern — a server action calling one of these, then redirecting).
+// ---------------------------------------------------------------------
+
+export async function createEmployee(
+  input: Omit<Employee, "id" | "company_id" | "created_at"> & { capabilities?: StaffCapability[] }
+): Promise<Employee> {
+  const { capabilities, ...rest } = input;
+  const record: Employee = {
+    id: `e-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    created_at: new Date().toISOString(),
+    ...rest,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("employees").insert(record);
+    if (error) throw error;
+    if (capabilities && capabilities.length > 0) {
+      const rows = capabilities.map((capability) => ({ id: `es-${randomUUID()}`, employee_id: record.id, capability }));
+      await client.from("employee_skills").insert(rows);
+    }
+  } else {
+    getStore().employees.push(record);
+    for (const capability of capabilities ?? []) {
+      getStore().employeeSkills.push({ id: `es-${randomUUID()}`, employee_id: record.id, capability });
+    }
+  }
+  logActivity({ action: "Added staff member", related_type: "employee", related_id: record.id, detail: `${record.first_name} ${record.last_name}` });
+  return record;
+}
+
+export async function createClientCompanyRecord(input: Omit<ClientCompany, "id" | "company_id" | "created_at">): Promise<ClientCompany> {
+  const record: ClientCompany = {
+    id: `cc-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("client_companies").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().clientCompanies.push(record);
+  }
+  logActivity({ action: "Added client company", related_type: "client_company", related_id: record.id, detail: record.name });
+  return record;
+}
+
+export async function createBuildingRecord(input: Omit<Building, "id" | "company_id" | "created_at">): Promise<Building> {
+  const record: Building = {
+    id: `b-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("buildings").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().buildings.push(record);
+  }
+  logActivity({ action: "Added building", related_type: "building", related_id: record.id, detail: record.name });
+  return record;
+}
+
+/** The building's primary point-of-contact (property manager), if any —
+ * used by the Schedule page's crew cards. Reuses the existing
+ * `primary_contact_id` column on buildings; no new schema needed. */
+export async function getPrimaryContactForBuilding(buildingId: string): Promise<Contact | undefined> {
+  const [buildings, contacts] = await Promise.all([listBuildings(), listContacts()]);
+  const building = buildings.find((b) => b.id === buildingId);
+  if (!building?.primary_contact_id) return undefined;
+  return contacts.find((c) => c.id === building.primary_contact_id);
+}
+
+export async function updateScheduleAssignmentCallTime(id: string, callTime: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("schedule_assignments").update({ call_time: callTime }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const a = getStore().scheduleAssignments.find((x) => x.id === id);
+    if (a) a.call_time = callTime;
+  }
+}
+
+// ---------------------------------------------------------------------
+// PHOTOS & PROGRESS ENTRIES
+// ---------------------------------------------------------------------
+
+export async function createPhotoRecord(input: {
+  related_type: PhotoRecord["related_type"];
+  related_id: string;
+  file_name: string;
+  storage_path?: string;
+  category?: PhotoCategory;
+  caption?: string;
+  taken_at?: string;
+  uploaded_by?: string;
+  storage_unavailable?: boolean;
+}): Promise<PhotoRecord> {
+  const record: PhotoRecord = {
+    id: `ph-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("photos").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().photos.unshift(record);
+  }
+  logActivity({ action: "Added progress photo entry", related_type: input.related_type, related_id: input.related_id, detail: input.caption });
   return record;
 }
 
