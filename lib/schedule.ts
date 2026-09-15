@@ -21,6 +21,7 @@ import type {
   WorkTypeRecord,
 } from "./types";
 import { round2 } from "./calculations";
+import { jobLaborSummary } from "./labor-cost";
 
 // ---------------------------------------------------------------------
 // SCHEDULE COLOR PRIORITY
@@ -338,6 +339,13 @@ export interface CompletedJobEmployeeLabor {
   daysWorked: number;
   totalHours: number;
   source: "actual" | "planned-fallback";
+  // ACTUAL-cost labor tracking (build 6) — only populated when `source` is
+  // "actual" (computed from actual_labor_entries.rate_type/rate_amount, see
+  // lib/labor-cost.ts). Deliberately left undefined for "planned-fallback"
+  // rows rather than substituting a planned-cost figure, so callers never
+  // confuse the two systems. Access-gate this before rendering — see
+  // lib/current-user.ts canViewLaborCost().
+  laborCost?: number;
 }
 
 export interface CompletedJobSummary {
@@ -352,6 +360,10 @@ export interface CompletedJobSummary {
   labor: CompletedJobEmployeeLabor[];
   totalCrew: number;
   totalManHours: number;
+  // Sum of the "actual"-sourced labor.laborCost figures only (see above) —
+  // the headline ACTUAL labor cost for this job. Gate visibility the same
+  // way as labor[].laborCost.
+  totalLaborCost: number;
   coiStatus?: string;
   materialsStatus?: string;
   notes: string[];
@@ -394,6 +406,10 @@ export function compileCompletedJobSummary(
 
   const employeeIds = Array.from(new Set([...projectAssignments.map((a) => a.employee_id), ...projectActuals.map((a) => a.employee_id)]));
   const employeeById = new Map(opts.employees.map((e) => [e.id, e]));
+  // ACTUAL-cost figures for this project, computed once from
+  // actual_labor_entries via lib/labor-cost.ts — never manually entered.
+  const laborCostSummary = jobLaborSummary(project.id, opts.actualLaborEntries, opts.employees);
+  const laborCostByEmployee = new Map(laborCostSummary.rows.map((r) => [r.employee_id, r.totalCost]));
 
   const labor: CompletedJobEmployeeLabor[] = employeeIds.map((employeeId) => {
     const actualsForEmployee = projectActuals.filter((a) => a.employee_id === employeeId);
@@ -407,10 +423,12 @@ export function compileCompletedJobSummary(
         daysWorked: days.size,
         totalHours: round2(actualsForEmployee.reduce((sum, a) => sum + a.hours, 0)),
         source: "actual",
+        laborCost: laborCostByEmployee.get(employeeId) ?? 0,
       };
     }
     // Fallback: no actual-hours logged for this employee — treat each
-    // planned schedule_assignments day as an 8-hour day.
+    // planned schedule_assignments day as an 8-hour day. No labor cost is
+    // computed here (that would mix the planned- and actual-cost systems).
     const plannedDays = new Set(projectAssignments.filter((a) => a.employee_id === employeeId).map((a) => a.schedule_date));
     return {
       employee_id: employeeId,
@@ -422,6 +440,7 @@ export function compileCompletedJobSummary(
   });
 
   const totalManHours = round2(labor.reduce((sum, l) => sum + l.totalHours, 0));
+  const totalLaborCost = laborCostSummary.totalLaborCost;
   const lastDay = projectDays.length > 0 ? [...projectDays].sort((a, b) => b.schedule_date.localeCompare(a.schedule_date))[0] : undefined;
 
   return {
@@ -436,6 +455,7 @@ export function compileCompletedJobSummary(
     labor,
     totalCrew: employeeIds.length,
     totalManHours,
+    totalLaborCost,
     coiStatus: lastDay?.coi_status,
     materialsStatus: lastDay?.materials_status,
     notes: opts.notes,

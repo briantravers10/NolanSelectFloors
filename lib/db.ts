@@ -200,6 +200,49 @@ export async function getEmployee(id: string): Promise<Employee | undefined> {
   return (await listEmployees()).find((e) => e.id === id);
 }
 
+/**
+ * Edits an existing employee's profile. Any change to pay_type/daily_rate/
+ * hourly_rate is audit-logged to activity_log with old value, new value,
+ * pay type and the acting user — per README "Labor Cost Tracking — Audit
+ * Logging". This never touches already-saved actual_labor_entries rows
+ * (they keep their own rate snapshot — see createActualLaborEntry below),
+ * so historical job costs are unaffected by a rate change here.
+ */
+export async function updateEmployee(
+  id: string,
+  patch: Partial<Omit<Employee, "id" | "company_id" | "created_at">>,
+  actorName: string
+): Promise<void> {
+  const before = (await listEmployees()).find((e) => e.id === id);
+  if (!before) throw new Error("Employee not found");
+
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("employees").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    Object.assign(before, patch);
+  }
+
+  const rateChanged =
+    (patch.pay_type !== undefined && patch.pay_type !== before.pay_type) ||
+    (patch.daily_rate !== undefined && patch.daily_rate !== before.daily_rate) ||
+    (patch.hourly_rate !== undefined && patch.hourly_rate !== before.hourly_rate);
+
+  if (rateChanged) {
+    const oldRate = before.pay_type === "hourly" ? before.hourly_rate : before.daily_rate;
+    const newPayType = patch.pay_type ?? before.pay_type;
+    const newRate = newPayType === "hourly" ? patch.hourly_rate ?? before.hourly_rate : patch.daily_rate ?? before.daily_rate;
+    logActivity({
+      action: "Changed pay rate",
+      related_type: "employee",
+      related_id: id,
+      actor_name: actorName,
+      detail: `${before.first_name} ${before.last_name}: ${before.pay_type} $${oldRate ?? 0} → ${newPayType} $${newRate ?? 0}, effective ${new Date().toISOString().slice(0, 10)}`,
+    });
+  }
+}
+
 export async function listEmployeeSkills(): Promise<EmployeeSkill[]> {
   const client = sb();
   if (client) {
@@ -488,6 +531,11 @@ export async function createActualLaborEntry(input: {
   actorName: string;
 }): Promise<ActualLaborEntry> {
   const now = new Date().toISOString();
+  // HISTORICAL PAY RATE ACCURACY: snapshot the employee's CURRENT
+  // pay_type/rate onto this entry at the moment it's saved. Later rate
+  // changes on the employee's profile never touch this row, so this
+  // entry's cost (see lib/labor-cost.ts) stays fixed forever.
+  const employee = (await listEmployees()).find((e) => e.id === input.employee_id);
   const record: ActualLaborEntry = {
     id: `al-${randomUUID()}`,
     company_id: getCurrentCompanyId(),
@@ -498,6 +546,8 @@ export async function createActualLaborEntry(input: {
     start_time: input.start_time,
     end_time: input.end_time,
     notes: input.notes,
+    rate_type: employee?.pay_type,
+    rate_amount: employee ? (employee.pay_type === "hourly" ? employee.hourly_rate : employee.daily_rate) : undefined,
     created_by: input.actorName,
     updated_by: input.actorName,
     created_at: now,
@@ -510,7 +560,6 @@ export async function createActualLaborEntry(input: {
   } else {
     getStore().actualLaborEntries.push(record);
   }
-  const employee = (await listEmployees()).find((e) => e.id === input.employee_id);
   logActivity({
     action: "Logged actual hours",
     related_type: "employee",
