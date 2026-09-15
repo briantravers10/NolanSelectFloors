@@ -1,0 +1,271 @@
+# Nolan Select Floors — Operations Console
+
+A production-foundation operations platform for a flooring **contractor**
+whose main customers are recurring property management companies. It
+covers the full chain: management company → property managers/contacts →
+buildings → job requests → projects → schedule → staff → labor cost →
+materials → completion, plus a lightweight "New Business" leads pipeline,
+reporting, and a company-setup discovery questionnaire.
+
+Built with Next.js (App Router) + TypeScript + Tailwind CSS, with a
+Supabase/Postgres schema and a data-access layer that runs identically
+against a live Supabase project or an in-memory seed dataset.
+
+## Quick start (no setup required)
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:3000 — it redirects to `/dashboard`. No login, no
+environment variables, no database required: the app runs entirely on the
+realistic seed dataset in `lib/seed-data.ts`, computed fresh each time the
+process starts so "today's jobs" and "this week's schedule" are always
+current relative to the real date.
+
+```bash
+npm run build   # production build — passes with zero configuration
+npm run lint    # ESLint
+```
+
+## How the data layer works
+
+```
+app/**/page.tsx  →  lib/db.ts  →  lib/supabaseClient.ts (configured?)
+                                    ├─ yes → real Supabase queries
+                                    └─ no  → lib/store.ts (in-memory,
+                                             seeded from lib/seed-data.ts)
+```
+
+- **`lib/types.ts`** — every table's row shape, mirroring the SQL schema
+  column-for-column.
+- **`lib/seed-data.ts`** — builds one fully interconnected, realistic
+  dataset (5 management companies, 12 contacts, 20 buildings, 12
+  employees, 15 projects, job requests, materials, tasks, and a full
+  current-week schedule with intentional demo scenarios — see below).
+  Dates are computed relative to the real current date every time the
+  module runs, so the demo never goes stale.
+- **`lib/store.ts`** — a process-wide singleton holding a mutable copy of
+  the seed data. This is the "database" whenever Supabase isn't configured
+  — every write in `lib/db.ts` (creating a job request, assigning crew,
+  moving a project through statuses, etc.) mutates it directly, so the app
+  feels real in a demo with zero backend.
+- **`lib/supabaseClient.ts`** — returns a configured `SupabaseClient` only
+  if `NEXT_PUBLIC_SUPABASE_URL` and a key
+  (`SUPABASE_SERVICE_ROLE_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`) are
+  present in the environment; otherwise returns `null`.
+- **`lib/db.ts`** — the only module pages should import from. Every
+  function checks `getSupabaseClient()` first and falls back to the
+  in-memory store transparently. This is also the single place a future
+  auth layer would add row-level scoping.
+- **`lib/calculations.ts`** — every derived number in the app (labor cost,
+  man count, crew comparisons, driver checks, double-booking, project
+  costing) is a pure function over plain arrays, so it behaves identically
+  whether the rows came from Supabase or the seed store.
+
+## Connecting a real Supabase project
+
+The app works with zero configuration, but to run it against a live
+database:
+
+1. Create a Supabase project.
+2. Apply the schema: run the SQL in `supabase/migrations/0001_init.sql`
+   against it (via the Supabase SQL editor, or `supabase db push` with the
+   Supabase CLI).
+3. Copy `.env.example` to `.env.local` and fill in:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (used server-side for writes)
+4. Optionally load the same demo dataset into it:
+   ```bash
+   npm run seed
+   ```
+   (`scripts/seed.ts` pushes the exact same `lib/seed-data.ts` dataset via
+   the Supabase JS client.)
+5. Restart the dev server / redeploy. `lib/db.ts` will detect the env vars
+   and start reading/writing the real database automatically — no code
+   changes needed anywhere else.
+
+## Schema overview (`supabase/migrations/0001_init.sql`)
+
+Every table carries `company_id` (multi-tenant-ready, even though the app
+currently runs as a single company). Highlights:
+
+- **Clients/contacts/buildings**: `client_companies` (management
+  companies) → `contacts` → `buildings`, with a `building_contacts` join
+  table so a contact's role can differ per building.
+- **Job pipeline**: `job_requests` (11-state status enum, from "New
+  Request" through "Converted to Project") convert into `projects`
+  (13-state status enum from "Approved" through "Paid"), each with
+  `project_work_types`.
+- **Staff & scheduling**: `employees`, `employee_skills` (18-capability
+  enum), `employee_availability` (day-by-day status), and the two tables
+  that drive the whole scheduling model:
+  - `project_crew_requirements` (project + optional specific date + role +
+    quantity — a null date means "every scheduled day")
+  - `schedule_assignments` (project + employee + date + role +
+    **`base_day_rate`, `rate_multiplier`, `time_and_half`,
+    `assignment_cost`** — the cost is snapshotted at assignment time and
+    is never recalculated from the employee's current rate, so a later
+    raise never rewrites payroll history).
+- **Materials**: `materials` (catalog) + `project_materials` (per-project
+  line items with a 7-state delivery status enum).
+- **Everything else**: `tasks`, `communications`, `project_notes`,
+  `documents` / `photos` (metadata only — see Storage note below),
+  `new_business_leads`, `activity_log`, `company_setup_answers`.
+- Indexes on every `company_id` and on the date columns used for schedule
+  queries (`schedule_assignments(company_id, schedule_date)`,
+  `employee_availability(employee_id, schedule_date)`, etc.).
+
+## The computed business logic (`lib/calculations.ts`)
+
+This is the actual value of the app, so it's real, server-computed logic —
+never a hand-typed display string:
+
+- **Assignment cost** = `base_day_rate × rate_multiplier` (1.0 normal, 1.5
+  time-and-half), snapshotted once per assignment.
+- **Daily / weekly man count & labor cost** — summed from
+  `schedule_assignments`, broken out by day and by normal-vs-time-and-half.
+- **Project labor cost** — sum of all of a project's assignments across
+  every scheduled date; recomputes automatically as assignments change
+  because it's derived, not stored.
+- **Crew comparison** — `project_crew_requirements` (by role + quantity,
+  optionally date-specific) vs. actual `schedule_assignments` grouped by
+  `role_on_job`, per project per date → ✓ complete or ⚠ missing N.
+- **Driver check** — if a project needs transportation and no assigned
+  employee that day has `is_driver = true`, it's flagged "NO DRIVER
+  ASSIGNED".
+- **Double-booking check** — any employee assigned to more than one
+  project on the same date is flagged, with both project names.
+- **Project costing** — labor (from assignments) + materials (sum of
+  `project_materials.cost`) + other cost vs. `project_value` → gross
+  profit and gross margin %.
+
+All five of these are demonstrated live in the seed data: open the
+**Dashboard** or **Schedule** page and you'll see a missing-Sander crew
+warning, a "NO DRIVER ASSIGNED" flag, a real double-booking (the same
+installer on two jobs the same day), a time-and-half assignment, and a
+material-delivery warning on a job starting soon.
+
+## Pages
+
+Dashboard, Clients, Buildings, Job Requests, Projects, Schedule, Staff,
+Materials, Tasks, New Business (secondary), Reports, and Company Setup —
+all under a responsive shell (`components/Sidebar.tsx` on desktop,
+`components/MobileNav.tsx` bottom bar + "More" sheet on mobile/tablet).
+Global search (`components/SearchBox.tsx` + `app/api/search/route.ts`)
+filters buildings, management companies, contacts, staff, and projects
+from the top nav.
+
+The **Schedule** week view is the most detail-dense screen in the app —
+per-day man count and labor cost, per-project crew cards with required vs.
+assigned crew, driver status, and material status, plus a crew-assignment
+form with a live cost preview and inline conflict/availability warnings.
+
+## Environment variables
+
+| Variable | Required? | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Public anon key (read fallback) |
+| `SUPABASE_SERVICE_ROLE_KEY` | No | Server-side writes (preferred key) |
+
+None of these are required to run, build, or deploy the app.
+
+## Deploying to Vercel
+
+1. Push this repo to GitHub (already done if you're reading this in the
+   repo).
+2. Import it into Vercel as a Next.js project — no build settings need to
+   change.
+3. (Optional) add the three Supabase env vars in the Vercel project
+   settings if you've connected a real database. Skip this to deploy with
+   the built-in seed data, which is a perfectly good live demo.
+4. Deploy. There's no login step, so the app opens straight to
+   `/dashboard`.
+
+## How auth will be added later
+
+There is intentionally no login yet, but the codebase is already shaped
+for it:
+
+- `users` table + `user_role` enum (`platform_admin`, `company_owner`,
+  `manager`, `office_staff`, `field_worker`) already exist in the schema.
+- Every table already carries `company_id`, so row-level security
+  policies scoped to `auth.uid()`'s company can be added without
+  reshaping any table.
+- `lib/current-user.ts` is a single placeholder module
+  (`getCurrentCompanyId()` / `getCurrentUser()`) that every page and
+  server action already goes through indirectly via `lib/db.ts`. Swapping
+  it to read a real Supabase Auth session is the only change needed —
+  no page or component needs to be rewritten.
+- Once real auth exists, add Supabase RLS policies (`company_id =
+  (select company_id from users where id = auth.uid())`) as a defense in
+  depth layer on top of the app-level scoping that already exists.
+
+## How SMS (Twilio) will be added later
+
+The **Schedule** page's "Send Schedule (Preview)" button already builds
+the exact night-before message text per employee/project/role — it just
+shows it in a modal instead of sending it
+(`components/schedule/SendScheduleButton.tsx`). Wiring real delivery later
+means:
+
+1. Add `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER`
+   env vars.
+2. Add a `lib/sms.ts` that POSTs to the Twilio Messages API per employee
+   phone number.
+3. Replace the preview modal's "Close" flow with an actual send action
+   that calls it, gated behind a confirmation step.
+
+No schema changes are needed — `employees.phone` already exists.
+
+## Future Automations (architected for, not implemented)
+
+These are the automation hooks the discovery questionnaire and business
+context point to. None of them run yet — the schema and data layer are
+shaped so each is a self-contained addition:
+
+- **New job request alert** — notify the office the moment a
+  `job_requests` row is inserted with status `New Request`.
+- **Job approved → create project + checklist** — today this is a manual
+  "Convert to Project" button (`app/job-requests/actions.ts`); a trigger
+  could also auto-create a standard `tasks` checklist for the new project.
+- **Pre-project checks** — a scheduled job that flags any project whose
+  `start_date` is within N days but still has undelivered
+  `project_materials` or unmet `project_crew_requirements` (the logic
+  already exists in `lib/calculations.ts` and powers the Dashboard's
+  Attention Required panel; running it as a background check instead of
+  on page load is the only change needed).
+- **Night-before schedule send** — see the SMS section above; the message
+  text is already generated, sending it is the only missing piece.
+- **Schedule-changed notify** — diff `schedule_assignments` before/after a
+  write and text the affected employees.
+- **Material-delayed flag** — already computed
+  (`project_materials.status` vs. `expected_delivery`); wiring it to a
+  proactive notification instead of a dashboard panel is the remaining
+  step.
+- **Project completed → billing** — when a project moves to `Completed`,
+  auto-draft an invoice line from `computeProjectCosting()`'s numbers.
+
+## What was deliberately simplified for this version
+
+- **File uploads** — `documents` and `photos` tables and their UI exist
+  and are wired to real (seed) data, but there is no working upload
+  pipeline. A real implementation would add a Supabase Storage bucket per
+  table and an upload route; the UI notes this clearly wherever a file
+  action would normally live.
+- **Schedule Day/Month views** — the Week view (the most important screen
+  per the spec) is fully built with live computed data; Day and Month
+  views were not built out as separate routes in this pass. The Week view
+  already highlights "today" and lets you jump ±1 week.
+- **Communications log** — the `communications` table and seed rows exist
+  and are used on a couple of detail views, but there's no dedicated
+  standalone communications page in this pass.
+- **No live Supabase project is connected** in this environment — the app
+  ships and builds entirely on the in-memory seed fallback, matching the
+  hard requirement that `npm run build` work with zero credentials.
+- **No real SMS or Storage integration** — both are previewed/mocked as
+  described above, per the spec's explicit instruction not to fabricate a
+  working pipeline.
