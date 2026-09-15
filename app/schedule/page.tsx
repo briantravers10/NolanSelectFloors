@@ -4,242 +4,141 @@ import {
   listBuildings,
   listClientCompanies,
   listContacts,
-  listCrewRequirements,
-  listEmployeeAvailability,
   listEmployees,
-  listEmployeeSkills,
-  listProjectMaterials,
+  listProjectScheduleDays,
   listProjects,
   listScheduleAssignments,
+  listWorkTypes,
 } from "@/lib/db";
-import { Card, PageHeader, Button, EmptyState, PhoneLink } from "@/components/ui";
-import {
-  compareCrewForProjectDate,
-  findDoubleBookings,
-  formatCurrency,
-  isMissingDriver,
-  summarizeDay,
-  summarizeWeek,
-} from "@/lib/calculations";
+import { Card, PageHeader, Button } from "@/components/ui";
+import { buildScheduleJobRows } from "@/lib/schedule";
 import { addDays, dayLabel, formatDateShort, isoDate, startOfWeek, todayIso } from "@/lib/dates";
-import { AssignmentForm } from "@/components/schedule/AssignmentForm";
+import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
+import { DailyList } from "@/components/schedule/DailyList";
+import { WeeklyView } from "@/components/schedule/WeeklyView";
+import { MonthlyView } from "@/components/schedule/MonthlyView";
 import { SendScheduleButton } from "@/components/schedule/SendScheduleButton";
-import { removeAssignmentAction } from "./actions";
 
-export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
-  const { date: dateParam } = await searchParams;
+type View = "day" | "week" | "month";
+
+export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ date?: string; view?: string }> }) {
+  const { date: dateParam, view: viewParam } = await searchParams;
+  const view: View = viewParam === "week" || viewParam === "month" ? viewParam : "day";
   const anchor = dateParam ? new Date(dateParam + "T00:00:00") : new Date();
-  const monday = startOfWeek(anchor);
-  const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));
   const today = todayIso();
+  const activeDate = dateParam ?? today;
 
-  const [
-    projects,
-    buildings,
-    clients,
-    employees,
-    employeeSkills,
-    availability,
-    crewRequirements,
-    assignments,
-    projectMaterials,
-    buildingContacts,
-    contacts,
-  ] = await Promise.all([
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
-    listEmployees(),
-    listEmployeeSkills(),
-    listEmployeeAvailability(),
-    listCrewRequirements(),
-    listScheduleAssignments(),
-    listProjectMaterials(),
-    listBuildingContacts(),
     listContacts(),
+    listBuildingContacts(),
+    listEmployees(),
+    listScheduleAssignments(),
+    listProjectScheduleDays(),
+    listWorkTypes(),
   ]);
 
-  const buildingById = new Map(buildings.map((b) => [b.id, b]));
-  const clientById = new Map(clients.map((c) => [c.id, c]));
+  const rowInputs = { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes };
+  const activeEmployees = employees.filter((e) => e.active);
+
+  const monday = startOfWeek(anchor);
+  const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));
+  const rowsByDate = new Map(weekDates.map((d) => [d, buildScheduleJobRows(d, rowInputs)]));
+
+  const viewHref = (v: View) => `/schedule?view=${v}&date=${activeDate}`;
+
+  // Night-before send preview for the active day (see components/schedule/
+  // SendScheduleButton.tsx — preview only, not wired to real delivery yet).
+  const activeDateAssignments = assignments.filter((a) => a.schedule_date === activeDate);
   const employeeById = new Map(employees.map((e) => [e.id, e]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
-  const contactById = new Map(contacts.map((c) => [c.id, c]));
-
-  /** Point-of-contact for a building: its `primary_contact_id`, falling
-   * back to whichever building_contacts row is flagged primary. Same
-   * PhoneLink convention used on Staff/Contacts/Buildings pages. */
-  function pointOfContact(buildingId: string) {
-    const building = buildingById.get(buildingId);
-    if (building?.primary_contact_id) {
-      const c = contactById.get(building.primary_contact_id);
-      if (c) return c;
-    }
-    const link = buildingContacts.find((bc) => bc.building_id === buildingId && bc.is_primary) ?? buildingContacts.find((bc) => bc.building_id === buildingId);
-    return link ? contactById.get(link.contact_id) : undefined;
-  }
-
-  const weekSummary = summarizeWeek(assignments, weekDates);
-  const doubleBookings = findDoubleBookings(assignments).filter((db) => weekDates.includes(db.schedule_date));
-  const activeProjects = projects.filter((p) => !["Completed", "Invoiced", "Paid"].includes(p.status));
-
-  // Night-before send preview: the next date in the week that has assignments and is >= today.
-  const nextDate = weekDates.find((d) => d >= today && assignments.some((a) => a.schedule_date === d)) ?? weekDates[0];
-  const nextDateAssignments = assignments.filter((a) => a.schedule_date === nextDate);
-  // One message block per assigned employee, following the concrete
-  // template: "{First Name}, please go to {Building/Address}{, Unit X} at
-  // {Start Time} on {Day of Week}, {Date}. Work: {work types}."
-  const scheduleMessages = nextDateAssignments.map((a) => {
+  const buildingById = new Map(buildings.map((b) => [b.id, b]));
+  const scheduleMessages = activeDateAssignments.map((a) => {
     const emp = employeeById.get(a.employee_id);
     const project = projectById.get(a.project_id);
     const building = project ? buildingById.get(project.building_id) : undefined;
     const location = building ? `${building.name}, ${building.address}` : "the job site";
     const unitPart = project?.unit_number ? `, Unit ${project.unit_number}` : "";
     const callTime = a.call_time || "7:00 AM";
-    const dow = dayLabel(nextDate);
-    const dateLabel = formatDateShort(nextDate);
+    const dow = dayLabel(activeDate);
+    const dateLabel = formatDateShort(activeDate);
     const work = a.role_on_job + (a.time_and_half ? " (time-and-half)" : "");
     return { employeeName: emp ? `${emp.first_name} ${emp.last_name}` : "Crew member", text: `${emp?.first_name ?? "Crew member"}, please go to ${location}${unitPart} at ${callTime} on ${dow}, ${dateLabel}. Work: ${work}.` };
   });
-  const scheduleMessage = scheduleMessages.length > 0
-    ? scheduleMessages.map((m) => m.text).join("\n\n")
-    : `No crew scheduled for ${dayLabel(nextDate)}, ${formatDateShort(nextDate)}.`;
-
-  const prevWeek = isoDate(addDays(monday, -7));
-  const nextWeek = isoDate(addDays(monday, 7));
+  const scheduleMessage = scheduleMessages.length > 0 ? scheduleMessages.map((m) => m.text).join("\n\n") : `No crew scheduled for ${dayLabel(activeDate)}, ${formatDateShort(activeDate)}.`;
 
   return (
     <div>
       <PageHeader
         title="Schedule"
-        subtitle={`Week of ${formatDateShort(weekDates[0])} – ${formatDateShort(weekDates[6])}`}
-        action={
-          <div className="flex flex-wrap gap-2">
-            <Link href={`/schedule?date=${prevWeek}`}><Button variant="secondary">← Prev Week</Button></Link>
-            <Link href={`/schedule?date=${isoDate(new Date())}`}><Button variant="secondary">This Week</Button></Link>
-            <Link href={`/schedule?date=${nextWeek}`}><Button variant="secondary">Next Week →</Button></Link>
-            <SendScheduleButton message={scheduleMessage} messages={scheduleMessages} />
-          </div>
-        }
+        subtitle="Daily, weekly and monthly job schedule"
+        action={view === "day" ? <SendScheduleButton message={scheduleMessage} messages={scheduleMessages} /> : undefined}
       />
+      <ScheduleSubNav active="calendar" />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-        <Card className="p-3">
-          <div className="text-xs text-slate-500 uppercase">Week Man-Days</div>
-          <div className="text-xl font-semibold">{weekSummary.totalManDays}</div>
-        </Card>
-        <Card className="p-3">
-          <div className="text-xs text-slate-500 uppercase">Week Labor Cost</div>
-          <div className="text-xl font-semibold">{formatCurrency(weekSummary.totalLaborCost)}</div>
-        </Card>
-        <Card className="p-3">
-          <div className="text-xs text-slate-500 uppercase">Normal Rate</div>
-          <div className="text-xl font-semibold">{formatCurrency(weekSummary.totalNormalCost)}</div>
-        </Card>
-        <Card className="p-3">
-          <div className="text-xs text-slate-500 uppercase">Time-and-Half</div>
-          <div className="text-xl font-semibold text-amber-600">{formatCurrency(weekSummary.totalTimeAndHalfCost)}</div>
-        </Card>
-      </div>
-
-      {doubleBookings.length > 0 && (
-        <Card className="p-3 mb-5 border-rose-200 bg-rose-50">
-          <div className="text-sm font-semibold text-rose-700 mb-1">⚠ Double-booking detected this week</div>
-          <ul className="text-sm text-rose-700 list-disc list-inside">
-            {doubleBookings.map((db, i) => {
-              const emp = employeeById.get(db.employee_id);
-              return (
-                <li key={i}>
-                  {emp?.first_name} {emp?.last_name} on {db.schedule_date}: {db.project_ids.map((pid) => projectById.get(pid)?.name ?? pid).join(" AND ")}
-                </li>
-              );
-            })}
-          </ul>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
-        <div className="xl:col-span-3 space-y-4">
-          {weekDates.map((date) => {
-            const dayAssignments = assignments.filter((a) => a.schedule_date === date);
-            const daySummary = summarizeDay(assignments, date);
-            const dayProjectIds = Array.from(new Set(dayAssignments.map((a) => a.project_id)));
-            return (
-              <Card key={date} className={`p-4 ${date === today ? "ring-2 ring-sky-400" : ""}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <div className="font-semibold text-slate-900">{dayLabel(date)} <span className="text-slate-400 font-normal">{date}</span></div>
-                  </div>
-                  <div className="text-xs text-slate-500">{daySummary.manCount} crew{daySummary.timeAndHalfDays > 0 && ` · ${daySummary.timeAndHalfDays} at time-and-half`}</div>
-                </div>
-                {dayProjectIds.length === 0 ? (
-                  <EmptyState message="No crew scheduled." />
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {dayProjectIds.map((projectId) => {
-                      const project = projectById.get(projectId);
-                      if (!project) return null;
-                      const building = buildingById.get(project.building_id);
-                      const client = building ? clientById.get(building.client_company_id) : undefined;
-                      const crew = dayAssignments.filter((a) => a.project_id === projectId);
-                      const crewComparison = compareCrewForProjectDate(crewRequirements, assignments, projectId, date);
-                      const missingDriver = isMissingDriver(project, assignments, employees, projectId, date);
-                      const materials = projectMaterials.filter((m) => m.project_id === projectId);
-                      const undelivered = materials.filter((m) => m.status !== "Delivered" && m.status !== "Returned").length;
-                      const poc = pointOfContact(project.building_id);
-                      return (
-                        <div key={projectId} className="border border-slate-200 rounded-lg p-3">
-                          <Link href={`/projects/${projectId}`} className="font-medium text-sm text-slate-900 hover:text-sky-600">
-                            {building?.name}{project.unit_number ? ` — Unit ${project.unit_number}` : ""}
-                          </Link>
-                          <div className="text-xs text-slate-500 mb-1">{client?.name}</div>
-                          {poc && (
-                            <div className="flex items-center gap-1.5 mb-1.5 text-xs text-slate-500">
-                              <span>{poc.first_name} {poc.last_name}</span>
-                              <PhoneLink phone={poc.phone} className="text-xs" />
-                            </div>
-                          )}
-                          <div className="text-xs text-slate-600 mb-1.5">Crew {crew.length}</div>
-                          <div className="flex flex-wrap gap-1 mb-1.5">
-                            {crew.map((a) => {
-                              const emp = employeeById.get(a.employee_id);
-                              return (
-                                <form key={a.id} action={removeAssignmentAction.bind(null, a.id, projectId)}>
-                                  <button type="submit" title="Remove assignment" className="text-[11px] bg-slate-100 hover:bg-rose-100 hover:text-rose-700 rounded px-1.5 py-0.5 text-slate-600">
-                                    {emp?.first_name} {emp?.last_name?.[0]}. · {a.role_on_job}{a.time_and_half ? " · 1.5x" : ""} ✕
-                                  </button>
-                                </form>
-                              );
-                            })}
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {crewComparison.filter((c) => !c.complete).map((c) => (
-                              <span key={c.role} className="text-[11px] rounded px-1.5 py-0.5 bg-rose-50 text-rose-700">⚠ Missing {c.missing} {c.role}</span>
-                            ))}
-                            {missingDriver && <span className="text-[11px] rounded px-1.5 py-0.5 bg-rose-50 text-rose-700 font-medium">⚠ NO DRIVER</span>}
-                            {undelivered > 0 && <span className="text-[11px] rounded px-1.5 py-0.5 bg-amber-50 text-amber-700">{undelivered} material(s) pending</span>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden">
+          {(["day", "week", "month"] as View[]).map((v) => (
+            <Link
+              key={v}
+              href={viewHref(v)}
+              className={`px-4 py-2 text-sm font-medium capitalize ${view === v ? "bg-sky-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"}`}
+            >
+              {v}
+            </Link>
+          ))}
         </div>
 
-        <Card className="p-4 h-fit sticky top-20">
-          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Assign Crew</h2>
-          <AssignmentForm
-            projects={activeProjects}
-            employees={employees.filter((e) => e.active)}
-            employeeSkills={employeeSkills}
-            assignments={assignments}
-            availability={availability}
-            defaultDate={today}
-          />
-        </Card>
+        {view === "day" && (
+          <div className="flex items-center gap-2">
+            <Link href={`/schedule?view=day&date=${isoDate(addDays(new Date(activeDate + "T00:00:00"), -1))}`}><Button variant="secondary">← Prev Day</Button></Link>
+            <Link href={`/schedule?view=day&date=${today}`}><Button variant="secondary">Today</Button></Link>
+            <Link href={`/schedule?view=day&date=${isoDate(addDays(new Date(activeDate + "T00:00:00"), 1))}`}><Button variant="secondary">Next Day →</Button></Link>
+          </div>
+        )}
+        {view === "week" && (
+          <div className="flex items-center gap-2">
+            <Link href={`/schedule?view=week&date=${isoDate(addDays(monday, -7))}`}><Button variant="secondary">← Prev Week</Button></Link>
+            <Link href={`/schedule?view=week&date=${today}`}><Button variant="secondary">This Week</Button></Link>
+            <Link href={`/schedule?view=week&date=${isoDate(addDays(monday, 7))}`}><Button variant="secondary">Next Week →</Button></Link>
+          </div>
+        )}
+        {view === "month" && (
+          <div className="flex items-center gap-2">
+            <Link href={`/schedule?view=month&date=${isoDate(addDays(anchor, -30))}`}><Button variant="secondary">← Prev</Button></Link>
+            <Link href={`/schedule?view=month&date=${today}`}><Button variant="secondary">This Month</Button></Link>
+            <Link href={`/schedule?view=month&date=${isoDate(addDays(anchor, 30))}`}><Button variant="secondary">Next →</Button></Link>
+          </div>
+        )}
       </div>
+
+      {view === "day" && (
+        <>
+          <Card className="p-3 mb-3">
+            <div className="font-semibold text-slate-900">{dayLabel(activeDate)} <span className="text-slate-400 font-normal">{formatDateShort(activeDate)}</span></div>
+          </Card>
+          <DailyList rows={buildScheduleJobRows(activeDate, rowInputs)} workTypes={workTypes} employees={activeEmployees} />
+        </>
+      )}
+
+      {view === "week" && (
+        <WeeklyView weekDates={weekDates} today={today} rowsByDate={rowsByDate} />
+      )}
+
+      {view === "month" && (
+        <MonthlyView
+          monthAnchor={anchor}
+          today={today}
+          rowsByDate={new Map(
+            Array.from({ length: 42 }, (_, i) => {
+              const d = isoDate(addDays(startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1)), i));
+              return [d, buildScheduleJobRows(d, rowInputs)] as const;
+            })
+          )}
+        />
+      )}
     </div>
   );
 }
