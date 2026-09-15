@@ -361,6 +361,120 @@ got one alongside "Haul-Away Run"). The New Building form's primary
 property manager dropdown narrows to contacts at the selected management
 company client-side (`components/buildings/NewBuildingForm.tsx`).
 
+## Pricing & Estimating Formulas
+
+The **Pricing** section (`/pricing`) standardizes how bids/estimates get
+priced instead of every estimator eyeballing a number.
+
+- **`material_rate_items`** — reusable priced line items (hardwood, LVP,
+  laminate, carpet, tile, underlayment, adhesive/glue, trim, etc.), each
+  with a unit, unit cost, supplier, and category. Managed from `/pricing`
+  and `/pricing/materials/new`.
+- **`pricing_formulas`** — one per work type (Hardwood Installation, LVP
+  Installation, Carpet Installation, etc.), carrying an optional
+  `labor_rate_per_sqft` and `markup_percent`. Managed from `/pricing` and
+  `/pricing/formulas/new`.
+- **`pricing_formula_components`** — the line items within a formula, each
+  referencing a `material_rate_item` with a `quantity_per_unit_area` (e.g.
+  `1.05` sqft of hardwood per sqft of floor for a 5% waste factor, or
+  `0.01` gallons of glue per sqft, i.e. 1 gallon per 100 sqft). Edited
+  in-place on `/pricing/[id]` — add or remove line items, set the quantity
+  per sqft.
+- **`lib/pricing.ts#computePricingBreakdown()`** is the single reusable
+  calculation function every calculator UI calls: given a formula and a
+  square footage, it multiplies each component's `quantity_per_unit_area`
+  by the total sqft to get a quantity, prices it against that material
+  rate item's unit cost, sums every component into a material cost, adds
+  `labor_rate_per_sqft × sqft` for labor, and applies `markup_percent` to
+  the material+labor subtotal to get a suggested price — returning a full
+  itemized breakdown, not just a total.
+- **Estimate Calculator** (`components/EstimateCalculator.tsx`) is a
+  reusable client component embedded on both the Job Request detail page
+  and the Project detail page's costing section: pick a pricing formula,
+  enter square footage, see the live itemized breakdown and suggested
+  price, and optionally save it — onto `job_requests.estimated_value` (a
+  new column kept deliberately separate from `estimate_amount`, the
+  amount actually sent to the client, so a calculator save never
+  overwrites a real sent estimate) or onto `projects.project_value`. The
+  New Job Request fast-entry form itself was intentionally left untouched
+  to preserve its 30-second flow — the calculator lives on the detail
+  pages instead.
+- Seed data includes 15 material rate items across every category and
+  three pricing formulas (Hardwood, LVP, Carpet Installation) each with
+  2–3 component line items, a labor rate, and a markup — enough to
+  exercise the calculator with realistic numbers out of the box.
+
+## Email Assistant & Invoice Routing (Architecture, Not Yet Live)
+
+The long-term goal is an AI assistant watching the owner's Gmail that
+detects supplier invoices and calendar-worthy requests (like a property
+manager asking for a site visit), then routes invoices into an organized
+structure by supplier and by job/address — with a manual override for
+one-off/case-by-case handling. **No live Gmail or Calendar API call is
+made anywhere in this codebase** — Google OAuth isn't available in this
+environment, and the spec was explicit that this pass builds the in-app
+foundation only, never a faked integration.
+
+### What's built now
+
+- **`/invoices`** — a manual invoice log: supplier, amount, invoice/due
+  dates, optional links to a `project` and/or `building`, status (Needed /
+  Received / Filed / Paid / Disputed), notes, and an optional file
+  attachment. The list is filterable by status and supplier and groupable
+  by supplier or by building address — the same "clean stacked list"
+  convention as Job Requests, not a scattered grid — so the future
+  supplier- and job-organized folder structure already has a UI to browse
+  it in. `source` is `'Manual Entry'` for everything entered here today.
+- File attachments go through `lib/storage.ts#uploadInvoiceFile()`, the
+  exact same soft-fail pattern as the Photos feature: it attempts a real
+  Supabase Storage upload when a project is configured and otherwise the
+  invoice is still saved with an honest "file storage isn't configured
+  yet" notice — never a fabricated path.
+- **`/invoices/rules`** — "Email Routing Rules": a configuration table
+  (`email_routing_rules`) the owner can edit today that describes what a
+  future email assistant should do when it sees a keyword — `keyword`,
+  `action_type` (File As Invoice / Flag For Calendar / Flag For Review /
+  Ignore), `route_by` (Supplier / Building Address / Manual/Case-by-Case),
+  and an active toggle. A banner on the page states plainly that email
+  isn't connected yet and invoices are entered manually until it is. Seed
+  data includes 6 realistic rules (a generic `"invoice"` catch-all, `"site
+  visit"` / `"walkthrough"` → Flag For Calendar, `"estimate request"` →
+  Flag For Review, a known-supplier keyword `"Home Depot Pro"` → File As
+  Invoice, and a `"past due"` review flag) plus 10 seed invoices tied to
+  real suppliers/projects/buildings across every status, two of them
+  marked `source = 'Email Auto-Routed'` to preview what an automated match
+  would look like once wired up.
+
+### What a future Gmail integration would need
+
+1. A **Google Cloud OAuth app** with the **Gmail API** (read scope, to
+   scan incoming mail) and the **Google Calendar API** (write scope, to
+   create events for site-visit-type requests) enabled and consented to
+   by the owner's account.
+2. A **webhook or polling worker** (Gmail push notifications via Pub/Sub,
+   or a scheduled poll of the inbox) that scans new mail's subject/body
+   against `email_routing_rules.keyword` (case-insensitive substring match
+   is enough to start).
+3. On a match:
+   - `action_type = 'Flag For Calendar'` → create a Google Calendar event
+     (site visit, walkthrough) via the Calendar API.
+   - `action_type = 'File As Invoice'` → parse what it can (supplier,
+     amount, dates) and insert an `invoices` row with
+     `source = 'Email Auto-Routed'`, organizing it by `route_by`
+     (`Supplier` groups by the invoices list's supplier filter/grouping;
+     `Building Address` matches the email against a building's name/
+     address to set `related_building_id`).
+   - `action_type = 'Flag For Review'` → surface it in a review queue
+     (not built in this pass) rather than auto-filing.
+   - `action_type = 'Ignore'` → no action.
+4. Attachments would upload through the same `lib/storage.ts` path already
+   used by manual entry, so the storage layer needs no changes.
+
+**Case-by-case/manual review stays available indefinitely** regardless of
+how much of the above ships — the manual "+ New Invoice" form and the
+`route_by = 'Manual/Case-by-Case'` rule option are permanent parts of the
+workflow, not just a placeholder until automation lands.
+
 ## Environment variables
 
 | Variable | Required? | Purpose |
