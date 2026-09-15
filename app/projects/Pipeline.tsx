@@ -16,7 +16,7 @@ import { movePipelineStageFormAction } from "./actions";
  * reliable than a hand-rolled DnD implementation under time constraints.
  * See README "What was deliberately simplified" for the tradeoff note.
  */
-export async function Pipeline() {
+export async function Pipeline({ stageFilter }: { stageFilter?: string } = {}) {
   const [projects, buildings, clients, officeUsers] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -27,9 +27,11 @@ export async function Pipeline() {
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const officeUserById = new Map(officeUsers.map((u) => [u.id, u]));
 
+  const visibleStages = stageFilter ? PIPELINE_STAGES.filter((s) => s === stageFilter) : PIPELINE_STAGES;
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
-      {PIPELINE_STAGES.map((stage) => {
+    <div className={`grid grid-cols-1 md:grid-cols-2 ${stageFilter ? "" : "xl:grid-cols-6"} gap-4`}>
+      {visibleStages.map((stage) => {
         const items = projects.filter((p) => p.pipeline_stage === stage);
         return (
           <div key={stage} className="min-w-0">

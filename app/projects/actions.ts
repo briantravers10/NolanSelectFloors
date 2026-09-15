@@ -6,14 +6,16 @@ import {
   createProjectCrewRequirement,
   createProjectMaterial,
   createProjectNote,
+  createPhotoRecord,
   createTask,
   reassignOrReleaseBid,
   updateBidStatus,
   updateProjectPipelineStage,
   updateProjectStatus,
 } from "@/lib/db";
+import { uploadProjectPhoto } from "@/lib/storage";
 import { getActingUser } from "@/lib/current-user";
-import type { BidStatus, MaterialStatus, PipelineStage, ProjectStatus, StaffCapability } from "@/lib/types";
+import type { BidStatus, MaterialStatus, PhotoCategory, PipelineStage, ProjectStatus, StaffCapability } from "@/lib/types";
 
 export async function setProjectStatusAction(id: string, status: ProjectStatus) {
   await updateProjectStatus(id, status);
@@ -116,5 +118,41 @@ export async function addProjectNoteAction(projectId: string, formData: FormData
   const body = String(formData.get("body") ?? "");
   if (!body.trim()) return;
   await createProjectNote({ project_id: projectId, author_name: "Brian Travers", body });
+  revalidatePath(`/projects/${projectId}`);
+}
+
+/** Photos & Progress: attempts a real Supabase Storage upload via
+ * lib/storage.ts when configured; when it isn't, the entry is still saved
+ * (caption/category/date) with `storage_unavailable: true` so the UI can
+ * show an honest "saved without an image" notice instead of pretending. */
+export async function addProjectPhotoAction(projectId: string, formData: FormData) {
+  const caption = String(formData.get("caption") ?? "").trim();
+  if (!caption) return;
+  const category = String(formData.get("category") ?? "Progress") as PhotoCategory;
+  const takenAt = String(formData.get("taken_at") ?? "") || undefined;
+  const actingUser = await getActingUser();
+  const file = formData.get("photo");
+
+  let storage_path: string | undefined;
+  let storage_unavailable = true;
+  let fileName = "no-image.txt";
+  if (file instanceof File && file.size > 0) {
+    fileName = file.name;
+    const result = await uploadProjectPhoto(file, "project", projectId);
+    storage_path = result.storage_path;
+    storage_unavailable = result.unavailable;
+  }
+
+  await createPhotoRecord({
+    related_type: "project",
+    related_id: projectId,
+    file_name: fileName,
+    storage_path,
+    category,
+    caption,
+    taken_at: takenAt ? `${takenAt}T00:00:00.000Z` : undefined,
+    uploaded_by: actingUser.fullName,
+    storage_unavailable,
+  });
   revalidatePath(`/projects/${projectId}`);
 }

@@ -2,33 +2,53 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listProjects, listScheduleAssignments } from "@/lib/db";
 import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { formatCurrency } from "@/lib/calculations";
-import { PROJECT_STATUSES } from "@/lib/types";
+import { PIPELINE_STAGES, PROJECT_STATUSES } from "@/lib/types";
 import { projectLaborCost } from "@/lib/calculations";
 import { Pipeline } from "./Pipeline";
 
-export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string; view?: string }> }) {
-  const { status, view } = await searchParams;
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string; view?: string; stage?: string }> }) {
+  const { status, view, stage } = await searchParams;
   const showPipeline = view === "pipeline";
 
   return (
     <div>
       <PageHeader title="Projects" subtitle={showPipeline ? "Drag-free kanban across the 6 primary lifecycle stages." : "Every project, in one list."} />
 
-      <div className="flex flex-wrap gap-2 mb-5 border-b border-slate-200 pb-3">
-        <Link href="/projects" className={`text-sm font-medium rounded-lg px-3 py-1.5 ${!showPipeline ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+      <div className="flex flex-wrap gap-2 mb-4 border-b border-slate-200 pb-3">
+        <Link href={`/projects${stage ? `?stage=${encodeURIComponent(stage)}` : ""}`} className={`text-sm font-medium rounded-lg px-3 py-1.5 ${!showPipeline ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
           List
         </Link>
-        <Link href="/projects?view=pipeline" className={`text-sm font-medium rounded-lg px-3 py-1.5 ${showPipeline ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+        <Link href={`/projects?view=pipeline${stage ? `&stage=${encodeURIComponent(stage)}` : ""}`} className={`text-sm font-medium rounded-lg px-3 py-1.5 ${showPipeline ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
           Pipeline
         </Link>
       </div>
 
-      {showPipeline ? <Pipeline /> : <ProjectsList status={status} />}
+      {/* Sub-navigation by pipeline stage — jump straight to "Scheduled",
+          "Project In Process", etc. instead of scanning the whole list/board. */}
+      <div className="flex flex-wrap gap-2 mb-5">
+        <Link
+          href={showPipeline ? "/projects?view=pipeline" : "/projects"}
+          className={`text-xs font-medium rounded-full px-3 py-1 border ${!stage ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
+        >
+          All Stages
+        </Link>
+        {PIPELINE_STAGES.map((s) => (
+          <Link
+            key={s}
+            href={`/projects?${showPipeline ? "view=pipeline&" : ""}stage=${encodeURIComponent(s)}`}
+            className={`text-xs font-medium rounded-full px-3 py-1 border ${stage === s ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
+          >
+            {s}
+          </Link>
+        ))}
+      </div>
+
+      {showPipeline ? <Pipeline stageFilter={stage} /> : <ProjectsList status={status} stage={stage} />}
     </div>
   );
 }
 
-async function ProjectsList({ status }: { status?: string }) {
+async function ProjectsList({ status, stage }: { status?: string; stage?: string }) {
   const [projects, buildings, clients, assignments] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -38,18 +58,19 @@ async function ProjectsList({ status }: { status?: string }) {
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
 
-  const filtered = (status ? projects.filter((p) => p.status === status) : projects)
-    .slice()
-    .sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
+  let filtered = projects.slice();
+  if (stage) filtered = filtered.filter((p) => p.pipeline_stage === stage);
+  if (status) filtered = filtered.filter((p) => p.status === status);
+  filtered.sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
 
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-5">
-        <Link href="/projects" className={`text-xs font-medium rounded-full px-3 py-1 border ${!status ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>
-          All
+        <Link href={stage ? `/projects?stage=${encodeURIComponent(stage)}` : "/projects"} className={`text-xs font-medium rounded-full px-3 py-1 border ${!status ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>
+          All Statuses
         </Link>
         {PROJECT_STATUSES.map((s) => (
-          <Link key={s} href={`/projects?status=${encodeURIComponent(s)}`} className={`text-xs font-medium rounded-full px-3 py-1 border ${status === s ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>
+          <Link key={s} href={`/projects?status=${encodeURIComponent(s)}${stage ? `&stage=${encodeURIComponent(stage)}` : ""}`} className={`text-xs font-medium rounded-full px-3 py-1 border ${status === s ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>
             {s}
           </Link>
         ))}
@@ -63,6 +84,7 @@ async function ProjectsList({ status }: { status?: string }) {
                 <th className="px-4 py-3">Project</th>
                 <th className="px-4 py-3">Building</th>
                 <th className="px-4 py-3">Management Co.</th>
+                <th className="px-4 py-3">Stage</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Start</th>
                 <th className="px-4 py-3 text-right">Value</th>
@@ -82,6 +104,7 @@ async function ProjectsList({ status }: { status?: string }) {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{building?.name}</td>
                     <td className="px-4 py-3 text-slate-600">{client?.name}</td>
+                    <td className="px-4 py-3"><StatusBadge status={p.pipeline_stage} /></td>
                     <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                     <td className="px-4 py-3 text-slate-600">{p.start_date ?? "—"}</td>
                     <td className="px-4 py-3 text-right">{formatCurrency(p.project_value)}</td>

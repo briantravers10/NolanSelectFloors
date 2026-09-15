@@ -30,10 +30,14 @@ import {
   addCrewRequirementAction,
   addProjectMaterialAction,
   addProjectNoteAction,
+  addProjectPhotoAction,
   addProjectTaskAction,
-  setPipelineStageAction,
+  movePipelineStageFormAction,
   setProjectStatusAction,
 } from "../actions";
+import { PHOTO_CATEGORIES } from "@/lib/types";
+import { listPhotos } from "@/lib/db";
+import { isPhotoStorageConfigured } from "@/lib/storage";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -51,6 +55,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     officeUsers,
     actingUser,
     activityLog,
+    photos,
   ] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -65,6 +70,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listOfficeUsers(),
     getActingUser(),
     listActivityLog(),
+    listPhotos(),
   ]);
 
   const project = projects.find((p) => p.id === id);
@@ -81,6 +87,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const projectNotes = notes.filter((n) => n.project_id === id);
   const employeeById = new Map(employees.map((e) => [e.id, e]));
   const projectActivity = activityLog.filter((a) => a.related_type === "project" && a.related_id === id);
+  const projectPhotos = photos
+    .filter((ph) => ph.related_type === "project" && ph.related_id === id)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  const photoStorageConfigured = isPhotoStorageConfigured();
 
   const costing = computeProjectCosting(project, assignments, materials, id);
 
@@ -121,14 +131,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <span key={wt.id} className="text-xs bg-slate-100 rounded-full px-2.5 py-1 text-slate-600">{wt.work_type}</span>
               ))}
             </div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Move to Pipeline Stage</div>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {PIPELINE_STAGES.filter((s) => s !== project.pipeline_stage).map((s) => (
-                <form key={s} action={setPipelineStageAction.bind(null, project.id, s)}>
-                  <button type="submit" className="text-xs rounded-full border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-100">{s}</button>
-                </form>
-              ))}
-            </div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Pipeline Stage</div>
+            <form action={movePipelineStageFormAction.bind(null, project.id)} className="flex flex-wrap items-center gap-2 mb-4">
+              <select name="stage" defaultValue={project.pipeline_stage} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm">
+                {PIPELINE_STAGES.map((s) => (
+                  <option key={s} value={s}>{s}{s === project.pipeline_stage ? " (current)" : ""}</option>
+                ))}
+              </select>
+              <Button type="submit" variant="secondary">Move</Button>
+              <span className="text-xs text-slate-400">Can move forward or backward — e.g. to undo an accidental advance.</span>
+            </form>
             <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Move to Detailed Status</div>
             <div className="flex flex-wrap gap-2">
               {PROJECT_STATUSES.filter((s) => s !== project.status).map((s) => (
@@ -302,6 +314,47 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   <div key={n.id} className="text-sm border-l-2 border-slate-200 pl-3">
                     <div className="text-slate-700">{n.body}</div>
                     <div className="text-xs text-slate-400 mt-0.5">{n.author_name} · {formatDateLong(n.created_at.slice(0, 10))}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Photos &amp; Progress</h2>
+            {!photoStorageConfigured && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                Photo storage isn&apos;t configured yet — entries below are saved without an image until Supabase Storage credentials are set (see README).
+              </p>
+            )}
+            <form action={addProjectPhotoAction.bind(null, project.id)} className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+              <input name="caption" placeholder="Caption / note" required className="sm:col-span-2 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <select name="category" defaultValue="Progress" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
+                {PHOTO_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input name="taken_at" type="date" defaultValue={new Date().toISOString().slice(0, 10)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <input name="photo" type="file" accept="image/*" className="sm:col-span-2 text-sm" />
+              <Button type="submit" className="sm:col-span-2">Add Entry</Button>
+            </form>
+            {projectPhotos.length === 0 ? (
+              <EmptyState message="No photos or progress entries yet." />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {projectPhotos.map((ph) => (
+                  <div key={ph.id} className="border border-slate-100 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-semibold uppercase text-sky-700 bg-sky-50 rounded-full px-2 py-0.5">{ph.category ?? "Other"}</span>
+                      <span className="text-xs text-slate-400">{formatDateLong(ph.taken_at?.slice(0, 10) ?? ph.created_at.slice(0, 10))}</span>
+                    </div>
+                    <p className="text-sm text-slate-700 mb-1">{ph.caption}</p>
+                    {ph.storage_unavailable || !ph.storage_path ? (
+                      <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        Photo storage isn&apos;t configured yet — this entry was saved without an image.
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500">Stored at {ph.storage_path}</div>
+                    )}
+                    <div className="text-[11px] text-slate-400 mt-1">{ph.uploaded_by ?? "—"}</div>
                   </div>
                 ))}
               </div>
