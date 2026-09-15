@@ -74,6 +74,10 @@ export function AssignmentForm({
         </div>
       </div>
       <div>
+        <label className="block text-[11px] text-slate-500 uppercase mb-1">Call Time (used in Send Schedule preview)</label>
+        <input name="call_time" placeholder="7:00 AM" defaultValue="7:00 AM" className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+      </div>
+      <div>
         <label className="block text-[11px] text-slate-500 uppercase mb-1">Employee</label>
         <select name="employee_id" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} required className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
           {employees.map((e) => (

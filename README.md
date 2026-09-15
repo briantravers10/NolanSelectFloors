@@ -287,6 +287,80 @@ by `assigned_estimator_id`), unclaimed/outstanding bid counts
 `activity_log` rows with action `"Duplicate bid override — created
 anyway"`).
 
+## Regions, the Buildings Map, and the Haul-Away Run (added on top of the base + bid workflow app)
+
+- **`region`** on `buildings` (5 NYC boroughs + "New Jersey" + "Long
+  Island" + "Other") lets the Buildings list group/filter by region
+  instead of one flat list. It's an explicit column (not derived at read
+  time) for reliability — backfilled in `lib/seed-data.ts` from each
+  seeded building's real address, and set from a dropdown on the New
+  Building form.
+- **`latitude`/`longitude`** on `buildings` (nullable) back the **Map**
+  tab on `/buildings`. Seeded buildings carry hand-picked, realistic
+  coordinates (see `buildingGeo` in `lib/seed-data.ts`) — there is no live
+  geocoding call in this environment, so the New Building form has manual,
+  clearly-labeled-optional lat/lng fields instead.
+- The map itself (`components/BuildingMap.tsx`, loaded through
+  `components/BuildingMapLoader.tsx` via `next/dynamic({ ssr: false })`
+  because Leaflet touches `window`) uses **Leaflet + OpenStreetMap tiles**
+  — free, no API key, via the `leaflet` + `react-leaflet` npm packages
+  (installed cleanly; `react-leaflet@5` was used instead of `@4` since 5.x
+  is the first version with React 19 peer support, matching this repo's
+  React version). Pins are colored by region and clickable through to the
+  building.
+- **Haul-Away Run** (`/buildings/haul-away`,
+  `components/buildings/HaulAwayPlanner.tsx`) lets you check off active
+  job sites needing debris pickup for a day and see them plotted with a
+  route line. Two layers:
+  1. **Working today, no configuration**: `lib/routing.ts` computes
+     straight-line (haversine) distances and a naive nearest-neighbor stop
+     order (start at the first selected stop, repeatedly jump to whichever
+     remaining stop is closest) — pure math, no external call. The UI
+     labels this clearly: **"Estimated (no live routing configured
+     yet)"**, with a rough drive-time using an assumed 18 mph average city
+     speed (also labeled as rough).
+  2. **Real turn-by-turn driving route (bring your own key)**:
+     `lib/routing.ts#getDrivingRoute()` is the integration point. Set
+     `ROUTING_PROVIDER=google` + `GOOGLE_MAPS_API_KEY`, **or**
+     `ROUTING_PROVIDER=mapbox` + `MAPBOX_ACCESS_TOKEN`, and the "Get Live
+     Driving Route" button on the Haul-Away Run page will call that
+     provider's Directions API instead — zero code changes needed. With
+     neither configured (the default), the function returns `null` and
+     the page falls back to the estimate; it never throws or crashes.
+     - **Google**: create a key at
+       [console.cloud.google.com](https://console.cloud.google.com/) →
+       APIs & Services → Credentials, after enabling the "Directions API".
+     - **Mapbox**: create an access token at
+       [account.mapbox.com/access-tokens](https://account.mapbox.com/access-tokens/)
+       (the default public token works for the Directions API).
+
+## Photos & Progress (project detail page)
+
+The project detail page's **Photos & Progress** section extends the
+existing `photos` table (now with a `category` column — Before / Progress
+/ After / Floor Plan / Other — and a `storage_unavailable` flag) rather
+than adding a new one. Adding an entry always saves the caption/category/
+date; the image upload goes through `lib/storage.ts#uploadProjectPhoto()`,
+which attempts a real Supabase Storage upload when a project is
+configured and otherwise returns `{ unavailable: true }` — the UI then
+shows an inline **"Photo storage isn't configured yet — this entry was
+saved without an image"** notice instead of pretending the upload worked.
+To enable real uploads later: connect a Supabase project (see below),
+create a Storage bucket (defaults to `project-photos`, override with
+`SUPABASE_PHOTOS_BUCKET`), and no code changes are needed.
+
+## New create forms (Staff, Clients, Buildings)
+
+`/staff/new`, `/clients/new`, and `/buildings/new` follow the exact
+pattern already used by `/job-requests/new`: a server action in that
+section's `actions.ts` calling a new `lib/db.ts` create function
+(`createEmployee`, `createClientCompanyRecord`, `createBuildingRecord`),
+then a redirect to the new record's detail page. Matching "+ New …"
+buttons were added to the Staff and Clients list pages (Buildings already
+got one alongside "Haul-Away Run"). The New Building form's primary
+property manager dropdown narrows to contacts at the selected management
+company client-side (`components/buildings/NewBuildingForm.tsx`).
+
 ## Environment variables
 
 | Variable | Required? | Purpose |
@@ -294,6 +368,10 @@ anyway"`).
 | `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Public anon key (read fallback) |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | Server-side writes (preferred key) |
+| `SUPABASE_PHOTOS_BUCKET` | No | Storage bucket name for project photos (default `project-photos`) |
+| `ROUTING_PROVIDER` | No | `google` or `mapbox` — enables live driving routes on the Haul-Away Run page |
+| `GOOGLE_MAPS_API_KEY` | No | Required when `ROUTING_PROVIDER=google` — get one at console.cloud.google.com (enable "Directions API") |
+| `MAPBOX_ACCESS_TOKEN` | No | Required when `ROUTING_PROVIDER=mapbox` — get one at account.mapbox.com/access-tokens |
 
 None of these are required to run, build, or deploy the app.
 
@@ -407,6 +485,23 @@ shaped so each is a self-contained addition:
 - **Dev "acting as" user is a cookie, not a session** — intentionally, per
   the spec's "no real auth yet" instruction. See the "Bid workflow /
   project pipeline" section above for exactly how this maps onto real auth
+- **Live turn-by-turn routing is stubbed, not faked** — the Haul-Away Run
+  page's "Get Live Driving Route" button is fully wired to
+  `lib/routing.ts#getDrivingRoute()`, which calls the real Google Maps or
+  Mapbox Directions API the moment `ROUTING_PROVIDER` + the matching key
+  is set (see "Environment variables" above). With no key configured
+  (the case in this environment today), it returns `null` and the page
+  shows the haversine/nearest-neighbor estimate, clearly labeled
+  "Estimated (no live routing configured yet)" — never a fabricated route.
+- **Building geocoding is hand-picked, not live** — seeded buildings carry
+  realistic hand-picked lat/lng (see `lib/seed-data.ts`); there is no
+  geocoding API call. New buildings created through `/buildings/new` have
+  optional, clearly-labeled manual latitude/longitude fields instead.
+- **Region is a simple enum, not derived** — `region` is a first-class
+  column set at creation time (backfilled correctly for every seeded
+  building), not inferred from `city`/`state`/`zip` at read time — more
+  reliable, and correct even for edge cases like Stamford, CT (falls back
+  to "Other" since it's outside the requested NYC-boroughs/NJ/LI list).
   later.
 - **Duplicate-check UX is a full-page round trip, not client-side** — the
   New Job Request form re-checks for duplicates as a server action and

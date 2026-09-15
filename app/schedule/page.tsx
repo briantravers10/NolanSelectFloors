@@ -1,7 +1,9 @@
 import Link from "next/link";
 import {
+  listBuildingContacts,
   listBuildings,
   listClientCompanies,
+  listContacts,
   listCrewRequirements,
   listEmployeeAvailability,
   listEmployees,
@@ -10,7 +12,7 @@ import {
   listProjects,
   listScheduleAssignments,
 } from "@/lib/db";
-import { Card, PageHeader, Button, EmptyState } from "@/components/ui";
+import { Card, PageHeader, Button, EmptyState, PhoneLink } from "@/components/ui";
 import {
   compareCrewForProjectDate,
   findDoubleBookings,
@@ -41,6 +43,8 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     crewRequirements,
     assignments,
     projectMaterials,
+    buildingContacts,
+    contacts,
   ] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -51,12 +55,28 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     listCrewRequirements(),
     listScheduleAssignments(),
     listProjectMaterials(),
+    listBuildingContacts(),
+    listContacts(),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const employeeById = new Map(employees.map((e) => [e.id, e]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
+  const contactById = new Map(contacts.map((c) => [c.id, c]));
+
+  /** Point-of-contact for a building: its `primary_contact_id`, falling
+   * back to whichever building_contacts row is flagged primary. Same
+   * PhoneLink convention used on Staff/Contacts/Buildings pages. */
+  function pointOfContact(buildingId: string) {
+    const building = buildingById.get(buildingId);
+    if (building?.primary_contact_id) {
+      const c = contactById.get(building.primary_contact_id);
+      if (c) return c;
+    }
+    const link = buildingContacts.find((bc) => bc.building_id === buildingId && bc.is_primary) ?? buildingContacts.find((bc) => bc.building_id === buildingId);
+    return link ? contactById.get(link.contact_id) : undefined;
+  }
 
   const weekSummary = summarizeWeek(assignments, weekDates);
   const doubleBookings = findDoubleBookings(assignments).filter((db) => weekDates.includes(db.schedule_date));
@@ -65,21 +85,24 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   // Night-before send preview: the next date in the week that has assignments and is >= today.
   const nextDate = weekDates.find((d) => d >= today && assignments.some((a) => a.schedule_date === d)) ?? weekDates[0];
   const nextDateAssignments = assignments.filter((a) => a.schedule_date === nextDate);
-  const messageLines = [`Nolan Select Floors — Schedule for ${nextDate}`, ""];
-  const byEmployee = new Map<string, typeof nextDateAssignments>();
-  for (const a of nextDateAssignments) {
-    if (!byEmployee.has(a.employee_id)) byEmployee.set(a.employee_id, []);
-    byEmployee.get(a.employee_id)!.push(a);
-  }
-  for (const [empId, list] of byEmployee) {
-    const emp = employeeById.get(empId);
-    for (const a of list) {
-      const project = projectById.get(a.project_id);
-      const building = project ? buildingById.get(project.building_id) : undefined;
-      messageLines.push(`${emp?.first_name} ${emp?.last_name}: ${building?.name ?? ""}${project?.unit_number ? " Unit " + project.unit_number : ""} — ${a.role_on_job}${a.time_and_half ? " (time-and-half)" : ""}`);
-    }
-  }
-  const scheduleMessage = messageLines.join("\n");
+  // One message block per assigned employee, following the concrete
+  // template: "{First Name}, please go to {Building/Address}{, Unit X} at
+  // {Start Time} on {Day of Week}, {Date}. Work: {work types}."
+  const scheduleMessages = nextDateAssignments.map((a) => {
+    const emp = employeeById.get(a.employee_id);
+    const project = projectById.get(a.project_id);
+    const building = project ? buildingById.get(project.building_id) : undefined;
+    const location = building ? `${building.name}, ${building.address}` : "the job site";
+    const unitPart = project?.unit_number ? `, Unit ${project.unit_number}` : "";
+    const callTime = a.call_time || "7:00 AM";
+    const dow = dayLabel(nextDate);
+    const dateLabel = formatDateShort(nextDate);
+    const work = a.role_on_job + (a.time_and_half ? " (time-and-half)" : "");
+    return { employeeName: emp ? `${emp.first_name} ${emp.last_name}` : "Crew member", text: `${emp?.first_name ?? "Crew member"}, please go to ${location}${unitPart} at ${callTime} on ${dow}, ${dateLabel}. Work: ${work}.` };
+  });
+  const scheduleMessage = scheduleMessages.length > 0
+    ? scheduleMessages.map((m) => m.text).join("\n\n")
+    : `No crew scheduled for ${dayLabel(nextDate)}, ${formatDateShort(nextDate)}.`;
 
   const prevWeek = isoDate(addDays(monday, -7));
   const nextWeek = isoDate(addDays(monday, 7));
@@ -94,7 +117,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
             <Link href={`/schedule?date=${prevWeek}`}><Button variant="secondary">← Prev Week</Button></Link>
             <Link href={`/schedule?date=${isoDate(new Date())}`}><Button variant="secondary">This Week</Button></Link>
             <Link href={`/schedule?date=${nextWeek}`}><Button variant="secondary">Next Week →</Button></Link>
-            <SendScheduleButton message={scheduleMessage} />
+            <SendScheduleButton message={scheduleMessage} messages={scheduleMessages} />
           </div>
         }
       />
@@ -146,7 +169,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
                   <div>
                     <div className="font-semibold text-slate-900">{dayLabel(date)} <span className="text-slate-400 font-normal">{date}</span></div>
                   </div>
-                  <div className="text-xs text-slate-500">{daySummary.manCount} crew · {formatCurrency(daySummary.laborCost)}{daySummary.timeAndHalfDays > 0 && ` (${formatCurrency(daySummary.timeAndHalfCost)} @ 1.5x)`}</div>
+                  <div className="text-xs text-slate-500">{daySummary.manCount} crew{daySummary.timeAndHalfDays > 0 && ` · ${daySummary.timeAndHalfDays} at time-and-half`}</div>
                 </div>
                 {dayProjectIds.length === 0 ? (
                   <EmptyState message="No crew scheduled." />
@@ -162,14 +185,20 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
                       const missingDriver = isMissingDriver(project, assignments, employees, projectId, date);
                       const materials = projectMaterials.filter((m) => m.project_id === projectId);
                       const undelivered = materials.filter((m) => m.status !== "Delivered" && m.status !== "Returned").length;
-                      const dayCost = crew.reduce((s, a) => s + a.assignment_cost, 0);
+                      const poc = pointOfContact(project.building_id);
                       return (
                         <div key={projectId} className="border border-slate-200 rounded-lg p-3">
                           <Link href={`/projects/${projectId}`} className="font-medium text-sm text-slate-900 hover:text-sky-600">
                             {building?.name}{project.unit_number ? ` — Unit ${project.unit_number}` : ""}
                           </Link>
-                          <div className="text-xs text-slate-500 mb-1.5">{client?.name}</div>
-                          <div className="text-xs text-slate-600 mb-1.5">Crew {crew.length} · {formatCurrency(dayCost)}</div>
+                          <div className="text-xs text-slate-500 mb-1">{client?.name}</div>
+                          {poc && (
+                            <div className="flex items-center gap-1.5 mb-1.5 text-xs text-slate-500">
+                              <span>{poc.first_name} {poc.last_name}</span>
+                              <PhoneLink phone={poc.phone} className="text-xs" />
+                            </div>
+                          )}
+                          <div className="text-xs text-slate-600 mb-1.5">Crew {crew.length}</div>
                           <div className="flex flex-wrap gap-1 mb-1.5">
                             {crew.map((a) => {
                               const emp = employeeById.get(a.employee_id);

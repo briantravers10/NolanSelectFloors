@@ -4,8 +4,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 
-export function SendScheduleButton({ message }: { message: string }) {
+export function SendScheduleButton({ message, messages }: { message: string; messages?: { employeeName: string; text: string }[] }) {
   const [open, setOpen] = useState(false);
+  const blocks = messages && messages.length > 0 ? messages : null;
   return (
     <>
       <Button variant="secondary" onClick={() => setOpen(true)}>
@@ -19,9 +20,20 @@ export function SendScheduleButton({ message }: { message: string }) {
               <button onClick={() => setOpen(false)} className="p-1 text-slate-400"><Icon name="close" className="w-5 h-5" /></button>
             </div>
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-              Preview only — no message is actually sent. Twilio SMS integration is architected but not wired up yet (see README).
+              PREVIEW ONLY — not actually sent. Twilio SMS integration is architected but not wired up yet (see README).
             </p>
-            <pre className="whitespace-pre-wrap text-sm bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-700 font-sans max-h-80 overflow-y-auto">{message}</pre>
+            <div className="max-h-80 overflow-y-auto space-y-2.5">
+              {blocks ? (
+                blocks.map((b, i) => (
+                  <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                    <div className="text-xs font-semibold text-slate-500 uppercase mb-1">{b.employeeName}</div>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{b.text}</p>
+                  </div>
+                ))
+              ) : (
+                <pre className="whitespace-pre-wrap text-sm bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-700 font-sans">{message}</pre>
+              )}
+            </div>
             <div className="mt-4 flex justify-end">
               <Button onClick={() => setOpen(false)}>Close</Button>
             </div>
