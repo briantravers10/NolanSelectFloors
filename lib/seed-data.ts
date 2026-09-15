@@ -16,14 +16,19 @@ import type {
   CompanySetupAnswer,
   Contact,
   DocumentRecord,
+  EmailRoutingRule,
   Employee,
   EmployeeAvailability,
   EmployeeSkill,
+  Invoice,
   JobRequest,
   Material,
+  MaterialRateItem,
   NewBusinessLead,
   OfficeUser,
   PhotoRecord,
+  PricingFormula,
+  PricingFormulaComponent,
   Project,
   ProjectCrewRequirement,
   ProjectMaterial,
@@ -605,6 +610,78 @@ export function buildSeedData() {
 
   const companySetupAnswers: CompanySetupAnswer[] = [];
 
+  // ---------------------------------------------------------------------
+  // PRICING & ESTIMATING FORMULAS
+  // ---------------------------------------------------------------------
+  // Supplier names are shared with `materials` above and with the invoices
+  // seeded below, so the "grouped by supplier" views have real overlapping
+  // data. Two additional suppliers (Home Depot Pro, Apex Equipment Rental)
+  // round out the invoice-routing demo.
+  const materialRateItems: MaterialRateItem[] = [
+    { id: "mri-1", company_id: COMPANY_ID, name: "3/4in Red Oak Hardwood", unit: "sqft", unit_cost: 6.75, supplier: "Metro Hardwood Supply", category: "Material", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-2", company_id: COMPANY_ID, name: "3/4in White Oak Hardwood", unit: "sqft", unit_cost: 7.5, supplier: "Metro Hardwood Supply", category: "Material", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-3", company_id: COMPANY_ID, name: "Luxury Vinyl Plank — Coastal Gray", unit: "sqft", unit_cost: 3.5, supplier: "Tri-State Flooring Distributors", category: "Material", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-4", company_id: COMPANY_ID, name: "Laminate Plank — Weathered Oak", unit: "sqft", unit_cost: 2.85, supplier: "Tri-State Flooring Distributors", category: "Material", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-5", company_id: COMPANY_ID, name: "Commercial Carpet — Mid Grade", unit: "sqft", unit_cost: 2.4, supplier: "Empire Carpet & Textile", category: "Material", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-6", company_id: COMPANY_ID, name: "Porcelain Tile 12x24", unit: "sqft", unit_cost: 4.25, supplier: "Statewide Tile & Stone", category: "Material", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-7", company_id: COMPANY_ID, name: "Rubber Underlayment", unit: "sqft", unit_cost: 0.65, supplier: "Tri-State Flooring Distributors", category: "Underlayment", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-8", company_id: COMPANY_ID, name: "Foam Underlayment", unit: "sqft", unit_cost: 0.35, supplier: "Tri-State Flooring Distributors", category: "Underlayment", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-9", company_id: COMPANY_ID, name: "Carpet Padding — 8lb Rebond", unit: "sqft", unit_cost: 0.55, supplier: "Empire Carpet & Textile", category: "Underlayment", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-10", company_id: COMPANY_ID, name: "Flooring Adhesive/Glue", unit: "gallon", unit_cost: 42, supplier: "Bona Pro Supply", category: "Adhesive", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-11", company_id: COMPANY_ID, name: "Carpet Seam Adhesive", unit: "gallon", unit_cost: 28, supplier: "Empire Carpet & Textile", category: "Adhesive", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-12", company_id: COMPANY_ID, name: "Paint-Grade Baseboard 3.25in", unit: "linear ft", unit_cost: 1.85, supplier: "Metro Hardwood Supply", category: "Trim", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-13", company_id: COMPANY_ID, name: "Quarter Round Trim", unit: "linear ft", unit_cost: 0.95, supplier: "Metro Hardwood Supply", category: "Trim", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-14", company_id: COMPANY_ID, name: "Water-Based Polyurethane, Satin", unit: "gallon", unit_cost: 65, supplier: "Bona Pro Supply", category: "Other", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+    { id: "mri-15", company_id: COMPANY_ID, name: "Floor Nails/Staples (box)", unit: "box", unit_cost: 38, supplier: "Home Depot Pro", category: "Other", active: true, created_at: "2024-01-01T00:00:00.000Z" },
+  ];
+
+  const pricingFormulas: PricingFormula[] = [
+    { id: "pf-1", company_id: COMPANY_ID, name: "Standard Hardwood Installation", work_type: "Hardwood Installation", labor_rate_per_sqft: 4.5, markup_percent: 25, notes: "3/4in solid hardwood, glue-assist nail-down, standard waste factor.", active: true, created_at: "2024-01-05T00:00:00.000Z" },
+    { id: "pf-2", company_id: COMPANY_ID, name: "Standard LVP Installation", work_type: "LVP Installation", labor_rate_per_sqft: 2.25, markup_percent: 30, notes: "Floating LVP over foam underlayment.", active: true, created_at: "2024-01-05T00:00:00.000Z" },
+    { id: "pf-3", company_id: COMPANY_ID, name: "Standard Carpet Installation", work_type: "Carpet Installation", labor_rate_per_sqft: 1.75, markup_percent: 30, notes: "Mid-grade carpet over 8lb rebond pad, standard turnover unit.", active: true, created_at: "2024-01-05T00:00:00.000Z" },
+  ];
+
+  const pricingFormulaComponents: PricingFormulaComponent[] = [
+    // Hardwood: 5% waste factor on the board itself, plus glue and finish.
+    { id: "pfc-1", company_id: COMPANY_ID, formula_id: "pf-1", material_rate_item_id: "mri-1", quantity_per_unit_area: 1.05, notes: "5% waste factor", created_at: "2024-01-05T00:00:00.000Z" },
+    { id: "pfc-2", company_id: COMPANY_ID, formula_id: "pf-1", material_rate_item_id: "mri-10", quantity_per_unit_area: 0.01, notes: "~1 gallon glue per 100 sqft", created_at: "2024-01-05T00:00:00.000Z" },
+    { id: "pfc-3", company_id: COMPANY_ID, formula_id: "pf-1", material_rate_item_id: "mri-14", quantity_per_unit_area: 0.008, notes: "~1 gallon finish per 125 sqft", created_at: "2024-01-05T00:00:00.000Z" },
+    // LVP: plank + underlayment + a little glue for transitions.
+    { id: "pfc-4", company_id: COMPANY_ID, formula_id: "pf-2", material_rate_item_id: "mri-3", quantity_per_unit_area: 1.08, notes: "8% waste factor", created_at: "2024-01-05T00:00:00.000Z" },
+    { id: "pfc-5", company_id: COMPANY_ID, formula_id: "pf-2", material_rate_item_id: "mri-8", quantity_per_unit_area: 1.0, created_at: "2024-01-05T00:00:00.000Z" },
+    { id: "pfc-6", company_id: COMPANY_ID, formula_id: "pf-2", material_rate_item_id: "mri-10", quantity_per_unit_area: 0.005, notes: "Transition/seam glue", created_at: "2024-01-05T00:00:00.000Z" },
+    // Carpet: carpet + pad + seam adhesive.
+    { id: "pfc-7", company_id: COMPANY_ID, formula_id: "pf-3", material_rate_item_id: "mri-5", quantity_per_unit_area: 1.1, notes: "10% waste factor for seams/pattern", created_at: "2024-01-05T00:00:00.000Z" },
+    { id: "pfc-8", company_id: COMPANY_ID, formula_id: "pf-3", material_rate_item_id: "mri-9", quantity_per_unit_area: 1.0, created_at: "2024-01-05T00:00:00.000Z" },
+    { id: "pfc-9", company_id: COMPANY_ID, formula_id: "pf-3", material_rate_item_id: "mri-11", quantity_per_unit_area: 0.006, notes: "Seam adhesive", created_at: "2024-01-05T00:00:00.000Z" },
+  ];
+
+  // ---------------------------------------------------------------------
+  // INVOICES & EMAIL ROUTING RULES (foundation for a future Gmail-based
+  // assistant — see README "Email Assistant & Invoice Routing")
+  // ---------------------------------------------------------------------
+  const invoices: Invoice[] = [
+    { id: "inv-1", company_id: COMPANY_ID, supplier: "Metro Hardwood Supply", amount: 5850, invoice_date: t(-5), due_date: t(25), related_project_id: "p-4", status: "Received", source: "Manual Entry", notes: "White oak hardwood delivery for Unit 8A.", created_at: `${t(-5)}T00:00:00.000Z` },
+    { id: "inv-2", company_id: COMPANY_ID, supplier: "Tri-State Flooring Distributors", amount: 3150, invoice_date: t(-4), due_date: t(26), related_project_id: "p-2", related_building_id: "b-2", status: "Filed", source: "Manual Entry", notes: "LVP for Unit 12C.", created_at: `${t(-4)}T00:00:00.000Z` },
+    { id: "inv-3", company_id: COMPANY_ID, supplier: "Bona Pro Supply", amount: 590, invoice_date: t(-6), due_date: t(24), related_project_id: "p-1", related_building_id: "b-1", status: "Paid", source: "Manual Entry", notes: "Stain + poly for Unit 4B refinish.", created_at: `${t(-6)}T00:00:00.000Z` },
+    { id: "inv-4", company_id: COMPANY_ID, supplier: "Statewide Tile & Stone", amount: 8400, invoice_date: t(-2), due_date: t(28), related_project_id: "p-6", related_building_id: "b-13", status: "Needed", source: "Manual Entry", notes: "Awaiting delivery of lobby porcelain tile before invoice arrives.", created_at: `${t(-2)}T00:00:00.000Z` },
+    { id: "inv-5", company_id: COMPANY_ID, supplier: "Empire Carpet & Textile", amount: 2450, invoice_date: t(-11), due_date: t(19), related_project_id: "p-7", related_building_id: "b-17", status: "Paid", source: "Manual Entry", created_at: `${t(-11)}T00:00:00.000Z` },
+    { id: "inv-6", company_id: COMPANY_ID, supplier: "Home Depot Pro", amount: 312, invoice_date: t(-1), due_date: t(29), related_building_id: "b-11", status: "Received", source: "Email Auto-Routed", notes: "Fasteners + misc supplies for Unit 6C subfloor repair.", created_at: `${t(-1)}T00:00:00.000Z` },
+    { id: "inv-7", company_id: COMPANY_ID, supplier: "Apex Equipment Rental", amount: 480, invoice_date: t(-3), due_date: t(11), related_project_id: "p-11", related_building_id: "b-14", status: "Disputed", source: "Manual Entry", notes: "Billed for 5 rental days, job only ran 3 — following up with vendor.", created_at: `${t(-3)}T00:00:00.000Z` },
+    { id: "inv-8", company_id: COMPANY_ID, supplier: "Metro Hardwood Supply", amount: 630, invoice_date: t(-9), due_date: t(21), related_project_id: "p-15", related_building_id: "b-10", status: "Disputed", source: "Manual Entry", notes: "Wrong baseboard profile delivered — disputing charge until replacement ships.", created_at: `${t(-9)}T00:00:00.000Z` },
+    { id: "inv-9", company_id: COMPANY_ID, supplier: "Tri-State Flooring Distributors", amount: 2520, invoice_date: t(-9), due_date: t(21), related_project_id: "p-15", related_building_id: "b-10", status: "Paid", source: "Manual Entry", created_at: `${t(-9)}T00:00:00.000Z` },
+    { id: "inv-10", company_id: COMPANY_ID, supplier: "Home Depot Pro", amount: 156, invoice_date: t(0), due_date: t(30), related_building_id: "b-9", status: "Needed", source: "Email Auto-Routed", notes: "Auto-routed from a supplier email — awaiting office review and filing.", created_at: `${t(0)}T00:00:00.000Z` },
+  ];
+
+  const emailRoutingRules: EmailRoutingRule[] = [
+    { id: "err-1", company_id: COMPANY_ID, keyword: "invoice", action_type: "File As Invoice", route_by: "Supplier", active: true, notes: "Generic catch-all for supplier invoice emails.", created_at: "2024-01-10T00:00:00.000Z" },
+    { id: "err-2", company_id: COMPANY_ID, keyword: "site visit", action_type: "Flag For Calendar", route_by: "Manual/Case-by-Case", active: true, notes: "Property manager requesting a walkthrough — needs a calendar hold.", created_at: "2024-01-10T00:00:00.000Z" },
+    { id: "err-3", company_id: COMPANY_ID, keyword: "walkthrough", action_type: "Flag For Calendar", route_by: "Manual/Case-by-Case", active: true, created_at: "2024-01-10T00:00:00.000Z" },
+    { id: "err-4", company_id: COMPANY_ID, keyword: "estimate request", action_type: "Flag For Review", route_by: "Manual/Case-by-Case", active: true, notes: "Route to the estimator queue for manual pricing, not auto-filed.", created_at: "2024-01-10T00:00:00.000Z" },
+    { id: "err-5", company_id: COMPANY_ID, keyword: "Home Depot Pro", action_type: "File As Invoice", route_by: "Supplier", active: true, notes: "Known recurring supplier — auto-file straight to their supplier folder.", created_at: "2024-01-10T00:00:00.000Z" },
+    { id: "err-6", company_id: COMPANY_ID, keyword: "past due", action_type: "Flag For Review", route_by: "Manual/Case-by-Case", active: true, notes: "Overdue-balance notices need a human to confirm before filing.", created_at: "2024-01-10T00:00:00.000Z" },
+  ];
+
   return {
     company,
     users,
@@ -631,6 +708,11 @@ export function buildSeedData() {
     newBusinessLeads,
     activityLog,
     companySetupAnswers,
+    materialRateItems,
+    pricingFormulas,
+    pricingFormulaComponents,
+    invoices,
+    emailRoutingRules,
     weekStart: isoDate(monday),
   };
 }

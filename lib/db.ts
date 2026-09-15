@@ -21,17 +21,23 @@ import type {
   CompanySetupAnswer,
   Contact,
   DocumentRecord,
+  EmailRoutingRule,
   Employee,
   EmployeeAvailability,
   EmployeeSkill,
+  Invoice,
+  InvoiceStatus,
   JobRequest,
   JobRequestStatus,
   Material,
+  MaterialRateItem,
   NewBusinessLead,
   OfficeUser,
   PhotoCategory,
   PhotoRecord,
   PipelineStage,
+  PricingFormula,
+  PricingFormulaComponent,
   Project,
   ProjectCrewRequirement,
   ProjectMaterial,
@@ -317,6 +323,255 @@ export async function listCompanySetupAnswers(): Promise<CompanySetupAnswer[]> {
 
 export async function getWeekStart(): Promise<string> {
   return getStore().weekStart;
+}
+
+// ---------------------------------------------------------------------
+// PRICING & ESTIMATING FORMULAS
+// ---------------------------------------------------------------------
+
+export async function listMaterialRateItems(): Promise<MaterialRateItem[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("material_rate_items").select("*").order("name");
+    if (!error && data) return data as MaterialRateItem[];
+  }
+  return [...getStore().materialRateItems].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listPricingFormulas(): Promise<PricingFormula[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("pricing_formulas").select("*").order("name");
+    if (!error && data) return data as PricingFormula[];
+  }
+  return [...getStore().pricingFormulas].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getPricingFormula(id: string): Promise<PricingFormula | undefined> {
+  return (await listPricingFormulas()).find((f) => f.id === id);
+}
+
+export async function listPricingFormulaComponents(): Promise<PricingFormulaComponent[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("pricing_formula_components").select("*");
+    if (!error && data) return data as PricingFormulaComponent[];
+  }
+  return getStore().pricingFormulaComponents;
+}
+
+export async function createMaterialRateItem(
+  input: Omit<MaterialRateItem, "id" | "company_id" | "created_at" | "active"> & { active?: boolean }
+): Promise<MaterialRateItem> {
+  const record: MaterialRateItem = {
+    id: `mri-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    active: input.active ?? true,
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("material_rate_items").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().materialRateItems.push(record);
+  }
+  logActivity({ action: "Added material rate item", detail: `${record.name} — ${record.unit_cost}/${record.unit}` });
+  return record;
+}
+
+export async function createPricingFormula(
+  input: Omit<PricingFormula, "id" | "company_id" | "created_at" | "active"> & { active?: boolean }
+): Promise<PricingFormula> {
+  const record: PricingFormula = {
+    id: `pf-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    active: input.active ?? true,
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("pricing_formulas").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().pricingFormulas.push(record);
+  }
+  logActivity({ action: "Added pricing formula", detail: `${record.name} (${record.work_type})` });
+  return record;
+}
+
+export async function addPricingFormulaComponent(input: {
+  formula_id: string;
+  material_rate_item_id: string;
+  quantity_per_unit_area: number;
+  notes?: string;
+}): Promise<PricingFormulaComponent> {
+  const record: PricingFormulaComponent = {
+    id: `pfc-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("pricing_formula_components").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().pricingFormulaComponents.push(record);
+  }
+  return record;
+}
+
+export async function removePricingFormulaComponent(id: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("pricing_formula_components").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    const idx = store.pricingFormulaComponents.findIndex((c) => c.id === id);
+    if (idx >= 0) store.pricingFormulaComponents.splice(idx, 1);
+  }
+}
+
+/** Saves a computed suggested price onto a job request's `estimated_value`
+ * (kept separate from `estimate_amount`, the amount actually sent to the
+ * client — see lib/types.ts). Used by the Estimate Calculator. */
+export async function saveJobRequestEstimatedValue(id: string, value: number): Promise<void> {
+  const client = sb();
+  const now = new Date().toISOString();
+  if (client) {
+    const { error } = await client.from("job_requests").update({ estimated_value: value, updated_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const jr = getStore().jobRequests.find((j) => j.id === id);
+    if (jr) {
+      jr.estimated_value = value;
+      jr.updated_at = now;
+    }
+  }
+  logActivity({ action: "Saved calculator estimate to job request", related_type: "job_request", related_id: id, detail: `${value}` });
+}
+
+/** Saves a computed suggested price onto a project's `project_value`. */
+export async function saveProjectEstimatedValue(id: string, value: number): Promise<void> {
+  const client = sb();
+  const now = new Date().toISOString();
+  if (client) {
+    const { error } = await client.from("projects").update({ project_value: value, updated_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const project = getStore().projects.find((p) => p.id === id);
+    if (project) {
+      project.project_value = value;
+      project.updated_at = now;
+    }
+  }
+  logActivity({ action: "Saved calculator estimate to project value", related_type: "project", related_id: id, detail: `${value}` });
+}
+
+// ---------------------------------------------------------------------
+// INVOICES & EMAIL ROUTING RULES
+// ---------------------------------------------------------------------
+
+export async function listInvoices(): Promise<Invoice[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("invoices").select("*").order("created_at", { ascending: false });
+    if (!error && data) return data as Invoice[];
+  }
+  return [...getStore().invoices].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+export async function createInvoice(
+  input: Omit<Invoice, "id" | "company_id" | "created_at" | "status" | "source"> & {
+    status?: InvoiceStatus;
+    source?: Invoice["source"];
+  }
+): Promise<Invoice> {
+  const record: Invoice = {
+    id: `inv-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    status: input.status ?? "Needed",
+    source: input.source ?? "Manual Entry",
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("invoices").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().invoices.unshift(record);
+  }
+  logActivity({ action: "Added invoice", detail: `${record.supplier}${record.amount != null ? ` — $${record.amount}` : ""}` });
+  return record;
+}
+
+export async function setInvoiceFileReference(id: string, fileReference: string | undefined): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("invoices").update({ file_reference: fileReference }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const invoice = getStore().invoices.find((i) => i.id === id);
+    if (invoice) invoice.file_reference = fileReference;
+  }
+}
+
+export async function updateInvoiceStatus(id: string, status: InvoiceStatus): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("invoices").update({ status }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const invoice = getStore().invoices.find((i) => i.id === id);
+    if (invoice) invoice.status = status;
+  }
+  logActivity({ action: `Invoice marked ${status}`, related_id: id });
+}
+
+export async function listEmailRoutingRules(): Promise<EmailRoutingRule[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("email_routing_rules").select("*").order("created_at");
+    if (!error && data) return data as EmailRoutingRule[];
+  }
+  return [...getStore().emailRoutingRules].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+}
+
+export async function createEmailRoutingRule(
+  input: Omit<EmailRoutingRule, "id" | "company_id" | "created_at" | "active"> & { active?: boolean }
+): Promise<EmailRoutingRule> {
+  const record: EmailRoutingRule = {
+    id: `err-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    active: input.active ?? true,
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("email_routing_rules").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().emailRoutingRules.push(record);
+  }
+  logActivity({ action: "Added email routing rule", detail: `"${record.keyword}" → ${record.action_type}` });
+  return record;
+}
+
+export async function setEmailRoutingRuleActive(id: string, active: boolean): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("email_routing_rules").update({ active }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const rule = getStore().emailRoutingRules.find((r) => r.id === id);
+    if (rule) rule.active = active;
+  }
 }
 
 // ---------------------------------------------------------------------

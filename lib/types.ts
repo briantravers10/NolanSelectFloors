@@ -272,6 +272,10 @@ export interface JobRequest {
   received_at: string;
   site_visit_date?: string;
   estimate_amount?: number;
+  // Optional suggested price saved from the Estimate Calculator (see
+  // lib/pricing.ts), kept separate from `estimate_amount` (the amount
+  // actually sent to the client) so a calculator save never overwrites it.
+  estimated_value?: number;
   estimate_sent_at?: string;
   approved_at?: string;
   converted_project_id?: string;
@@ -519,4 +523,90 @@ export interface CompanySetupAnswer {
   question_key: string;
   answer: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------
+// PRICING & ESTIMATING FORMULAS (see supabase/migrations/0004_pricing_and_invoices.sql)
+// ---------------------------------------------------------------------
+
+export const MATERIAL_RATE_CATEGORIES = ["Material", "Underlayment", "Adhesive", "Trim", "Other"] as const;
+export type MaterialRateCategory = (typeof MATERIAL_RATE_CATEGORIES)[number];
+
+export interface MaterialRateItem {
+  id: string;
+  company_id: string;
+  name: string;
+  unit: string;
+  unit_cost: number;
+  supplier?: string;
+  category: MaterialRateCategory;
+  notes?: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface PricingFormula {
+  id: string;
+  company_id: string;
+  name: string;
+  work_type: WorkType;
+  labor_rate_per_sqft?: number;
+  markup_percent?: number;
+  notes?: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface PricingFormulaComponent {
+  id: string;
+  company_id: string;
+  formula_id: string;
+  material_rate_item_id: string;
+  quantity_per_unit_area: number;
+  notes?: string;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------
+// INVOICES & EMAIL ROUTING RULES (foundation for a future Gmail-based
+// assistant — see README "Email Assistant & Invoice Routing")
+// ---------------------------------------------------------------------
+
+export const INVOICE_STATUSES = ["Needed", "Received", "Filed", "Paid", "Disputed"] as const;
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
+
+export const INVOICE_SOURCES = ["Manual Entry", "Email Auto-Routed"] as const;
+export type InvoiceSource = (typeof INVOICE_SOURCES)[number];
+
+export interface Invoice {
+  id: string;
+  company_id: string;
+  supplier: string;
+  amount?: number;
+  invoice_date?: string;
+  due_date?: string;
+  related_project_id?: string;
+  related_building_id?: string;
+  status: InvoiceStatus;
+  source: InvoiceSource;
+  file_reference?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export const EMAIL_ROUTING_ACTIONS = ["File As Invoice", "Flag For Calendar", "Flag For Review", "Ignore"] as const;
+export type EmailRoutingAction = (typeof EMAIL_ROUTING_ACTIONS)[number];
+
+export const EMAIL_ROUTING_BY = ["Supplier", "Building Address", "Manual/Case-by-Case"] as const;
+export type EmailRoutingBy = (typeof EMAIL_ROUTING_BY)[number];
+
+export interface EmailRoutingRule {
+  id: string;
+  company_id: string;
+  keyword: string;
+  action_type: EmailRoutingAction;
+  route_by: EmailRoutingBy;
+  active: boolean;
+  notes?: string;
+  created_at: string;
 }

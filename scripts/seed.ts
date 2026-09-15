@@ -52,6 +52,11 @@ async function main() {
     { name: "documents", rows: data.documents },
     { name: "photos", rows: data.photos },
     { name: "new_business_leads", rows: data.newBusinessLeads },
+    { name: "material_rate_items", rows: data.materialRateItems },
+    { name: "pricing_formulas", rows: data.pricingFormulas },
+    { name: "pricing_formula_components", rows: data.pricingFormulaComponents },
+    { name: "invoices", rows: data.invoices },
+    { name: "email_routing_rules", rows: data.emailRoutingRules },
     { name: "activity_log", rows: data.activityLog },
   ];
 
