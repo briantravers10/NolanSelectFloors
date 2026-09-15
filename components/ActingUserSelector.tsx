@@ -25,6 +25,8 @@ export function ActingUserSelector({ options, current }: { options: ActingUser[]
           <option key={o.id} value={o.id}>
             {o.fullName}
             {o.role === "manager" ? " (Manager/Owner)" : " (Estimator)"}
+            {" · "}
+            {o.accessRole === "owner_admin" ? "Owner/Admin" : o.accessRole === "office_staff" ? "Office Staff" : "Field/Employee"}
           </option>
         ))}
       </select>

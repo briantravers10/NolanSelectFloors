@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { COMPANY_ID } from "./seed-data";
 import { getStore } from "./store";
 import { getSupabaseClient } from "./supabaseClient";
-import type { OfficeUser } from "./types";
+import type { AccessRole, OfficeUser } from "./types";
 
 // Note: this file intentionally does NOT import from lib/db.ts (which
 // itself imports getCurrentCompanyId from here) to avoid a circular
@@ -53,16 +53,25 @@ export interface ActingUser {
   id: string; // office_users.id, or OWNER_ACTING_ID
   fullName: string;
   role: "estimator" | "manager";
+  // Labor-cost / pay-rate visibility tier — see lib/types.ts ACCESS_ROLES
+  // and README "Labor Cost Tracking — Access Control". Deliberately
+  // separate from `role` above, which only governs bid-claim permissions.
+  accessRole: AccessRole;
 }
 
 export function ownerActingUser(): ActingUser {
-  return { id: OWNER_ACTING_ID, fullName: getCurrentUser().fullName, role: "manager" };
+  return { id: OWNER_ACTING_ID, fullName: getCurrentUser().fullName, role: "manager", accessRole: "owner_admin" };
 }
 
 /** All personas the dev selector can switch between. */
 export async function listActingUserOptions(): Promise<ActingUser[]> {
   const officeUsers = await readOfficeUsers();
-  const estimators: ActingUser[] = officeUsers.map((u) => ({ id: u.id, fullName: u.full_name, role: u.role }));
+  const estimators: ActingUser[] = officeUsers.map((u) => ({
+    id: u.id,
+    fullName: u.full_name,
+    role: u.role,
+    accessRole: u.access_role ?? "office_staff",
+  }));
   return [...estimators, ownerActingUser()];
 }
 
@@ -78,5 +87,22 @@ export async function getActingUser(): Promise<ActingUser> {
   const officeUsers = await readOfficeUsers();
   const match = officeUsers.find((u) => u.id === id);
   if (!match) return ownerActingUser();
-  return { id: match.id, fullName: match.full_name, role: match.role };
+  return { id: match.id, fullName: match.full_name, role: match.role, accessRole: match.access_role ?? "office_staff" };
+}
+
+// ---------------------------------------------------------------------
+// PAY RATE / LABOR COST VISIBILITY GATE — UI-level only (no real auth
+// yet, see README). Every page/component that renders a pay rate or a
+// computed labor-cost dollar figure should check these before rendering.
+// ---------------------------------------------------------------------
+
+/** Owner/Admin (full) and Office Staff (view) can see pay rates / labor
+ * costs; Field/Employee cannot. */
+export function canViewLaborCost(user: Pick<ActingUser, "accessRole">): boolean {
+  return user.accessRole === "owner_admin" || user.accessRole === "office_staff";
+}
+
+/** Only Owner/Admin can edit employee pay rates. */
+export function canEditPayRates(user: Pick<ActingUser, "accessRole">): boolean {
+  return user.accessRole === "owner_admin";
 }

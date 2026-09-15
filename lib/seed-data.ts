@@ -82,10 +82,13 @@ export function buildSeedData() {
   // TopBar lets staff pick one of these three (or the company owner, who
   // acts as the Manager/Owner role for reassign/release actions) so the
   // bid-claiming UI has someone concrete to claim/lock bids as.
+  // access_role (build 6) is the labor-cost/pay-rate visibility permission
+  // tier — separate from `role` (estimator/manager) above, which only
+  // governs bid claiming. See lib/types.ts ACCESS_ROLES / README.
   const officeUsers: OfficeUser[] = [
-    { id: "ou-1", company_id: COMPANY_ID, full_name: "Sarah Bennett", email: "sbennett@nolanselectfloors.com", role: "estimator", active: true, created_at: "2021-01-11T00:00:00.000Z" },
-    { id: "ou-2", company_id: COMPANY_ID, full_name: "Emma Castillo", email: "ecastillo@nolanselectfloors.com", role: "estimator", active: true, created_at: "2021-06-04T00:00:00.000Z" },
-    { id: "ou-3", company_id: COMPANY_ID, full_name: "David Okoye", email: "dokoye@nolanselectfloors.com", role: "estimator", active: true, created_at: "2022-03-21T00:00:00.000Z" },
+    { id: "ou-1", company_id: COMPANY_ID, full_name: "Sarah Bennett", email: "sbennett@nolanselectfloors.com", role: "estimator", access_role: "owner_admin", active: true, created_at: "2021-01-11T00:00:00.000Z" },
+    { id: "ou-2", company_id: COMPANY_ID, full_name: "Emma Castillo", email: "ecastillo@nolanselectfloors.com", role: "estimator", access_role: "office_staff", active: true, created_at: "2021-06-04T00:00:00.000Z" },
+    { id: "ou-3", company_id: COMPANY_ID, full_name: "David Okoye", email: "dokoye@nolanselectfloors.com", role: "estimator", access_role: "field_employee", active: true, created_at: "2022-03-21T00:00:00.000Z" },
   ];
 
   // ---------------------------------------------------------------------
@@ -258,19 +261,32 @@ export function buildSeedData() {
   // ---------------------------------------------------------------------
   // EMPLOYEES
   // ---------------------------------------------------------------------
+  // pay_type/daily_rate/hourly_rate (build 6) — the ACTUAL-cost labor
+  // tracking rate, kept separate from `day_rate` above (the PLANNED-cost
+  // field still used for schedule_assignments.base_day_rate). Deliberately
+  // a mix of daily- and hourly-rate employees. See README "Labor Cost
+  // Tracking" for the worked examples these seed rows demonstrate:
+  //   - e-2 Dennis Cho (daily): works p-15 4h + p-2 4h on the SAME day —
+  //     proportional daily-rate allocation ($390 × 4/8 = $195 each).
+  //   - e-9 B.J. Fontaine (hourly): works p-15 9h + p-11 9h on the SAME
+  //     day — hourly cost is direct per job, no allocation (9×$32.50 each).
+  //   - e-8 Sal Marchetti (daily): CURRENT daily_rate is $330, but the old
+  //     actual_labor_entries rows for his completed job (p-7, ~12 days ago)
+  //     were snapshotted at $300 (his rate before a raise) — proves a later
+  //     raise never retroactively changes an already-logged job's cost.
   const employees: Employee[] = [
-    { id: "e-1", company_id: COMPANY_ID, first_name: "Miguel", last_name: "Alvarez", title: "Foreman / Supervisor", phone: "(917) 555-2201", email: "malvarez@nolanselectfloors.com", day_rate: 430, is_driver: true, active: true, hire_date: "2016-05-02", created_at: "2016-05-02T00:00:00.000Z" },
-    { id: "e-2", company_id: COMPANY_ID, first_name: "Dennis", last_name: "Cho", title: "Lead Installer", phone: "(917) 555-2202", email: "dcho@nolanselectfloors.com", day_rate: 390, is_driver: true, active: true, hire_date: "2017-08-14", created_at: "2017-08-14T00:00:00.000Z" },
-    { id: "e-3", company_id: COMPANY_ID, first_name: "Jamal", last_name: "Turner", title: "Floor Sander", phone: "(917) 555-2203", email: "jturner@nolanselectfloors.com", day_rate: 360, is_driver: false, active: true, hire_date: "2018-02-19", created_at: "2018-02-19T00:00:00.000Z" },
-    { id: "e-4", company_id: COMPANY_ID, first_name: "Ray", last_name: "Kowalski", title: "Finisher", phone: "(917) 555-2204", email: "rkowalski@nolanselectfloors.com", day_rate: 365, is_driver: false, active: true, hire_date: "2018-06-11", created_at: "2018-06-11T00:00:00.000Z" },
-    { id: "e-5", company_id: COMPANY_ID, first_name: "Victor", last_name: "Sousa", title: "Installer", phone: "(917) 555-2205", email: "vsousa@nolanselectfloors.com", day_rate: 340, is_driver: false, active: true, hire_date: "2019-01-07", created_at: "2019-01-07T00:00:00.000Z" },
-    { id: "e-6", company_id: COMPANY_ID, first_name: "Andre", last_name: "Willis", title: "Installer / Laborer", phone: "(917) 555-2206", email: "awillis@nolanselectfloors.com", day_rate: 325, is_driver: true, active: true, hire_date: "2019-09-23", created_at: "2019-09-23T00:00:00.000Z" },
-    { id: "e-7", company_id: COMPANY_ID, first_name: "Tommy", last_name: "Nguyen", title: "Tile Installer", phone: "(917) 555-2207", email: "tnguyen@nolanselectfloors.com", day_rate: 350, is_driver: false, active: true, hire_date: "2020-03-16", created_at: "2020-03-16T00:00:00.000Z" },
-    { id: "e-8", company_id: COMPANY_ID, first_name: "Sal", last_name: "Marchetti", title: "Carpet Installer", phone: "(917) 555-2208", email: "smarchetti@nolanselectfloors.com", day_rate: 330, is_driver: false, active: true, hire_date: "2020-07-01", created_at: "2020-07-01T00:00:00.000Z" },
-    { id: "e-9", company_id: COMPANY_ID, first_name: "B.J.", last_name: "Fontaine", title: "Laborer", phone: "(917) 555-2209", email: "bfontaine@nolanselectfloors.com", day_rate: 260, is_driver: true, active: true, hire_date: "2021-04-05", created_at: "2021-04-05T00:00:00.000Z" },
-    { id: "e-10", company_id: COMPANY_ID, first_name: "Eric", last_name: "Stavros", title: "Installer", phone: "(917) 555-2210", email: "estavros@nolanselectfloors.com", day_rate: 345, is_driver: false, active: true, hire_date: "2021-10-18", created_at: "2021-10-18T00:00:00.000Z" },
-    { id: "e-11", company_id: COMPANY_ID, first_name: "Paulie", last_name: "Reyes", title: "Demo / Floor Prep", phone: "(917) 555-2211", email: "preyes@nolanselectfloors.com", day_rate: 300, is_driver: false, active: true, hire_date: "2022-05-09", created_at: "2022-05-09T00:00:00.000Z" },
-    { id: "e-12", company_id: COMPANY_ID, first_name: "Chris", last_name: "Boateng", title: "Laborer", phone: "(917) 555-2212", email: "cboateng@nolanselectfloors.com", day_rate: 250, is_driver: false, active: true, hire_date: "2023-02-27", created_at: "2023-02-27T00:00:00.000Z" },
+    { id: "e-1", company_id: COMPANY_ID, first_name: "Miguel", last_name: "Alvarez", title: "Foreman / Supervisor", phone: "(917) 555-2201", email: "malvarez@nolanselectfloors.com", day_rate: 430, pay_type: "daily", daily_rate: 430, is_driver: true, active: true, hire_date: "2016-05-02", created_at: "2016-05-02T00:00:00.000Z" },
+    { id: "e-2", company_id: COMPANY_ID, first_name: "Dennis", last_name: "Cho", title: "Lead Installer", phone: "(917) 555-2202", email: "dcho@nolanselectfloors.com", day_rate: 390, pay_type: "daily", daily_rate: 390, is_driver: true, active: true, hire_date: "2017-08-14", created_at: "2017-08-14T00:00:00.000Z" },
+    { id: "e-3", company_id: COMPANY_ID, first_name: "Jamal", last_name: "Turner", title: "Floor Sander", phone: "(917) 555-2203", email: "jturner@nolanselectfloors.com", day_rate: 360, pay_type: "hourly", hourly_rate: 45, is_driver: false, active: true, hire_date: "2018-02-19", created_at: "2018-02-19T00:00:00.000Z" },
+    { id: "e-4", company_id: COMPANY_ID, first_name: "Ray", last_name: "Kowalski", title: "Finisher", phone: "(917) 555-2204", email: "rkowalski@nolanselectfloors.com", day_rate: 365, pay_type: "daily", daily_rate: 365, is_driver: false, active: true, hire_date: "2018-06-11", created_at: "2018-06-11T00:00:00.000Z" },
+    { id: "e-5", company_id: COMPANY_ID, first_name: "Victor", last_name: "Sousa", title: "Installer", phone: "(917) 555-2205", email: "vsousa@nolanselectfloors.com", day_rate: 340, pay_type: "hourly", hourly_rate: 42.5, is_driver: false, active: true, hire_date: "2019-01-07", created_at: "2019-01-07T00:00:00.000Z" },
+    { id: "e-6", company_id: COMPANY_ID, first_name: "Andre", last_name: "Willis", title: "Installer / Laborer", phone: "(917) 555-2206", email: "awillis@nolanselectfloors.com", day_rate: 325, pay_type: "daily", daily_rate: 325, is_driver: true, active: true, hire_date: "2019-09-23", created_at: "2019-09-23T00:00:00.000Z" },
+    { id: "e-7", company_id: COMPANY_ID, first_name: "Tommy", last_name: "Nguyen", title: "Tile Installer", phone: "(917) 555-2207", email: "tnguyen@nolanselectfloors.com", day_rate: 350, pay_type: "hourly", hourly_rate: 43.75, is_driver: false, active: true, hire_date: "2020-03-16", created_at: "2020-03-16T00:00:00.000Z" },
+    { id: "e-8", company_id: COMPANY_ID, first_name: "Sal", last_name: "Marchetti", title: "Carpet Installer", phone: "(917) 555-2208", email: "smarchetti@nolanselectfloors.com", day_rate: 330, pay_type: "daily", daily_rate: 330, is_driver: false, active: true, hire_date: "2020-07-01", created_at: "2020-07-01T00:00:00.000Z" },
+    { id: "e-9", company_id: COMPANY_ID, first_name: "B.J.", last_name: "Fontaine", title: "Laborer", phone: "(917) 555-2209", email: "bfontaine@nolanselectfloors.com", day_rate: 260, pay_type: "hourly", hourly_rate: 32.5, is_driver: true, active: true, hire_date: "2021-04-05", created_at: "2021-04-05T00:00:00.000Z" },
+    { id: "e-10", company_id: COMPANY_ID, first_name: "Eric", last_name: "Stavros", title: "Installer", phone: "(917) 555-2210", email: "estavros@nolanselectfloors.com", day_rate: 345, pay_type: "daily", daily_rate: 345, is_driver: false, active: true, hire_date: "2021-10-18", created_at: "2021-10-18T00:00:00.000Z" },
+    { id: "e-11", company_id: COMPANY_ID, first_name: "Paulie", last_name: "Reyes", title: "Demo / Floor Prep", phone: "(917) 555-2211", email: "preyes@nolanselectfloors.com", day_rate: 300, pay_type: "hourly", hourly_rate: 37.5, is_driver: false, active: true, hire_date: "2022-05-09", created_at: "2022-05-09T00:00:00.000Z" },
+    { id: "e-12", company_id: COMPANY_ID, first_name: "Chris", last_name: "Boateng", title: "Laborer", phone: "(917) 555-2212", email: "cboateng@nolanselectfloors.com", day_rate: 250, pay_type: "hourly", hourly_rate: 31.25, is_driver: false, active: true, hire_date: "2023-02-27", created_at: "2023-02-27T00:00:00.000Z" },
   ];
 
   const skillMap: Record<string, string[]> = {
@@ -674,8 +690,22 @@ export function buildSeedData() {
     project_id: string,
     work_date: string,
     hours: number,
-    opts?: { start_time?: string; end_time?: string; notes?: string; created_at?: string }
+    opts?: {
+      start_time?: string;
+      end_time?: string;
+      notes?: string;
+      created_at?: string;
+      // Historical Pay Rate Accuracy demo only — overrides the snapshot
+      // that would otherwise be taken from the employee's CURRENT rate, to
+      // simulate an entry logged before a since-given raise. Every other
+      // call snapshots from the employee's live seed rate above, exactly
+      // like lib/db.ts#createActualLaborEntry does at real save time.
+      rateOverride?: { rate_type: Employee["pay_type"]; rate_amount: number };
+    }
   ) {
+    const emp = employees.find((e) => e.id === employee_id)!;
+    const rate_type = opts?.rateOverride?.rate_type ?? emp.pay_type;
+    const rate_amount = opts?.rateOverride?.rate_amount ?? (emp.pay_type === "hourly" ? emp.hourly_rate : emp.daily_rate);
     actualLaborEntries.push({
       id: `al-${alId++}`,
       company_id: COMPANY_ID,
@@ -686,6 +716,8 @@ export function buildSeedData() {
       start_time: opts?.start_time,
       end_time: opts?.end_time,
       notes: opts?.notes,
+      rate_type,
+      rate_amount,
       created_by: "Miguel Alvarez",
       updated_by: "Miguel Alvarez",
       created_at: opts?.created_at ?? `${work_date}T17:00:00.000Z`,
@@ -716,10 +748,17 @@ export function buildSeedData() {
 
   // Historical actual hours for the completed job (p-7), so the Completed
   // Job Summary's per-employee days/hours totals aren't empty.
-  addActual("e-8", "p-7", t(-12), 8, { start_time: "8:00 AM", end_time: "4:30 PM" });
+  //
+  // HISTORICAL PAY RATE ACCURACY DEMO: Sal Marchetti's (e-8) CURRENT
+  // daily_rate is $330 (see employees above), but these entries are
+  // snapshotted at $300 — his rate at the time, before a since-given raise.
+  // A rate change on his profile today must NOT change these already-
+  // computed job costs. Verify via lib/labor-cost.ts against these rows.
+  const salsRateWhenP7Ran = { rate_type: "daily" as const, rate_amount: 300 };
+  addActual("e-8", "p-7", t(-12), 8, { start_time: "8:00 AM", end_time: "4:30 PM", rateOverride: salsRateWhenP7Ran });
   addActual("e-9", "p-7", t(-12), 6, { start_time: "8:00 AM", end_time: "2:30 PM" });
-  addActual("e-8", "p-7", t(-11), 8, { start_time: "8:00 AM", end_time: "4:30 PM" });
-  addActual("e-8", "p-7", t(-10), 7, { start_time: "8:00 AM", end_time: "3:30 PM" });
+  addActual("e-8", "p-7", t(-11), 8, { start_time: "8:00 AM", end_time: "4:30 PM", rateOverride: salsRateWhenP7Ran });
+  addActual("e-8", "p-7", t(-10), 7, { start_time: "8:00 AM", end_time: "3:30 PM", rateOverride: salsRateWhenP7Ran });
 
   // ---------------------------------------------------------------------
   // DAILY SCHEDULE CONFIRMATIONS — "Confirm Day" from End-of-Day Review.

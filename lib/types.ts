@@ -84,6 +84,16 @@ export type BidStatus = (typeof BID_STATUSES)[number];
 export const OFFICE_USER_ROLES = ["estimator", "manager"] as const;
 export type OfficeUserRole = (typeof OFFICE_USER_ROLES)[number];
 
+// Labor-cost / pay-rate visibility permission tier — deliberately SEPARATE
+// from `OfficeUserRole` above (estimator/manager), which only governs the
+// bid-claim workflow. See supabase/migrations/0006_labor_cost_tracking.sql
+// and README "Labor Cost Tracking — Access Control" for the mapping:
+//   owner_admin     — full access: view AND edit pay rates / labor costs
+//   office_staff    — view-only access to pay rates / labor costs
+//   field_employee  — no access; rate/cost figures are hidden entirely
+export const ACCESS_ROLES = ["owner_admin", "office_staff", "field_employee"] as const;
+export type AccessRole = (typeof ACCESS_ROLES)[number];
+
 export const WORK_TYPES = [
   "Hardwood Installation",
   "Floor Sanding",
@@ -323,6 +333,9 @@ export interface OfficeUser {
   full_name: string;
   email?: string;
   role: OfficeUserRole;
+  // See ACCESS_ROLES above — the permission boundary for pay rates /
+  // labor-cost dollar figures. Added in 0006_labor_cost_tracking.sql.
+  access_role: AccessRole;
   active: boolean;
   created_at: string;
 }
@@ -333,6 +346,14 @@ export interface ProjectWorkType {
   work_type: WorkType;
 }
 
+// Pay type for the ACTUAL-hours labor-cost system (build 6) — see
+// README "Labor Cost Tracking". Separate from the PLANNED-cost system
+// still driven by `day_rate` below (used to snapshot
+// schedule_assignments.base_day_rate) — both are kept, see README
+// "Reconciling planned vs. actual labor cost".
+export const PAY_TYPES = ["daily", "hourly"] as const;
+export type PayType = (typeof PAY_TYPES)[number];
+
 export interface Employee {
   id: string;
   company_id: string;
@@ -341,7 +362,14 @@ export interface Employee {
   title: string;
   phone?: string;
   email?: string;
+  // PLANNED-cost system (builds 1-2) — unchanged. Still the source for
+  // schedule_assignments.base_day_rate. Left in place; do not remove.
   day_rate: number;
+  // ACTUAL-cost system (build 6). Whichever field applies to `pay_type` is
+  // the one that matters; the other is typically left unset/0.
+  pay_type: PayType;
+  daily_rate?: number;
+  hourly_rate?: number;
   is_driver: boolean;
   active: boolean;
   hire_date?: string;
@@ -683,6 +711,13 @@ export interface ActualLaborEntry {
   start_time?: string;
   end_time?: string;
   notes?: string;
+  // HISTORICAL PAY RATE ACCURACY: snapshotted from the employee's pay_type
+  // + applicable rate at the moment this entry is created — NEVER
+  // recalculated from the employee's current rate later. A later raise (or
+  // pay-type change) must not retroactively change an already-logged
+  // entry's cost. See lib/labor-cost.ts and README.
+  rate_type?: PayType;
+  rate_amount?: number;
   created_by?: string;
   updated_by?: string;
   created_at: string;
