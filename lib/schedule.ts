@@ -191,6 +191,7 @@ export interface ScheduleJobRow {
   clientName?: string;
   contactName?: string;
   contactPhone?: string;
+  contactEmail?: string;
   crewCount: number;
   crewNames: string[];
   crew: { assignmentId: string; employeeId: string; name: string }[];
@@ -281,6 +282,7 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       clientName: client?.name,
       contactName: contact ? `${contact.first_name} ${contact.last_name}` : undefined,
       contactPhone: contact?.phone ?? contact?.mobile_phone,
+      contactEmail: contact?.email,
       crewCount: crew.length,
       crewNames,
       crew: crewList,

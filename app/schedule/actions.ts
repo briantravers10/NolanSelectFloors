@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import {
   confirmDay,
   createActualLaborEntry,
@@ -9,6 +10,7 @@ import {
   deleteActualLaborEntry,
   deleteScheduleAssignment,
   getOrCreateProjectScheduleDay,
+  listScheduleAssignments,
   saveCompletionNotes,
   updateProjectScheduleDay,
   updateScheduleAssignmentCallTime,
@@ -105,6 +107,69 @@ export async function setScheduleNotesAction(projectId: string, date: string, fo
   const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
   await updateProjectScheduleDay(day.id, { notes }, actingUser.fullName);
   revalidateSchedule(projectId);
+}
+
+// ---------------------------------------------------------------------
+// Create / Edit Schedule — the single "SAVE TO SCHEDULE" form action.
+// Reuses the exact per-field actions above (and, through them, the same
+// getOrCreateProjectScheduleDay/updateProjectScheduleDay/createScheduleAssignment/
+// deleteScheduleAssignment calls and audit logging the previous
+// inline-dropdown implementation used) — just from one combined form
+// instead of from inline row controls. Only fields that actually changed
+// are written, so re-saving an untouched value never creates a spurious
+// Change History entry, and editing never creates a duplicate schedule
+// record — it updates the same project_schedule_days/schedule_assignments
+// rows in place.
+// ---------------------------------------------------------------------
+
+export async function saveScheduleEntryAction(formData: FormData) {
+  const project_id = String(formData.get("project_id") ?? "");
+  const schedule_date = String(formData.get("schedule_date") ?? "");
+  if (!project_id || !schedule_date) return;
+
+  const actingUser = await getActingUser();
+  const day = await getOrCreateProjectScheduleDay(project_id, schedule_date, actingUser.fullName);
+
+  const schedule_color = String(formData.get("schedule_color") ?? "");
+  const coi_status = String(formData.get("coi_status") ?? "");
+  const materials_status = String(formData.get("materials_status") ?? "");
+  const job_status = String(formData.get("job_status") ?? "");
+  const work_type_id = String(formData.get("work_type_id") ?? "");
+  const notes = String(formData.get("notes") ?? "");
+
+  if (schedule_color && schedule_color !== day.schedule_color) await setScheduleColorAction(project_id, schedule_date, formData);
+  if (coi_status && coi_status !== day.coi_status) await setCoiStatusAction(project_id, schedule_date, formData);
+  if (materials_status && materials_status !== day.materials_status) await setMaterialsStatusAction(project_id, schedule_date, formData);
+  if (job_status && job_status !== day.job_status) await setJobStatusAction(project_id, schedule_date, formData);
+  if (work_type_id !== (day.work_type_id ?? "")) await setWorkTypeAction(project_id, schedule_date, formData);
+  if (notes !== (day.notes ?? "")) await setScheduleNotesAction(project_id, schedule_date, formData);
+
+  // Crew — reconcile the selected employee checkboxes against the
+  // existing schedule_assignments for this project+date, reusing the same
+  // add/remove actions (and their audit logging) as before.
+  const selectedEmployeeIds = new Set(formData.getAll("employee_ids").map(String).filter(Boolean));
+  const currentAssignments = (await listScheduleAssignments()).filter(
+    (a) => a.project_id === project_id && a.schedule_date === schedule_date
+  );
+
+  for (const assignment of currentAssignments) {
+    if (!selectedEmployeeIds.has(assignment.employee_id)) {
+      await removeAssignmentAction(assignment.id, project_id);
+    }
+  }
+  for (const employeeId of selectedEmployeeIds) {
+    if (!currentAssignments.some((a) => a.employee_id === employeeId)) {
+      const crewForm = new FormData();
+      crewForm.set("project_id", project_id);
+      crewForm.set("employee_id", employeeId);
+      crewForm.set("schedule_date", schedule_date);
+      crewForm.set("role_on_job", "Installer");
+      crewForm.set("call_time", "7:00 AM");
+      await addAssignmentAction(crewForm);
+    }
+  }
+
+  redirect(`/schedule?date=${schedule_date}`);
 }
 
 // ---------------------------------------------------------------------
