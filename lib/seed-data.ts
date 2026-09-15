@@ -21,6 +21,7 @@ import type {
   JobRequest,
   Material,
   NewBusinessLead,
+  OfficeUser,
   PhotoRecord,
   Project,
   ProjectCrewRequirement,
@@ -64,6 +65,17 @@ export function buildSeedData() {
       active: true,
       created_at: "2019-03-01T00:00:00.000Z",
     },
+  ];
+
+  // Simulated office estimators. Placeholder for real per-user auth — see
+  // README "Dev user selector" section. The dev "acting as" selector in the
+  // TopBar lets staff pick one of these three (or the company owner, who
+  // acts as the Manager/Owner role for reassign/release actions) so the
+  // bid-claiming UI has someone concrete to claim/lock bids as.
+  const officeUsers: OfficeUser[] = [
+    { id: "ou-1", company_id: COMPANY_ID, full_name: "Sarah Bennett", email: "sbennett@nolanselectfloors.com", role: "estimator", active: true, created_at: "2021-01-11T00:00:00.000Z" },
+    { id: "ou-2", company_id: COMPANY_ID, full_name: "Emma Castillo", email: "ecastillo@nolanselectfloors.com", role: "estimator", active: true, created_at: "2021-06-04T00:00:00.000Z" },
+    { id: "ou-3", company_id: COMPANY_ID, full_name: "David Okoye", email: "dokoye@nolanselectfloors.com", role: "estimator", active: true, created_at: "2022-03-21T00:00:00.000Z" },
   ];
 
   // ---------------------------------------------------------------------
@@ -254,7 +266,7 @@ export function buildSeedData() {
   // ---------------------------------------------------------------------
   // PROJECTS
   // ---------------------------------------------------------------------
-  const projects: Project[] = [
+  const projectBaseSeeds = [
     { id: "p-1", company_id: COMPANY_ID, building_id: "b-1", unit_number: "4B", name: "Unit 4B — Hardwood Sand & Refinish", description: "Full sand, stain (Jacobean) and 3-coat poly finish on existing red oak.", status: "In Progress", project_value: 6200, other_cost: 150, needs_transportation: true, start_date: t(-2), target_end_date: t(2), notes: "Tenant moved out, unit is vacant — full access.", created_at: t(-20) + "T00:00:00.000Z", updated_at: nowIso + "T00:00:00.000Z" },
     { id: "p-2", company_id: COMPANY_ID, building_id: "b-2", unit_number: "12C", name: "Unit 12C — LVP Installation", description: "Remove old carpet, install 900 sq ft luxury vinyl plank.", status: "Scheduled", project_value: 5400, other_cost: 0, needs_transportation: true, start_date: t(1), target_end_date: t(3), created_at: t(-10) + "T00:00:00.000Z", updated_at: nowIso + "T00:00:00.000Z" },
     { id: "p-3", company_id: COMPANY_ID, building_id: "b-5", unit_number: "Common Hallway 4th Fl", name: "4th Floor Hallway Carpet Replacement", description: "Replace worn commercial carpet tile in 4th floor corridor, ~400 sq ft.", status: "Ready to Schedule", project_value: 3800, other_cost: 0, needs_transportation: true, start_date: t(6), target_end_date: t(7), created_at: t(-8) + "T00:00:00.000Z", updated_at: nowIso + "T00:00:00.000Z" },
@@ -270,7 +282,59 @@ export function buildSeedData() {
     { id: "p-13", company_id: COMPANY_ID, building_id: "b-4", unit_number: "22F", name: "Unit 22F — Hardwood Refinish", description: "Full refinish of existing hardwood, gray-wash stain per owner request.", status: "Paid", project_value: 5300, other_cost: 0, needs_transportation: true, start_date: t(-25), target_end_date: t(-22), actual_end_date: t(-22), created_at: t(-50) + "T00:00:00.000Z", updated_at: t(-20) + "T00:00:00.000Z" },
     { id: "p-14", company_id: COMPANY_ID, building_id: "b-18", unit_number: "3B", name: "Unit 3B — Carpet Replacement", description: "Remove and replace carpet in 1BR unit, standard grade.", status: "Scheduled", project_value: 2600, other_cost: 0, needs_transportation: true, start_date: t(0), target_end_date: t(0), created_at: t(-6) + "T00:00:00.000Z", updated_at: nowIso + "T00:00:00.000Z" },
     { id: "p-15", company_id: COMPANY_ID, building_id: "b-10", unit_number: "7A", name: "Unit 7A — LVP + Baseboard", description: "LVP install throughout plus new baseboards, 2BR unit.", status: "In Progress", project_value: 6900, other_cost: 150, needs_transportation: true, start_date: t(-1), target_end_date: t(3), created_at: t(-14) + "T00:00:00.000Z", updated_at: nowIso + "T00:00:00.000Z" },
+    // Extra seed bids demonstrating every bid_status/pipeline_stage combo
+    // that isn't already covered by p-1..p-15's existing granular statuses
+    // (unclaimed, claimed-not-started, ready for review, sent/awaiting
+    // decision, rejected). See bidWorkflowById below for the full mapping.
+    { id: "p-16", company_id: COMPANY_ID, building_id: "b-12", unit_number: "5C", name: "Unit 5C — Lounge Touch-Up Bid", description: "Spot-refinish request for resident lounge floor scuffs.", status: "Approved", project_value: 1400, other_cost: 0, needs_transportation: false, created_at: t(-13) + "T00:00:00.000Z", updated_at: t(-9) + "T00:00:00.000Z" },
+    { id: "p-17", company_id: COMPANY_ID, building_id: "b-7", unit_number: "9F", name: "Unit 9F — LVP Install Bid", description: "Turnover unit LVP install, 600 sq ft, awaiting internal review before sending.", status: "Approved", project_value: 4200, other_cost: 0, needs_transportation: true, created_at: t(-4) + "T00:00:00.000Z", updated_at: t(-1) + "T00:00:00.000Z" },
+    { id: "p-18", company_id: COMPANY_ID, building_id: "b-2", unit_number: "3D", name: "Unit 3D — Hardwood Refinish Bid", description: "Sand and refinish estimate sent to Vanguard, awaiting board decision.", status: "Approved", project_value: 5100, other_cost: 0, needs_transportation: true, created_at: t(-6) + "T00:00:00.000Z", updated_at: t(-2) + "T00:00:00.000Z" },
+    { id: "p-19", company_id: COMPANY_ID, building_id: "b-16", unit_number: "2A", name: "Unit 2A — Carpet Replacement Bid", description: "Standard-grade carpet swap for turnover unit, just claimed.", status: "Approved", project_value: 2300, other_cost: 0, needs_transportation: true, created_at: t(-1) + "T00:00:00.000Z", updated_at: t(-1) + "T00:00:00.000Z" },
   ];
+
+  // ---------------------------------------------------------------------
+  // BID WORKFLOW: pipeline_stage / bid_status / estimator / timestamps
+  // ---------------------------------------------------------------------
+  // Keyed lookup so the project literals above stay focused on the job
+  // itself. Every project gets a pipeline_stage + bid_status (defaulting to
+  // "Project Bid" / "Unclaimed" below); this table overrides both plus
+  // assigned_estimator_id and the set-once lifecycle timestamps, so the
+  // seed data demonstrates every stage of the 6-stage pipeline and every
+  // bid_status at least once — including one Unclaimed, one Claimed
+  // (not-yet-started), one In Progress, one Ready for Review, one
+  // Completed/Sent (Awaiting Decision), and one Rejected.
+  const bidWorkflowById: Record<string, Partial<Project>> = {
+    "p-1": { pipeline_stage: "Project In Process", bid_status: "Accepted", assigned_estimator_id: "ou-1", claimed_at: `${t(-19)}T09:00:00.000Z`, bid_claimed_at: `${t(-19)}T09:00:00.000Z`, bid_completed_at: `${t(-18)}T00:00:00.000Z`, bid_sent_at: `${t(-18)}T12:00:00.000Z`, bid_accepted_at: `${t(-17)}T09:00:00.000Z`, scheduled_at: `${t(-3)}T09:00:00.000Z`, sent_to_crew_at: `${t(-3)}T09:00:00.000Z`, project_started_at: `${t(-2)}T07:00:00.000Z` },
+    "p-2": { pipeline_stage: "Scheduled", bid_status: "Accepted", assigned_estimator_id: "ou-2", claimed_at: `${t(-9)}T09:00:00.000Z`, bid_claimed_at: `${t(-9)}T09:00:00.000Z`, bid_completed_at: `${t(-8)}T00:00:00.000Z`, bid_sent_at: `${t(-8)}T12:00:00.000Z`, bid_accepted_at: `${t(-7)}T09:00:00.000Z`, scheduled_at: `${t(-6)}T09:00:00.000Z` },
+    "p-3": { pipeline_stage: "Sent to Crew", bid_status: "Accepted", assigned_estimator_id: "ou-3", claimed_at: `${t(-7)}T09:00:00.000Z`, bid_claimed_at: `${t(-7)}T09:00:00.000Z`, bid_completed_at: `${t(-6)}T00:00:00.000Z`, bid_sent_at: `${t(-6)}T12:00:00.000Z`, bid_accepted_at: `${t(-5)}T09:00:00.000Z`, scheduled_at: `${t(-2)}T09:00:00.000Z`, sent_to_crew_at: `${t(-1)}T09:00:00.000Z` },
+    "p-4": { pipeline_stage: "Bid Accepted", bid_status: "Accepted", assigned_estimator_id: "ou-1", claimed_at: `${t(-14)}T09:00:00.000Z`, bid_claimed_at: `${t(-14)}T09:00:00.000Z`, bid_completed_at: `${t(-13)}T00:00:00.000Z`, bid_sent_at: `${t(-13)}T12:00:00.000Z`, bid_accepted_at: `${t(-12)}T09:00:00.000Z` },
+    "p-5": { pipeline_stage: "Project In Process", bid_status: "Accepted", assigned_estimator_id: "ou-2", claimed_at: `${t(-17)}T09:00:00.000Z`, bid_claimed_at: `${t(-17)}T09:00:00.000Z`, bid_completed_at: `${t(-16)}T00:00:00.000Z`, bid_sent_at: `${t(-16)}T12:00:00.000Z`, bid_accepted_at: `${t(-15)}T09:00:00.000Z`, scheduled_at: `${t(-4)}T09:00:00.000Z`, sent_to_crew_at: `${t(-2)}T09:00:00.000Z`, project_started_at: `${t(-1)}T07:00:00.000Z` },
+    "p-6": { pipeline_stage: "Project Bid", bid_status: "In Progress", assigned_estimator_id: "ou-3", claimed_at: `${t(-24)}T09:00:00.000Z`, bid_claimed_at: `${t(-24)}T09:00:00.000Z` },
+    "p-7": { pipeline_stage: "Project Completed", bid_status: "Accepted", assigned_estimator_id: "ou-1", claimed_at: `${t(-39)}T09:00:00.000Z`, bid_claimed_at: `${t(-39)}T09:00:00.000Z`, bid_completed_at: `${t(-38)}T00:00:00.000Z`, bid_sent_at: `${t(-38)}T12:00:00.000Z`, bid_accepted_at: `${t(-37)}T09:00:00.000Z`, scheduled_at: `${t(-13)}T09:00:00.000Z`, sent_to_crew_at: `${t(-13)}T09:00:00.000Z`, project_started_at: `${t(-12)}T07:00:00.000Z`, project_completed_at: `${t(-10)}T17:00:00.000Z` },
+    "p-8": { pipeline_stage: "Project In Process", bid_status: "Accepted", assigned_estimator_id: "ou-2", claimed_at: `${t(-29)}T09:00:00.000Z`, bid_claimed_at: `${t(-29)}T09:00:00.000Z`, bid_completed_at: `${t(-28)}T00:00:00.000Z`, bid_sent_at: `${t(-28)}T12:00:00.000Z`, bid_accepted_at: `${t(-27)}T09:00:00.000Z`, scheduled_at: `${t(-7)}T09:00:00.000Z`, sent_to_crew_at: `${t(-7)}T09:00:00.000Z`, project_started_at: `${t(-6)}T07:00:00.000Z` },
+    "p-9": { pipeline_stage: "Project Bid", bid_status: "Unclaimed" },
+    "p-10": { pipeline_stage: "Bid Accepted", bid_status: "Accepted", assigned_estimator_id: "ou-3", claimed_at: `${t(-6)}T09:00:00.000Z`, bid_claimed_at: `${t(-6)}T09:00:00.000Z`, bid_completed_at: `${t(-5)}T00:00:00.000Z`, bid_sent_at: `${t(-5)}T12:00:00.000Z`, bid_accepted_at: `${t(-4)}T09:00:00.000Z` },
+    "p-11": { pipeline_stage: "Project In Process", bid_status: "Accepted", assigned_estimator_id: "ou-1", claimed_at: `${t(-21)}T09:00:00.000Z`, bid_claimed_at: `${t(-21)}T09:00:00.000Z`, bid_completed_at: `${t(-20)}T00:00:00.000Z`, bid_sent_at: `${t(-20)}T12:00:00.000Z`, bid_accepted_at: `${t(-19)}T09:00:00.000Z`, scheduled_at: `${t(-4)}T09:00:00.000Z`, sent_to_crew_at: `${t(-4)}T09:00:00.000Z`, project_started_at: `${t(-3)}T07:00:00.000Z` },
+    "p-12": { pipeline_stage: "Project Completed", bid_status: "Accepted", assigned_estimator_id: "ou-2", claimed_at: `${t(-34)}T09:00:00.000Z`, bid_claimed_at: `${t(-34)}T09:00:00.000Z`, bid_completed_at: `${t(-33)}T00:00:00.000Z`, bid_sent_at: `${t(-33)}T12:00:00.000Z`, bid_accepted_at: `${t(-32)}T09:00:00.000Z`, scheduled_at: `${t(-10)}T09:00:00.000Z`, sent_to_crew_at: `${t(-10)}T09:00:00.000Z`, project_started_at: `${t(-9)}T07:00:00.000Z`, project_completed_at: `${t(-8)}T17:00:00.000Z` },
+    "p-13": { pipeline_stage: "Project Completed", bid_status: "Accepted", assigned_estimator_id: "ou-3", claimed_at: `${t(-49)}T09:00:00.000Z`, bid_claimed_at: `${t(-49)}T09:00:00.000Z`, bid_completed_at: `${t(-48)}T00:00:00.000Z`, bid_sent_at: `${t(-48)}T12:00:00.000Z`, bid_accepted_at: `${t(-47)}T09:00:00.000Z`, scheduled_at: `${t(-26)}T09:00:00.000Z`, sent_to_crew_at: `${t(-26)}T09:00:00.000Z`, project_started_at: `${t(-25)}T07:00:00.000Z`, project_completed_at: `${t(-22)}T17:00:00.000Z` },
+    "p-14": { pipeline_stage: "Scheduled", bid_status: "Accepted", assigned_estimator_id: "ou-1", claimed_at: `${t(-5)}T09:00:00.000Z`, bid_claimed_at: `${t(-5)}T09:00:00.000Z`, bid_completed_at: `${t(-4)}T00:00:00.000Z`, bid_sent_at: `${t(-4)}T12:00:00.000Z`, bid_accepted_at: `${t(-3)}T09:00:00.000Z`, scheduled_at: `${t(-2)}T09:00:00.000Z` },
+    "p-15": { pipeline_stage: "Project In Process", bid_status: "Accepted", assigned_estimator_id: "ou-2", claimed_at: `${t(-13)}T09:00:00.000Z`, bid_claimed_at: `${t(-13)}T09:00:00.000Z`, bid_completed_at: `${t(-12)}T00:00:00.000Z`, bid_sent_at: `${t(-12)}T12:00:00.000Z`, bid_accepted_at: `${t(-11)}T09:00:00.000Z`, scheduled_at: `${t(-2)}T09:00:00.000Z`, sent_to_crew_at: `${t(-2)}T09:00:00.000Z`, project_started_at: `${t(-1)}T07:00:00.000Z` },
+    // Rejected bid — client declined, still sitting in Project Bid stage.
+    "p-16": { pipeline_stage: "Project Bid", bid_status: "Rejected", assigned_estimator_id: "ou-1", claimed_at: `${t(-13)}T09:00:00.000Z`, bid_claimed_at: `${t(-13)}T09:00:00.000Z`, bid_completed_at: `${t(-11)}T00:00:00.000Z`, bid_sent_at: `${t(-11)}T12:00:00.000Z` },
+    // Ready for internal review, not yet sent — "Ready/Completed" column.
+    "p-17": { pipeline_stage: "Project Bid", bid_status: "Ready for Review", assigned_estimator_id: "ou-2", claimed_at: `${t(-4)}T09:00:00.000Z`, bid_claimed_at: `${t(-4)}T09:00:00.000Z`, bid_completed_at: `${t(-1)}T15:00:00.000Z` },
+    // Sent to client, awaiting their decision — "Awaiting Decision" column.
+    "p-18": { pipeline_stage: "Project Bid", bid_status: "Completed/Sent", assigned_estimator_id: "ou-3", claimed_at: `${t(-6)}T09:00:00.000Z`, bid_claimed_at: `${t(-6)}T09:00:00.000Z`, bid_completed_at: `${t(-3)}T00:00:00.000Z`, bid_sent_at: `${t(-2)}T12:00:00.000Z` },
+    // Just claimed, estimator hasn't started the estimate yet.
+    "p-19": { pipeline_stage: "Project Bid", bid_status: "Claimed", assigned_estimator_id: "ou-1", claimed_at: `${t(-1)}T14:00:00.000Z`, bid_claimed_at: `${t(-1)}T14:00:00.000Z` },
+  };
+
+  const projects: Project[] = projectBaseSeeds.map((p) => ({
+    pipeline_stage: "Project Bid",
+    bid_status: "Unclaimed",
+    ...p,
+    ...bidWorkflowById[p.id],
+  })) as Project[];
 
   const workTypeMap: Record<string, string[]> = {
     "p-1": ["Floor Sanding", "Staining", "Finishing"],
@@ -309,6 +373,12 @@ export function buildSeedData() {
     { id: "jr-6", company_id: COMPANY_ID, building_id: "b-6", contact_id: "ct-4", unit_number: "10B", description: "Requested full hardwood replacement, board declined due to budget this fiscal year.", status: "Declined", received_via: "email", received_at: `${t(-30)}T09:00:00.000Z`, estimate_amount: 8900, estimate_sent_at: `${t(-25)}T09:00:00.000Z`, created_at: `${t(-30)}T09:00:00.000Z`, updated_at: `${t(-20)}T09:00:00.000Z` },
     { id: "jr-7", company_id: COMPANY_ID, building_id: "b-1", contact_id: "ct-1", unit_number: "4B", description: "Full sand and refinish of existing hardwood in vacant unit before new tenant moves in.", status: "Converted to Project", received_via: "phone", received_at: `${t(-22)}T09:00:00.000Z`, site_visit_date: t(-20), estimate_amount: 6200, estimate_sent_at: `${t(-19)}T09:00:00.000Z`, approved_at: `${t(-17)}T09:00:00.000Z`, converted_project_id: "p-1", created_at: `${t(-22)}T09:00:00.000Z`, updated_at: `${t(-17)}T09:00:00.000Z` },
     { id: "jr-8", company_id: COMPANY_ID, building_id: "b-9", contact_id: "ct-6", unit_number: "3F", description: "Laminate install requested for turnover unit ahead of new lease start.", status: "Converted to Project", received_via: "text", received_at: `${t(-20)}T09:00:00.000Z`, site_visit_date: t(-18), estimate_amount: 5600, estimate_sent_at: `${t(-17)}T09:00:00.000Z`, approved_at: `${t(-15)}T09:00:00.000Z`, converted_project_id: "p-5", created_at: `${t(-20)}T09:00:00.000Z`, updated_at: `${t(-15)}T09:00:00.000Z` },
+    // Duplicate-bid override demo: a second request for the same
+    // building+unit as the already-open project p-1 (The Wexford, 4B).
+    // Office staff saw the "Possible duplicate bid" warning when creating
+    // this and clicked "Create Anyway" with a reason — logged below in
+    // activityLog so the override is visible in seed history.
+    { id: "jr-9", company_id: COMPANY_ID, building_id: "b-1", contact_id: "ct-1", unit_number: "4B", description: "Resident called again about dust left behind after the hardwood refinish — wants a cleanup visit.", status: "New Request", received_via: "phone", received_at: `${t(-1)}T11:40:00.000Z`, created_at: `${t(-1)}T11:40:00.000Z`, updated_at: `${t(-1)}T11:40:00.000Z` },
   ];
 
   // ---------------------------------------------------------------------
@@ -489,6 +559,17 @@ export function buildSeedData() {
     { id: "act-1", company_id: COMPANY_ID, actor_name: "Brian Travers", action: "Converted job request to project", related_type: "project", related_id: "p-1", detail: "Job request JR-7 converted to project for Unit 4B hardwood refinish.", created_at: `${t(-17)}T09:00:00.000Z` },
     { id: "act-2", company_id: COMPANY_ID, actor_name: "Brian Travers", action: "Converted job request to project", related_type: "project", related_id: "p-5", detail: "Job request JR-8 converted to project for Unit 3F laminate.", created_at: `${t(-15)}T09:00:00.000Z` },
     { id: "act-3", company_id: COMPANY_ID, actor_name: "Miguel Alvarez", action: "Marked project In Progress", related_type: "project", related_id: "p-11", created_at: `${t(-3)}T07:30:00.000Z` },
+    {
+      id: "act-4",
+      company_id: COMPANY_ID,
+      actor_name: "Brian Travers",
+      action: "Duplicate bid override — created anyway",
+      related_type: "job_request",
+      related_id: "jr-9",
+      detail:
+        "Possible duplicate flagged against existing project P-1 (The Wexford, Unit 4B — status Project In Process, claimed by Sarah Bennett). Reason given: \"Different scope — post-job cleanup callback, not part of the original bid.\"",
+      created_at: `${t(-1)}T11:41:00.000Z`,
+    },
   ];
 
   const companySetupAnswers: CompanySetupAnswer[] = [];
@@ -496,6 +577,7 @@ export function buildSeedData() {
   return {
     company,
     users,
+    officeUsers,
     clientCompanies,
     contacts,
     buildings,

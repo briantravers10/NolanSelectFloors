@@ -31,6 +31,7 @@ async function main() {
   const tables: { name: string; rows: unknown[] }[] = [
     { name: "companies", rows: [data.company] },
     { name: "users", rows: data.users },
+    { name: "office_users", rows: data.officeUsers },
     { name: "client_companies", rows: data.clientCompanies },
     { name: "contacts", rows: data.contacts },
     { name: "buildings", rows: data.buildings },
