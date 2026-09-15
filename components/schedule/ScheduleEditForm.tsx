@@ -3,6 +3,7 @@ import { COI_STATUSES, SCHEDULE_COLORS, SCHEDULE_JOB_STATUSES, SCHEDULE_MATERIAL
 import { Card, Button } from "@/components/ui";
 import { saveScheduleEntryAction } from "@/app/schedule/actions";
 import { SCHEDULE_COLOR_FORM_LABELS } from "./badges";
+import { CrewPicker } from "./CrewPicker";
 
 /**
  * The one place every schedule control lives, per the client spec: a
@@ -30,7 +31,6 @@ export function ScheduleEditForm({
   selectedDay?: ProjectScheduleDay;
   selectedCrewEmployeeIds: string[];
 }) {
-  const crewSet = new Set(selectedCrewEmployeeIds);
   const isEditing = Boolean(selectedProjectId);
 
   return (
@@ -87,19 +87,7 @@ export function ScheduleEditForm({
 
         <div>
           <label className="block text-sm font-semibold text-slate-800 mb-1.5">Crew</label>
-          <div className="border border-slate-300 rounded-lg divide-y divide-slate-100 max-h-64 overflow-y-auto">
-            {employees.length === 0 ? (
-              <div className="px-3 py-2.5 text-sm text-slate-500">No active employees.</div>
-            ) : (
-              employees.map((e) => (
-                <label key={e.id} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50 cursor-pointer">
-                  <input type="checkbox" name="employee_ids" value={e.id} defaultChecked={crewSet.has(e.id)} className="rounded border-slate-300" />
-                  {e.first_name} {e.last_name}
-                </label>
-              ))
-            )}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">Check everyone assigned to this job on this date.</p>
+          <CrewPicker employees={employees} selectedEmployeeIds={selectedCrewEmployeeIds} />
         </div>
 
         <div>
