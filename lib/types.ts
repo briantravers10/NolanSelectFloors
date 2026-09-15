@@ -188,6 +188,12 @@ export interface ClientCompany {
   phone?: string;
   email?: string;
   address?: string;
+  website?: string;
+  ap_contact_name?: string;
+  ap_contact_phone?: string;
+  ap_contact_email?: string;
+  relationship_start_date?: string;
+  active?: boolean;
   billing_notes?: string;
   notes?: string;
   created_at: string;
@@ -207,6 +213,18 @@ export interface Contact {
   created_at: string;
 }
 
+export const BUILDING_REGIONS = [
+  "Manhattan",
+  "Brooklyn",
+  "Queens",
+  "Bronx",
+  "Staten Island",
+  "New Jersey",
+  "Long Island",
+  "Other",
+] as const;
+export type BuildingRegion = (typeof BUILDING_REGIONS)[number];
+
 export interface Building {
   id: string;
   company_id: string;
@@ -216,6 +234,9 @@ export interface Building {
   city: string;
   state: string;
   zip: string;
+  region: BuildingRegion;
+  latitude?: number | null;
+  longitude?: number | null;
   primary_contact_id?: string;
   superintendent_name?: string;
   superintendent_phone?: string;
@@ -358,6 +379,10 @@ export interface ScheduleAssignment {
   rate_multiplier: number;
   time_and_half: boolean;
   assignment_cost: number;
+  // Reporting time for this specific worker on this specific day, shown in
+  // the Send Schedule preview message. Nullable text (not a DB `time` type)
+  // so it can hold free-form values like "7:00 AM" without timezone fuss.
+  call_time?: string | null;
   notes?: string;
   created_at: string;
 }
@@ -439,6 +464,9 @@ export interface DocumentRecord {
   created_at: string;
 }
 
+export const PHOTO_CATEGORIES = ["Before", "Progress", "After", "Floor Plan", "Other"] as const;
+export type PhotoCategory = (typeof PHOTO_CATEGORIES)[number];
+
 export interface PhotoRecord {
   id: string;
   company_id: string;
@@ -446,9 +474,14 @@ export interface PhotoRecord {
   related_id: string;
   file_name: string;
   storage_path?: string;
+  category?: PhotoCategory;
   caption?: string;
   taken_at?: string;
   uploaded_by?: string;
+  // Set when an upload was attempted but photo storage wasn't configured —
+  // the entry (caption/category/date) is still saved, just without an
+  // image. See lib/storage.ts.
+  storage_unavailable?: boolean;
   created_at: string;
 }
 

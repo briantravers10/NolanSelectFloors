@@ -8,6 +8,7 @@ import { addDays, isoDate, startOfWeek } from "./dates";
 import type {
   ActivityLogEntry,
   Building,
+  BuildingRegion,
   BuildingContact,
   ClientCompany,
   Communication,
@@ -160,7 +161,7 @@ export function buildSeedData() {
   // ---------------------------------------------------------------------
   // BUILDINGS
   // ---------------------------------------------------------------------
-  type BSeed = Omit<Building, "company_id" | "active" | "created_at">;
+  type BSeed = Omit<Building, "company_id" | "active" | "created_at" | "region" | "latitude" | "longitude">;
   const buildingSeeds: BSeed[] = [
     { id: "b-1", client_company_id: "cc-1", name: "The Wexford", address: "220 Grove Street", city: "Jersey City", state: "NJ", zip: "07302", primary_contact_id: "ct-1", superintendent_name: "Hector Ramos", superintendent_phone: "(201) 555-8801", access_instructions: "Check in with doorman, sign in on log at front desk. Freight elevator key held by super.", working_hours: "Mon-Fri 8:00am-4:30pm, no work on weekends without written approval.", coi_requirements: "$2M general liability; The Wexford Condominium Assoc. and Vanguard Property Group as additional insured.", parking_loading: "Loading dock on Grove St side, 30-min max, cone off with building cones.", elevator_info: "Freight elevator (Elevator 3) padded on request, 300 lb weight limit.", delivery_instructions: "Deliveries after 9am only, notify doorman 24 hrs ahead.", building_rules: "Floor protection required in all hallways. No debris in common trash rooms." },
     { id: "b-2", client_company_id: "cc-1", name: "Liberty Harbor Lofts", address: "145 Bay Street", city: "Jersey City", state: "NJ", zip: "07302", primary_contact_id: "ct-1", superintendent_name: "Wanda Kessler", superintendent_phone: "(201) 555-8815", access_instructions: "Super meets crew at loading entrance, badge access required for all common areas.", working_hours: "Mon-Sat 8:00am-5:00pm.", coi_requirements: "$1M/$2M general liability naming Liberty Harbor Lofts Condo Assoc.", parking_loading: "Street parking only; loading zone on Bay St 7-10am.", elevator_info: "Passenger elevator only, no freight — pad walls before moving materials.", delivery_instructions: "Text super 1 day ahead for delivery windows.", building_rules: "No power tools before 9am on weekdays." },
@@ -183,11 +184,40 @@ export function buildSeedData() {
     { id: "b-19", client_company_id: "cc-5", name: "Forest Hills Gardens Co-op", address: "1 Continental Ave", city: "Queens", state: "NY", zip: "11375", primary_contact_id: "ct-12", superintendent_name: "Salvatore Greco", superintendent_phone: "(718) 555-7730", access_instructions: "Board requires 72-hr notice, super escorts to unit.", working_hours: "Mon-Fri 9:00am-4:00pm strictly, no exceptions.", coi_requirements: "$2M general liability + alteration agreement, Forest Hills Gardens Corp additional insured.", parking_loading: "No vehicles beyond visitor lot; hand-truck materials in.", elevator_info: "No elevator, pre-war walk-up.", delivery_instructions: "Coordinate all deliveries through management office only.", building_rules: "Historic district — no dumpsters visible from street." },
     { id: "b-20", client_company_id: "cc-5", name: "Astoria Heights", address: "30-30 Broadway", city: "Queens", state: "NY", zip: "11106", primary_contact_id: "ct-10", superintendent_name: "Katarina Volkov", superintendent_phone: "(718) 555-7745", access_instructions: "Front desk issues visitor pass, sign in required each day.", working_hours: "Mon-Fri 8:00am-5:00pm.", coi_requirements: "$2M general liability naming Astoria Heights Owners Corp.", parking_loading: "Underground garage loading area, height limit 6'8\".", elevator_info: "Freight elevator (Elevator 2), reserve via front desk.", delivery_instructions: "Deliveries 9am-3pm only, sign in at desk.", building_rules: "Recycling separated on-site — flooring debris to dumpster only." },
   ];
+  // Hand-picked approximate real-world coordinates + region per seeded
+  // building — good enough for the Map view / haul-away routing demo
+  // without a live geocoding call. See supabase/migrations/0003_regions_and_media.sql.
+  const buildingGeo: Record<string, { region: BuildingRegion; lat: number; lng: number }> = {
+    "b-1": { region: "New Jersey", lat: 40.7178, lng: -74.0431 },
+    "b-2": { region: "New Jersey", lat: 40.7145, lng: -74.0431 },
+    "b-3": { region: "New Jersey", lat: 40.7233, lng: -74.0447 },
+    "b-4": { region: "New Jersey", lat: 40.7267, lng: -74.0345 },
+    "b-5": { region: "Manhattan", lat: 40.7773, lng: -73.9819 },
+    "b-6": { region: "Manhattan", lat: 40.7825, lng: -73.9825 },
+    "b-7": { region: "Manhattan", lat: 40.7412, lng: -73.9776 },
+    "b-8": { region: "Manhattan", lat: 40.7466, lng: -73.9942 },
+    "b-9": { region: "Brooklyn", lat: 40.6892, lng: -73.9954 },
+    "b-10": { region: "Brooklyn", lat: 40.6889, lng: -73.9739 },
+    "b-11": { region: "Brooklyn", lat: 40.6698, lng: -73.9854 },
+    "b-12": { region: "Brooklyn", lat: 40.6838, lng: -73.9847 },
+    // Stamford, CT falls outside the 5 boroughs + NJ/LI list — "Other".
+    "b-13": { region: "Other", lat: 41.0459, lng: -73.5387 },
+    "b-14": { region: "Other", lat: 41.0234, lng: -73.531 },
+    "b-15": { region: "Other", lat: 41.1034, lng: -73.5387 },
+    "b-16": { region: "Other", lat: 41.0812, lng: -73.5296 },
+    "b-17": { region: "Queens", lat: 40.7621, lng: -73.7902 },
+    "b-18": { region: "Queens", lat: 40.7649, lng: -73.7727 },
+    "b-19": { region: "Queens", lat: 40.7196, lng: -73.8448 },
+    "b-20": { region: "Queens", lat: 40.7649, lng: -73.9235 },
+  };
   const buildings: Building[] = buildingSeeds.map((b) => ({
     ...b,
     company_id: COMPANY_ID,
     active: true,
     created_at: "2022-01-01T00:00:00.000Z",
+    region: buildingGeo[b.id]?.region ?? "Other",
+    latitude: buildingGeo[b.id]?.lat ?? null,
+    longitude: buildingGeo[b.id]?.lng ?? null,
   }));
 
   const buildingContacts: BuildingContact[] = [
@@ -452,7 +482,7 @@ export function buildSeedData() {
     employee_id: string,
     schedule_date: string,
     role_on_job: ScheduleAssignment["role_on_job"],
-    opts?: { timeAndHalf?: boolean }
+    opts?: { timeAndHalf?: boolean; callTime?: string }
   ) {
     const emp = employees.find((e) => e.id === employee_id)!;
     const rate_multiplier = opts?.timeAndHalf ? 1.5 : 1.0;
@@ -467,6 +497,7 @@ export function buildSeedData() {
       rate_multiplier,
       time_and_half: !!opts?.timeAndHalf,
       assignment_cost: Math.round(emp.day_rate * rate_multiplier * 100) / 100,
+      call_time: opts?.callTime ?? "7:00 AM",
       created_at: `${schedule_date}T07:00:00.000Z`,
     });
   }
@@ -538,8 +569,8 @@ export function buildSeedData() {
   ];
 
   const photos: PhotoRecord[] = [
-    { id: "ph-1", company_id: COMPANY_ID, related_type: "project", related_id: "p-1", file_name: "4B-before-sanding.jpg", caption: "Before — existing hardwood prior to sanding", taken_at: `${t(-2)}T08:10:00.000Z`, uploaded_by: "Miguel Alvarez", created_at: `${t(-2)}T08:10:00.000Z` },
-    { id: "ph-2", company_id: COMPANY_ID, related_type: "project", related_id: "p-8", file_name: "9D-punch-list-threshold.jpg", caption: "Threshold gap to be touched up", taken_at: `${t(-1)}T14:00:00.000Z`, uploaded_by: "Ray Kowalski", created_at: `${t(-1)}T14:00:00.000Z` },
+    { id: "ph-1", company_id: COMPANY_ID, related_type: "project", related_id: "p-1", file_name: "4B-before-sanding.jpg", category: "Before", caption: "Before — existing hardwood prior to sanding", taken_at: `${t(-2)}T08:10:00.000Z`, uploaded_by: "Miguel Alvarez", created_at: `${t(-2)}T08:10:00.000Z`, storage_unavailable: true },
+    { id: "ph-2", company_id: COMPANY_ID, related_type: "project", related_id: "p-8", file_name: "9D-punch-list-threshold.jpg", category: "Progress", caption: "Threshold gap to be touched up", taken_at: `${t(-1)}T14:00:00.000Z`, uploaded_by: "Ray Kowalski", created_at: `${t(-1)}T14:00:00.000Z`, storage_unavailable: true },
   ];
 
   // ---------------------------------------------------------------------
