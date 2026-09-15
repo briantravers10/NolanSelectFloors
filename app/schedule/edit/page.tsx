@@ -116,6 +116,7 @@ export default async function ScheduleEditPage({
         </Card>
 
         <ScheduleEditForm
+          key={`${selectedProjectId ?? "new"}-${date}`}
           date={date}
           jobOptions={jobOptions}
           employees={activeEmployees}
