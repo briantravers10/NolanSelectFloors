@@ -610,3 +610,92 @@ export interface EmailRoutingRule {
   notes?: string;
   created_at: string;
 }
+
+// ---------------------------------------------------------------------
+// SCHEDULE REDESIGN (see supabase/migrations/0005_schedule_redesign.sql
+// and README "Schedule Redesign")
+// ---------------------------------------------------------------------
+
+/** Schedule-facing work type lookup — editable (add/rename/deactivate)
+ * from Company Setup, independent of the existing `WORK_TYPES` enum used
+ * by project_work_types/pricing_formulas (see README for why). */
+export interface WorkTypeRecord {
+  id: string;
+  company_id: string;
+  name: string;
+  active: boolean;
+  created_at: string;
+}
+
+// Sort/display priority order: Yellow first, then Blue, Gray, Pink.
+export const SCHEDULE_COLORS = ["Yellow", "Blue", "Gray", "Pink"] as const;
+export type ScheduleColor = (typeof SCHEDULE_COLORS)[number];
+
+export const COI_STATUSES = ["Not Sent", "Sent", "In Progress", "Approved"] as const;
+export type CoiStatus = (typeof COI_STATUSES)[number];
+
+/** Deliberately coarser than `MaterialStatus` — a quick-glance rollup for
+ * the schedule row, not a replacement for the detailed per-material
+ * statuses on the Materials feature. See README. */
+export const SCHEDULE_MATERIALS_STATUSES = ["Not Ordered", "Ordered", "Sent/Delivered"] as const;
+export type ScheduleMaterialsStatus = (typeof SCHEDULE_MATERIALS_STATUSES)[number];
+
+/** Separate from `ProjectStatus`/`PipelineStage`. Setting this from the
+ * Schedule always updates the real `projects.pipeline_stage` too — see
+ * lib/schedule.ts mapJobStatusToPipelineStage / README. */
+export const SCHEDULE_JOB_STATUSES = ["Scheduled", "In Progress", "Complete"] as const;
+export type ScheduleJobStatus = (typeof SCHEDULE_JOB_STATUSES)[number];
+
+/**
+ * The "one row per job per day" entity the Daily schedule list actually
+ * renders — one per project_id + schedule_date. `schedule_assignments`
+ * (per-employee planned crew) sits underneath this, unchanged.
+ */
+export interface ProjectScheduleDay {
+  id: string;
+  company_id: string;
+  project_id: string;
+  schedule_date: string;
+  schedule_color: ScheduleColor;
+  coi_status: CoiStatus;
+  materials_status: ScheduleMaterialsStatus;
+  job_status: ScheduleJobStatus;
+  work_type_id?: string | null;
+  notes?: string;
+  created_by?: string;
+  updated_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Actual hours worked — separate from the planned `schedule_assignments`
+ * rows. An employee can have multiple entries on the same day across
+ * different jobs. Never overwrites the planned schedule.
+ */
+export interface ActualLaborEntry {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  project_id: string;
+  work_date: string;
+  hours: number;
+  start_time?: string;
+  end_time?: string;
+  notes?: string;
+  created_by?: string;
+  updated_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One row per (company, work_date) — "Confirm Day" from the End-of-Day
+ * Review. Upsert-style; does NOT lock the day. */
+export interface DailyScheduleConfirmation {
+  id: string;
+  company_id: string;
+  work_date: string;
+  confirmed_by: string;
+  confirmed_at: string;
+  notes?: string;
+}

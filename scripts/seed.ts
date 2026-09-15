@@ -57,6 +57,10 @@ async function main() {
     { name: "pricing_formula_components", rows: data.pricingFormulaComponents },
     { name: "invoices", rows: data.invoices },
     { name: "email_routing_rules", rows: data.emailRoutingRules },
+    { name: "work_types", rows: data.workTypes },
+    { name: "project_schedule_days", rows: data.projectScheduleDays },
+    { name: "actual_labor_entries", rows: data.actualLaborEntries },
+    { name: "daily_schedule_confirmations", rows: data.dailyScheduleConfirmations },
     { name: "activity_log", rows: data.activityLog },
   ];
 

@@ -7,6 +7,7 @@
 import { addDays, isoDate, startOfWeek } from "./dates";
 import type {
   ActivityLogEntry,
+  ActualLaborEntry,
   Building,
   BuildingRegion,
   BuildingContact,
@@ -15,6 +16,7 @@ import type {
   Company,
   CompanySetupAnswer,
   Contact,
+  DailyScheduleConfirmation,
   DocumentRecord,
   EmailRoutingRule,
   Employee,
@@ -33,10 +35,12 @@ import type {
   ProjectCrewRequirement,
   ProjectMaterial,
   ProjectNote,
+  ProjectScheduleDay,
   ProjectWorkType,
   ScheduleAssignment,
   Task,
   User,
+  WorkTypeRecord,
 } from "./types";
 
 export const COMPANY_ID = "co-1";
@@ -553,6 +557,177 @@ export function buildSeedData() {
   // p-14 single-day carpet job, today
   addAssignment("p-14", "e-8", t(0), "Carpet");
 
+  // Historical crew for the completed job used to populate a real
+  // Completed Job Summary (p-7 — Sterling Pointe 2B carpet replacement,
+  // Project Completed, ran t(-12) through t(-10)).
+  addAssignment("p-7", "e-8", t(-12), "Carpet");
+  addAssignment("p-7", "e-9", t(-12), "Laborer");
+  addAssignment("p-7", "e-8", t(-11), "Carpet");
+  addAssignment("p-7", "e-8", t(-10), "Carpet");
+
+  // ---------------------------------------------------------------------
+  // WORK TYPES (schedule-facing lookup table — see 0005_schedule_redesign.sql)
+  // ---------------------------------------------------------------------
+  const workTypeSeedNames = [
+    "Hardwood Installation", "Floor Sanding", "Staining", "Finishing",
+    "LVP Installation", "Laminate Installation", "Carpet Installation",
+    "Tile", "Demolition", "Floor Preparation", "Subfloor Repair",
+    "Baseboard/Trim", "Furniture Moving", "Repairs", "Other",
+    "Installation", "Repair",
+  ];
+  const workTypes: WorkTypeRecord[] = workTypeSeedNames.map((name, i) => ({
+    id: `wt-${i + 1}`,
+    company_id: COMPANY_ID,
+    name,
+    active: true,
+    created_at: "2024-01-01T00:00:00.000Z",
+  }));
+  const workTypeIdByName = new Map(workTypes.map((w) => [w.name, w.id]));
+
+  // ---------------------------------------------------------------------
+  // PROJECT SCHEDULE DAYS — the "one row per job per day" entity the Daily
+  // schedule list renders. See README for the full data-model write-up.
+  // Deliberately covers every schedule color, every COI/materials status,
+  // and every job status at least once across the current week.
+  // ---------------------------------------------------------------------
+  let sdId = 1;
+  function addScheduleDay(
+    project_id: string,
+    schedule_date: string,
+    opts: {
+      color: ProjectScheduleDay["schedule_color"];
+      coi?: ProjectScheduleDay["coi_status"];
+      materials?: ProjectScheduleDay["materials_status"];
+      jobStatus: ProjectScheduleDay["job_status"];
+      workType?: string;
+      notes?: string;
+    }
+  ): ProjectScheduleDay {
+    const row: ProjectScheduleDay = {
+      id: `psd-${sdId++}`,
+      company_id: COMPANY_ID,
+      project_id,
+      schedule_date,
+      schedule_color: opts.color,
+      coi_status: opts.coi ?? "Not Sent",
+      materials_status: opts.materials ?? "Not Ordered",
+      job_status: opts.jobStatus,
+      work_type_id: opts.workType ? workTypeIdByName.get(opts.workType) : undefined,
+      notes: opts.notes,
+      created_by: "Miguel Alvarez",
+      updated_by: "Miguel Alvarez",
+      created_at: `${schedule_date}T06:00:00.000Z`,
+      updated_at: `${schedule_date}T06:00:00.000Z`,
+    };
+    return row;
+  }
+
+  const projectScheduleDays: ProjectScheduleDay[] = [
+    // p-1 — Wexford 4B hardwood sand & finish, In Progress (continuation).
+    addScheduleDay("p-1", t(0), { color: "Gray", coi: "Approved", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Floor Sanding" }),
+    addScheduleDay("p-1", t(1), { color: "Yellow", coi: "Approved", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Staining", notes: "Priority: board walkthrough at 10am — keep hallway clear." }),
+    addScheduleDay("p-1", t(2), { color: "Gray", coi: "Approved", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Finishing" }),
+    addScheduleDay("p-1", t(3), { color: "Gray", coi: "Approved", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Finishing" }),
+    addScheduleDay("p-1", t(4), { color: "Gray", coi: "Approved", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Finishing" }),
+    // p-2 — Liberty Harbor 12C LVP, starts tomorrow.
+    addScheduleDay("p-2", t(1), { color: "Blue", coi: "Not Sent", materials: "Ordered", jobStatus: "Scheduled", workType: "LVP Installation", notes: "Delivery ran a day late — confirm material on-site before crew arrives." }),
+    addScheduleDay("p-2", t(2), { color: "Gray", coi: "Not Sent", materials: "Ordered", jobStatus: "Scheduled", workType: "LVP Installation" }),
+    addScheduleDay("p-2", t(3), { color: "Gray", coi: "Sent", materials: "Sent/Delivered", jobStatus: "Scheduled", workType: "LVP Installation" }),
+    // p-5 — Cobble Hill 3F laminate, In Progress (started yesterday).
+    addScheduleDay("p-5", t(0), { color: "Gray", coi: "Sent", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Laminate Installation" }),
+    addScheduleDay("p-5", t(1), { color: "Gray", coi: "Sent", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Laminate Installation" }),
+    addScheduleDay("p-5", t(2), { color: "Gray", coi: "Sent", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Laminate Installation" }),
+    addScheduleDay("p-5", t(3), { color: "Gray", coi: "Sent", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Laminate Installation" }),
+    addScheduleDay("p-5", t(4), { color: "Gray", coi: "Sent", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Laminate Installation" }),
+    // p-11 — Shippan Landing common area demo + tile, In Progress.
+    addScheduleDay("p-11", t(0), { color: "Gray", coi: "In Progress", materials: "Ordered", jobStatus: "In Progress", workType: "Demolition" }),
+    addScheduleDay("p-11", t(1), { color: "Gray", coi: "In Progress", materials: "Ordered", jobStatus: "In Progress", workType: "Tile" }),
+    addScheduleDay("p-11", t(2), { color: "Pink", coi: "In Progress", materials: "Ordered", jobStatus: "In Progress", workType: "Tile", notes: "Remaining 200 sq ft of tile on backorder — confirm delivery before committing crew for the day." }),
+    addScheduleDay("p-11", t(3), { color: "Gray", coi: "Approved", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Tile" }),
+    addScheduleDay("p-11", t(4), { color: "Gray", coi: "Approved", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Tile" }),
+    addScheduleDay("p-11", t(5), { color: "Yellow", coi: "Approved", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "Demolition", notes: "Priority Saturday push (time-and-half) to hit Monday board meeting deadline." }),
+    // p-14 — Bayside Commons 3B carpet, single day, today.
+    addScheduleDay("p-14", t(0), { color: "Blue", coi: "Approved", materials: "Sent/Delivered", jobStatus: "Scheduled", workType: "Carpet Installation" }),
+    // p-15 — Fort Greene 7A LVP + baseboard, In Progress.
+    addScheduleDay("p-15", t(0), { color: "Gray", coi: "Sent", materials: "Sent/Delivered", jobStatus: "In Progress", workType: "LVP Installation" }),
+    addScheduleDay("p-15", t(1), { color: "Pink", coi: "Sent", materials: "Not Ordered", jobStatus: "In Progress", workType: "Baseboard/Trim", notes: "Wrong baseboard profile delivered — return in progress, install may slip until replacement ships." }),
+    addScheduleDay("p-15", t(2), { color: "Gray", coi: "Sent", materials: "Not Ordered", jobStatus: "In Progress", workType: "Baseboard/Trim" }),
+    addScheduleDay("p-15", t(3), { color: "Gray", coi: "Sent", materials: "Not Ordered", jobStatus: "In Progress", workType: "Baseboard/Trim" }),
+    addScheduleDay("p-15", t(4), { color: "Gray", coi: "Sent", materials: "Not Ordered", jobStatus: "In Progress", workType: "Baseboard/Trim" }),
+    // p-7 — Sterling Pointe 2B carpet replacement, Project Completed. Full
+    // historical run so the Completed Job Summary has real data to compile.
+    addScheduleDay("p-7", t(-12), { color: "Blue", coi: "Approved", materials: "Sent/Delivered", jobStatus: "Complete", workType: "Carpet Installation" }),
+    addScheduleDay("p-7", t(-11), { color: "Gray", coi: "Approved", materials: "Sent/Delivered", jobStatus: "Complete", workType: "Carpet Installation" }),
+    addScheduleDay("p-7", t(-10), { color: "Gray", coi: "Approved", materials: "Sent/Delivered", jobStatus: "Complete", workType: "Carpet Installation", notes: "Final walkthrough with Anthony Musco — no punch list items." }),
+  ];
+
+  // ---------------------------------------------------------------------
+  // ACTUAL LABOR ENTRIES — actual hours worked, separate from the planned
+  // schedule_assignments above. Demonstrates the planned-vs-actual split,
+  // one employee working two jobs in a single day, an unusually-high daily
+  // total (soft warning), and a likely-duplicate pair (soft warning).
+  // ---------------------------------------------------------------------
+  const actualLaborEntries: ActualLaborEntry[] = [];
+  let alId = 1;
+  function addActual(
+    employee_id: string,
+    project_id: string,
+    work_date: string,
+    hours: number,
+    opts?: { start_time?: string; end_time?: string; notes?: string; created_at?: string }
+  ) {
+    actualLaborEntries.push({
+      id: `al-${alId++}`,
+      company_id: COMPANY_ID,
+      employee_id,
+      project_id,
+      work_date,
+      hours,
+      start_time: opts?.start_time,
+      end_time: opts?.end_time,
+      notes: opts?.notes,
+      created_by: "Miguel Alvarez",
+      updated_by: "Miguel Alvarez",
+      created_at: opts?.created_at ?? `${work_date}T17:00:00.000Z`,
+      updated_at: opts?.created_at ?? `${work_date}T17:00:00.000Z`,
+    });
+  }
+
+  // Ordinary actual hours roughly matching the plan.
+  addActual("e-3", "p-1", t(0), 8, { start_time: "7:00 AM", end_time: "3:30 PM" });
+  addActual("e-4", "p-1", t(0), 8, { start_time: "7:00 AM", end_time: "3:30 PM" });
+  addActual("e-5", "p-5", t(0), 8, { start_time: "7:00 AM", end_time: "3:30 PM" });
+  addActual("e-10", "p-5", t(0), 7.5, { start_time: "7:00 AM", end_time: "3:00 PM" });
+
+  // Dennis Cho (e-2) worked TWO different jobs on the same day — the
+  // dispatcher double-booking on the plan (p-15 all week + p-2 on t(1))
+  // shows up here as real split actual hours: 4 hrs on p-15, 4 hrs on p-2.
+  addActual("e-2", "p-15", t(1), 4, { start_time: "7:00 AM", end_time: "11:00 AM", notes: "Pulled to help p-2 delivery arrive on schedule after lunch." });
+  addActual("e-2", "p-2", t(1), 4, { start_time: "11:30 AM", end_time: "3:30 PM" });
+
+  // Unusually high total for one day — soft warning demo (sum > 16 hrs).
+  addActual("e-9", "p-15", t(0), 9, { start_time: "6:00 AM", end_time: "3:00 PM" });
+  addActual("e-9", "p-11", t(0), 9, { start_time: "3:30 PM", end_time: "12:30 AM", notes: "Covered evening debris haul-out on p-11 after finishing p-15." });
+
+  // Likely-duplicate pair — same employee+project+date+hours entered twice
+  // in quick succession — soft warning demo, not a hard block.
+  addActual("e-12", "p-11", t(2), 8, { start_time: "7:00 AM", end_time: "3:00 PM", created_at: `${t(2)}T15:05:00.000Z` });
+  addActual("e-12", "p-11", t(2), 8, { start_time: "7:00 AM", end_time: "3:00 PM", created_at: `${t(2)}T15:06:30.000Z` });
+
+  // Historical actual hours for the completed job (p-7), so the Completed
+  // Job Summary's per-employee days/hours totals aren't empty.
+  addActual("e-8", "p-7", t(-12), 8, { start_time: "8:00 AM", end_time: "4:30 PM" });
+  addActual("e-9", "p-7", t(-12), 6, { start_time: "8:00 AM", end_time: "2:30 PM" });
+  addActual("e-8", "p-7", t(-11), 8, { start_time: "8:00 AM", end_time: "4:30 PM" });
+  addActual("e-8", "p-7", t(-10), 7, { start_time: "8:00 AM", end_time: "3:30 PM" });
+
+  // ---------------------------------------------------------------------
+  // DAILY SCHEDULE CONFIRMATIONS — "Confirm Day" from End-of-Day Review.
+  // ---------------------------------------------------------------------
+  const dailyScheduleConfirmations: DailyScheduleConfirmation[] = [
+    { id: "dsc-1", company_id: COMPANY_ID, work_date: t(-1), confirmed_by: "Miguel Alvarez", confirmed_at: `${t(-1)}T17:30:00.000Z`, notes: "All crews accounted for, no schedule changes." },
+  ];
+
   // ---------------------------------------------------------------------
   // COMMUNICATIONS / NOTES / DOCS / PHOTOS
   // ---------------------------------------------------------------------
@@ -606,6 +781,10 @@ export function buildSeedData() {
         "Possible duplicate flagged against existing project P-1 (The Wexford, Unit 4B — status Project In Process, claimed by Sarah Bennett). Reason given: \"Different scope — post-job cleanup callback, not part of the original bid.\"",
       created_at: `${t(-1)}T11:41:00.000Z`,
     },
+    { id: "act-5", company_id: COMPANY_ID, actor_name: "Miguel Alvarez", action: "Confirmed day", related_type: undefined, related_id: undefined, detail: `Schedule confirmed for ${t(-1)}. All crews accounted for, no schedule changes.`, created_at: `${t(-1)}T17:30:00.000Z` },
+    { id: "act-6", company_id: COMPANY_ID, actor_name: "Miguel Alvarez", action: "Schedule color changed to Yellow", related_type: "project", related_id: "p-1", detail: `${t(1)}: Gray → Yellow (priority board walkthrough)`, created_at: `${t(0)}T16:00:00.000Z` },
+    { id: "act-7", company_id: COMPANY_ID, actor_name: "Miguel Alvarez", action: "COI status changed to Approved", related_type: "project", related_id: "p-1", detail: `${t(0)}: Sent → Approved`, created_at: `${t(-1)}T09:00:00.000Z` },
+    { id: "act-8", company_id: COMPANY_ID, actor_name: "Miguel Alvarez", action: "Logged actual hours", related_type: "employee", related_id: "e-2", detail: `Dennis Cho on ${t(1)}: 4.0 hrs on p-15, 4.0 hrs on p-2`, created_at: `${t(1)}T16:00:00.000Z` },
   ];
 
   const companySetupAnswers: CompanySetupAnswer[] = [];
@@ -713,6 +892,10 @@ export function buildSeedData() {
     pricingFormulaComponents,
     invoices,
     emailRoutingRules,
+    workTypes,
+    projectScheduleDays,
+    actualLaborEntries,
+    dailyScheduleConfirmations,
     weekStart: isoDate(monday),
   };
 }
