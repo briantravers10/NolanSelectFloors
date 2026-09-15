@@ -1,8 +1,11 @@
 import { Card, PageHeader, Button } from "@/components/ui";
 import { STAFF_CAPABILITIES } from "@/lib/types";
+import { canEditPayRates, getActingUser } from "@/lib/current-user";
 import { createStaffAction } from "../actions";
 
-export default function NewStaffPage() {
+export default async function NewStaffPage() {
+  const actingUser = await getActingUser();
+  const canEditRates = canEditPayRates(actingUser);
   return (
     <div className="max-w-xl">
       <PageHeader title="New Staff" subtitle="Add a crew member." />
@@ -34,7 +37,7 @@ export default function NewStaffPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Day Rate ($)</label>
+              <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Day Rate ($) — planned-cost / schedule</label>
               <input name="day_rate" type="number" step="0.01" defaultValue={0} className="input" />
             </div>
             <div>
@@ -42,6 +45,32 @@ export default function NewStaffPage() {
               <input name="hire_date" type="date" className="input" />
             </div>
           </div>
+          {canEditRates ? (
+            <div className="grid grid-cols-2 gap-3 border border-slate-200 rounded-lg p-3">
+              <div className="col-span-2 text-xs font-medium text-slate-500 uppercase">
+                Actual-Cost Pay Rate <span className="normal-case text-slate-400">(Owner/Admin only — used for labor cost tracking)</span>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Pay Type</label>
+                <select name="pay_type" defaultValue="daily" className="input">
+                  <option value="daily">Daily Rate</option>
+                  <option value="hourly">Hourly Rate</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Daily Rate ($)</label>
+                  <input name="daily_rate" type="number" step="0.01" className="input" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Hourly Rate ($)</label>
+                  <input name="hourly_rate" type="number" step="0.01" className="input" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">Pay rate for labor cost tracking can be set by an Owner/Admin from the staff profile after this hire is created.</p>
+          )}
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" name="is_driver" className="rounded border-slate-300" /> Driver

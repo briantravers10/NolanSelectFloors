@@ -2,10 +2,12 @@ import Link from "next/link";
 import { listEmployeeSkills, listEmployees } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, LinkButton } from "@/components/ui";
 import { Icon } from "@/components/Icon";
-import { formatCurrency } from "@/lib/calculations";
+import { canViewLaborCost, getActingUser } from "@/lib/current-user";
+import { payRateLabel } from "@/lib/labor-cost";
 
 export default async function StaffPage() {
-  const [employees, skills] = await Promise.all([listEmployees(), listEmployeeSkills()]);
+  const [employees, skills, actingUser] = await Promise.all([listEmployees(), listEmployeeSkills(), getActingUser()]);
+  const canViewRates = canViewLaborCost(actingUser);
   const skillsByEmployee = new Map<string, string[]>();
   for (const s of skills) {
     if (!skillsByEmployee.has(s.employee_id)) skillsByEmployee.set(s.employee_id, []);
@@ -28,7 +30,7 @@ export default async function StaffPage() {
                 <th className="px-4 py-3">Title</th>
                 <th className="px-4 py-3">Phone</th>
                 <th className="px-4 py-3 text-center">Driver</th>
-                <th className="px-4 py-3 text-right">Day Rate</th>
+                {canViewRates && <th className="px-4 py-3 text-right">Pay Rate</th>}
                 <th className="px-4 py-3">Capabilities</th>
               </tr>
             </thead>
@@ -43,7 +45,7 @@ export default async function StaffPage() {
                   <td className="px-4 py-3 text-slate-600">{e.title}</td>
                   <td className="px-4 py-3"><PhoneLink phone={e.phone} /></td>
                   <td className="px-4 py-3 text-center">{e.is_driver ? "Yes" : "—"}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(e.day_rate)}</td>
+                  {canViewRates && <td className="px-4 py-3 text-right">{payRateLabel(e)}</td>}
                   <td className="px-4 py-3 text-slate-500 text-xs">{(skillsByEmployee.get(e.id) ?? []).join(", ")}</td>
                 </tr>
               ))}
