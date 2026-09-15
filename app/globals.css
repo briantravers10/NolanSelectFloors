@@ -28,3 +28,18 @@ body {
   background: #cbd5e1;
   border-radius: 4px;
 }
+
+/* Shared form-field style, matching the inline classes used throughout
+   the app's existing forms (w-full rounded-lg border ... px-3 py-2 text-sm). */
+.input {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  background: #fff;
+}
+.input:focus {
+  outline: 2px solid #38bdf8;
+  outline-offset: 1px;
+}
