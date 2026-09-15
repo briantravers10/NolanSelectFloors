@@ -50,3 +50,37 @@ export async function uploadProjectPhoto(
 export function isPhotoStorageConfigured(): boolean {
   return getSupabaseClient() !== null;
 }
+
+const INVOICE_BUCKET = process.env.SUPABASE_INVOICES_BUCKET || "invoice-files";
+
+/**
+ * Same soft-fail pattern as uploadProjectPhoto above, for the Invoices
+ * feature's "+ New Invoice" file field — `file_reference` is a placeholder
+ * for a future Supabase Storage path. Returns `unavailable: true` (never
+ * throws) when Supabase isn't configured or the bucket doesn't exist.
+ */
+export async function uploadInvoiceFile(file: File, invoiceId: string): Promise<PhotoUploadResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { unavailable: true, error: "File storage is not configured (no NEXT_PUBLIC_SUPABASE_URL / key set)." };
+  }
+  try {
+    const path = `invoices/${invoiceId}/${randomUUID()}-${file.name}`;
+    const arrayBuffer = await file.arrayBuffer();
+    const { error } = await client.storage.from(INVOICE_BUCKET).upload(path, arrayBuffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+    if (error) return { unavailable: true, error: error.message };
+    return { storage_path: path, unavailable: false };
+  } catch (err) {
+    return { unavailable: true, error: err instanceof Error ? err.message : "Unknown storage error" };
+  }
+}
+
+/** Generic "is Supabase Storage configured at all" check — same underlying
+ * condition as isPhotoStorageConfigured, named for use outside the Photos
+ * feature (e.g. the Invoices "+ New Invoice" file field). */
+export function isFileStorageConfigured(): boolean {
+  return getSupabaseClient() !== null;
+}
