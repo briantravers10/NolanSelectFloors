@@ -1,0 +1,130 @@
+import Link from "next/link";
+import { getDashboardData } from "@/lib/dashboard";
+import { formatCurrency } from "@/lib/calculations";
+import { formatDateLong } from "@/lib/dates";
+import { Card, PageHeader, Stat, StatusBadge, AlertPill, EmptyState } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+
+export default async function DashboardPage() {
+  const data = await getDashboardData();
+
+  return (
+    <div>
+      <PageHeader title="Dashboard" subtitle={formatDateLong(data.today)} />
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <Stat label="Jobs Today" value={data.totalJobs} />
+        <Stat label="Man Count Today" value={data.totalManCount} />
+        <Stat label="Labor Cost Today" value={formatCurrency(data.totalLaborCost)} />
+        <Stat
+          label="Staff Working / Available / Off"
+          value={
+            <span className="text-lg font-semibold">
+              {data.staffWorking} / {data.staffAvailable} / {data.staffOff}
+            </span>
+          }
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2 space-y-5">
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Today&apos;s Jobs</h2>
+              <Link href="/schedule" className="text-sm text-sky-600 hover:underline">
+                View schedule →
+              </Link>
+            </div>
+            {data.todaysJobs.length === 0 ? (
+              <EmptyState message="No crew scheduled today." />
+            ) : (
+              <div className="space-y-3">
+                {data.todaysJobs.map((job) => (
+                  <Link
+                    key={job.project.id}
+                    href={`/projects/${job.project.id}`}
+                    className="block rounded-lg border border-slate-200 p-3 hover:border-sky-300 hover:bg-sky-50/40 transition-colors"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium text-slate-900">
+                          {job.buildingName} {job.project.unit_number && <span className="text-slate-500 font-normal">— Unit {job.project.unit_number}</span>}
+                        </div>
+                        <div className="text-xs text-slate-500">{job.clientName} · PM: {job.pmName}</div>
+                      </div>
+                      <StatusBadge status={job.project.status} />
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                      <span>{job.project.name}</span>
+                      <span>Crew: {job.manCount}</span>
+                      <span>Labor: {formatCurrency(job.laborCost)}</span>
+                      {job.needsDriver && (
+                        <span className={job.hasDriver ? "text-emerald-600" : "text-rose-600 font-medium"}>
+                          {job.hasDriver ? "Driver assigned" : "NO DRIVER ASSIGNED"}
+                        </span>
+                      )}
+                      {job.materialsWorstStatus && job.materialsWorstStatus !== "Delivered" && (
+                        <span className="text-amber-600">Materials: {job.materialsWorstStatus}</span>
+                      )}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {job.crew.map((c, i) => (
+                        <span key={i} className="text-[11px] bg-slate-100 rounded px-1.5 py-0.5 text-slate-600">
+                          {c.name} · {c.role}{c.isDriver ? " 🚚" : ""}
+                        </span>
+                      ))}
+                    </div>
+                    {job.notes && <div className="mt-2 text-xs text-slate-500 italic">{job.notes}</div>}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Upcoming (Next 7 Days)</h2>
+            {data.upcomingProjects.length === 0 ? (
+              <EmptyState message="Nothing scheduled to start in the next 7 days." />
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {data.upcomingProjects.map(({ project, building }) => (
+                  <Link key={project.id} href={`/projects/${project.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded">
+                    <div>
+                      <div className="text-sm font-medium text-slate-800">{building?.name} {project.unit_number && `— Unit ${project.unit_number}`}</div>
+                      <div className="text-xs text-slate-500">{project.name}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-slate-700">{project.start_date}</div>
+                      <StatusBadge status={project.status} />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <Card className="p-4 h-fit">
+          <div className="flex items-center gap-2 mb-3">
+            <Icon name="alert" className="w-4 h-4 text-amber-600" />
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Attention Required</h2>
+          </div>
+          {data.attention.length === 0 ? (
+            <EmptyState message="Nothing needs attention right now." />
+          ) : (
+            <ul className="space-y-2.5">
+              {data.attention.map((item, i) => (
+                <li key={i}>
+                  <Link href={item.href} className="flex items-start gap-2 group">
+                    <AlertPill tone={item.severity}>{item.severity === "bad" ? "Action" : "Watch"}</AlertPill>
+                    <span className="text-sm text-slate-700 group-hover:text-sky-700 group-hover:underline">{item.message}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}

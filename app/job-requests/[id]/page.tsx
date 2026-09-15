@@ -1,0 +1,108 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { listBuildings, listClientCompanies, listContacts, listJobRequests } from "@/lib/db";
+import { Card, PageHeader, StatusBadge, PhoneLink, Button } from "@/components/ui";
+import { formatDateLong } from "@/lib/dates";
+import { formatCurrency } from "@/lib/calculations";
+import { JOB_REQUEST_STATUSES } from "@/lib/types";
+import { convertToProjectAction, setJobRequestStatusAction } from "../actions";
+
+export default async function JobRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const [jobRequests, buildings, clients, contacts] = await Promise.all([
+    listJobRequests(),
+    listBuildings(),
+    listClientCompanies(),
+    listContacts(),
+  ]);
+  const jr = jobRequests.find((j) => j.id === id);
+  if (!jr) notFound();
+  const building = buildings.find((b) => b.id === jr.building_id);
+  const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
+  const contact = contacts.find((c) => c.id === jr.contact_id);
+
+  return (
+    <div className="max-w-3xl">
+      <PageHeader
+        title={`${building?.name ?? "Building"}${jr.unit_number ? " — " + jr.unit_number : ""}`}
+        subtitle={client?.name}
+        action={<StatusBadge status={jr.status} />}
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="md:col-span-2 space-y-5">
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Description</h2>
+            <p className="text-sm text-slate-700">{jr.description}</p>
+            <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+              <div>
+                <div className="text-xs text-slate-500 uppercase">Received</div>
+                <div>{formatDateLong(jr.received_at.slice(0, 10))} via {jr.received_via}</div>
+              </div>
+              {jr.site_visit_date && (
+                <div>
+                  <div className="text-xs text-slate-500 uppercase">Site Visit</div>
+                  <div>{formatDateLong(jr.site_visit_date)}</div>
+                </div>
+              )}
+              {jr.estimate_amount != null && (
+                <div>
+                  <div className="text-xs text-slate-500 uppercase">Estimate</div>
+                  <div>{formatCurrency(jr.estimate_amount)}</div>
+                </div>
+              )}
+              {jr.approved_at && (
+                <div>
+                  <div className="text-xs text-slate-500 uppercase">Approved</div>
+                  <div>{formatDateLong(jr.approved_at.slice(0, 10))}</div>
+                </div>
+              )}
+            </div>
+            {jr.notes && <p className="text-sm text-slate-600 mt-3 italic">{jr.notes}</p>}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Move to Status</h2>
+            <div className="flex flex-wrap gap-2">
+              {JOB_REQUEST_STATUSES.filter((s) => s !== jr.status && s !== "Converted to Project").map((s) => (
+                <form key={s} action={setJobRequestStatusAction.bind(null, jr.id, s)}>
+                  <button type="submit" className="text-xs rounded-full border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-100">
+                    {s}
+                  </button>
+                </form>
+              ))}
+            </div>
+          </Card>
+
+          {jr.status !== "Converted to Project" && jr.status !== "Declined" && jr.status !== "Cancelled" && (
+            <Card className="p-4">
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Convert to Project</h2>
+              <p className="text-sm text-slate-500 mb-3">Creates a new project pre-filled from this job request&apos;s building, unit, and estimate.</p>
+              <form action={convertToProjectAction.bind(null, jr.id)}>
+                <Button type="submit">Convert to Project</Button>
+              </form>
+            </Card>
+          )}
+        </div>
+
+        <Card className="p-4 h-fit">
+          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Contact</h2>
+          {contact ? (
+            <div>
+              <div className="font-medium text-sm">{contact.first_name} {contact.last_name}</div>
+              <div className="text-xs text-slate-500 mb-1">{contact.title}</div>
+              <PhoneLink phone={contact.phone} className="text-xs" />
+            </div>
+          ) : (
+            <div className="text-sm text-slate-400">No contact linked.</div>
+          )}
+          {building && (
+            <Link href={`/buildings/${building.id}`} className="mt-4 block text-sm text-sky-600 hover:underline">
+              View building profile →
+            </Link>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}

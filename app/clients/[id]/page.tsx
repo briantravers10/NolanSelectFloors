@@ -1,0 +1,155 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { listBuildings, listClientCompanies, listContacts, listJobRequests, listProjects } from "@/lib/db";
+import { Card, PageHeader, PhoneLink, EmailLink, StatusBadge, EmptyState, Stat } from "@/components/ui";
+import { formatDateLong } from "@/lib/dates";
+import { formatCurrency } from "@/lib/calculations";
+
+export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const [clients, buildings, contacts, projects, jobRequests] = await Promise.all([
+    listClientCompanies(),
+    listBuildings(),
+    listContacts(),
+    listProjects(),
+    listJobRequests(),
+  ]);
+  const client = clients.find((c) => c.id === id);
+  if (!client) notFound();
+
+  const clientBuildings = buildings.filter((b) => b.client_company_id === id);
+  const buildingIds = new Set(clientBuildings.map((b) => b.id));
+  const clientContacts = contacts.filter((c) => c.client_company_id === id);
+  const clientProjects = projects.filter((p) => buildingIds.has(p.building_id)).sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
+  const clientJobRequests = jobRequests.filter((j) => buildingIds.has(j.building_id));
+
+  const activeStatuses = ["Approved", "Pre-Construction", "Materials Required", "Materials Ordered", "Materials Ready", "Ready to Schedule", "Scheduled", "In Progress", "Paused", "Punch List"];
+  const activeProjects = clientProjects.filter((p) => activeStatuses.includes(p.status));
+  const previousProjects = clientProjects.filter((p) => !activeStatuses.includes(p.status));
+  const thisYear = new Date().getFullYear();
+  const jobsThisYear = clientProjects.filter((p) => p.start_date && new Date(p.start_date).getFullYear() === thisYear).length;
+  const lastJobReceived = clientJobRequests.slice().sort((a, b) => (b.received_at < a.received_at ? -1 : 1))[0];
+  const buildingById = new Map(buildings.map((b) => [b.id, b]));
+
+  return (
+    <div>
+      <PageHeader
+        title={client.name}
+        subtitle={client.address}
+        action={
+          <div className="flex gap-3 text-sm">
+            <PhoneLink phone={client.phone} />
+            <EmailLink email={client.email} />
+          </div>
+        }
+      />
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <Stat label="Buildings" value={clientBuildings.length} />
+        <Stat label="Jobs This Year" value={jobsThisYear} />
+        <Stat label="Total Job History" value={clientProjects.length} />
+        <Stat label="Last Job Received" value={lastJobReceived ? formatDateLong(lastJobReceived.received_at.slice(0, 10)) : "—"} />
+      </div>
+
+      {client.notes && (
+        <Card className="p-4 mb-5">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Notes</div>
+          <p className="text-sm text-slate-700">{client.notes}</p>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2 space-y-5">
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Active / Upcoming Jobs</h2>
+            </div>
+            {activeProjects.length === 0 ? (
+              <EmptyState message="No active jobs for this client." />
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {activeProjects.map((p) => (
+                  <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded">
+                    <div>
+                      <div className="text-sm font-medium text-slate-800">{buildingById.get(p.building_id)?.name} {p.unit_number && `— Unit ${p.unit_number}`}</div>
+                      <div className="text-xs text-slate-500">{p.name}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-slate-700">{formatCurrency(p.project_value)}</div>
+                      <StatusBadge status={p.status} />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Job History</h2>
+            {previousProjects.length === 0 ? (
+              <EmptyState message="No completed job history yet." />
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {previousProjects.map((p) => (
+                  <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded">
+                    <div>
+                      <div className="text-sm font-medium text-slate-800">{buildingById.get(p.building_id)?.name} {p.unit_number && `— Unit ${p.unit_number}`}</div>
+                      <div className="text-xs text-slate-500">{p.name}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-slate-700">{formatCurrency(p.project_value)}</div>
+                      <StatusBadge status={p.status} />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Job Requests</h2>
+            {clientJobRequests.length === 0 ? (
+              <EmptyState message="No job requests recorded." />
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {clientJobRequests.map((jr) => (
+                  <Link key={jr.id} href={`/job-requests/${jr.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-800 truncate">{buildingById.get(jr.building_id)?.name} {jr.unit_number && `— ${jr.unit_number}`}</div>
+                      <div className="text-xs text-slate-500 truncate">{jr.description}</div>
+                    </div>
+                    <StatusBadge status={jr.status} />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <Card className="p-4 h-fit">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Contacts</h2>
+          </div>
+          <div className="space-y-3">
+            {clientContacts.map((c) => (
+              <div key={c.id} className="border border-slate-100 rounded-lg p-2.5">
+                <div className="font-medium text-sm text-slate-800">{c.first_name} {c.last_name}</div>
+                <div className="text-xs text-slate-500 mb-1">{c.title}</div>
+                <PhoneLink phone={c.phone} className="text-xs" />
+                <div><EmailLink email={c.email} className="text-xs" /></div>
+              </div>
+            ))}
+          </div>
+          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mt-5 mb-3">Buildings</h2>
+          <div className="space-y-1.5">
+            {clientBuildings.map((b) => (
+              <Link key={b.id} href={`/buildings/${b.id}`} className="block text-sm text-sky-700 hover:underline">
+                {b.name}
+              </Link>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
