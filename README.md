@@ -158,10 +158,134 @@ Global search (`components/SearchBox.tsx` + `app/api/search/route.ts`)
 filters buildings, management companies, contacts, staff, and projects
 from the top nav.
 
+**Job Requests** now has two tabs: **Requests** (unchanged) and **Bid
+Dashboard** (`/job-requests?view=bids`, `app/job-requests/BidDashboard.tsx`)
+— Unclaimed / My Bids / In Progress / Ready-Completed / Awaiting Decision
+columns, each card showing management company, PM, building, unit, work
+description, date received, a derived priority, bid status, pipeline
+stage, estimator, and claimed/updated timestamps.
+
+**Projects** also has two tabs: **List** (unchanged table) and
+**Pipeline** (`/projects?view=pipeline`, `app/projects/Pipeline.tsx`) — a
+kanban across the 6 primary lifecycle stages with a "Move to stage"
+dropdown per card (see "What was deliberately simplified" for why this is
+a dropdown rather than drag-and-drop). Moving a card updates the exact
+same `projects` row the detail page and Bid Dashboard read.
+
 The **Schedule** week view is the most detail-dense screen in the app —
 per-day man count and labor cost, per-project crew cards with required vs.
 assigned crew, driver status, and material status, plus a crew-assignment
 form with a live cost preview and inline conflict/availability warnings.
+
+## Bid workflow / project pipeline (added on top of the base app)
+
+The base app already modeled one project row moving through a detailed
+13-state `status` (Approved → ... → Paid). This layer adds bid ownership
+and a primary 6-stage pipeline **on the same `projects` row** — nothing is
+duplicated per stage, and both status fields live side by side:
+
+- `status` (existing, 13 states) — fine-grained sub-status, unchanged.
+- `pipeline_stage` (new) — the 6 primary stages requested:
+  **Project Bid → Bid Accepted → Scheduled → Sent to Crew → Project In
+  Process → Project Completed**. This is what the Bid Dashboard and the
+  Pipeline kanban view group by, and it's driven from the UI independently
+  of the detailed status (both a "Move to Pipeline Stage" control and a
+  "Move to Detailed Status" control exist on the project detail page).
+- `bid_status` (new) — Unclaimed / Claimed / In Progress / Ready for
+  Review / Completed/Sent / Accepted / Rejected — separate from both of
+  the above, because a bid can be "In Progress" while the project itself
+  is still in the "Project Bid" pipeline stage.
+
+A project's row is created once — either via **"Create Bid"** on an
+early-stage job request (starts unclaimed, at pipeline_stage "Project
+Bid") or via the existing **"Convert to Project"** on an already-approved
+job request (starts at "Bid Accepted", bid_status "Accepted", since the
+approval already happened at the job-request stage). Every later change —
+claiming, reassigning, sending, accepting, scheduling, completing — is an
+`UPDATE` on that same row. See `supabase/migrations/0002_bid_workflow.sql`
+for the full column list, including the "set once, never overwritten"
+lifecycle timestamps (`bid_claimed_at`, `bid_completed_at`, `bid_sent_at`,
+`bid_accepted_at`, `scheduled_at`, `sent_to_crew_at`, `project_started_at`,
+`project_completed_at`) that make future turnaround reporting possible.
+
+### Dev "acting as" user selector (placeholder for real auth)
+
+There's still no login. Instead, the top bar has a small **"Acting as"**
+dropdown (`components/ActingUserSelector.tsx`) listing the 3 seeded office
+estimators (Sarah Bennett, Emma Castillo, David Okoye — `office_users`
+table) plus the existing company owner, who stands in for the
+Manager/Owner role. Choosing one writes a `nsf_acting_user` cookie
+(`app/actions/acting-user.ts`); every claim/reassign/release/bid-status
+action reads it via `lib/current-user.ts#getActingUser()`.
+
+**How this maps to future real auth:** once Supabase Auth (or another
+provider) is wired up, `getActingUser()` is the only function that needs
+to change — swap its body to read the authenticated session's
+`office_users` row (or `users` row, for the owner/manager role) instead of
+the cookie. No page or server action needs to change, because they all go
+through this one function, exactly the same pattern `lib/current-user.ts`
+already used for `getCurrentUser()` / `getCurrentCompanyId()`.
+
+The Manager/Owner-only actions (**Reassign Bid** / **Release Bid** on the
+project detail page's Bid Ownership card) are gated on
+`actingUser.role === "manager"` — a proxy for "logged in as an
+owner/manager" until real role-based auth exists. In production this
+would be enforced server-side by real auth + RLS, not just hidden in the
+UI; the gate here is app-level today for the same reason the rest of the
+app's row scoping is app-level (see "How auth will be added later" below).
+
+### Atomic bid claiming
+
+`lib/db.ts#claimBid()` is the one function both UI paths (Bid Dashboard
+cards, project detail page) call to claim a bid:
+
+- **Supabase path**: a single
+  `UPDATE projects SET assigned_estimator_id = ... WHERE id = ... AND
+  assigned_estimator_id IS NULL RETURNING *` — the database resolves the
+  race atomically. If no row comes back, the code re-reads the project to
+  report who actually holds it.
+- **In-memory fallback path**: the "is it still unclaimed" check and the
+  "set assigned_estimator_id" write happen in the same synchronous block
+  with no `await` between them. Since Node/JS runs application code on a
+  single thread, nothing can interleave inside that block — two
+  "simultaneous" claim calls can never both observe the bid as unclaimed.
+  This is verified directly: two `claimBid()` calls fired via
+  `Promise.all` against the same seeded unclaimed bid (`p-9`) resolve to
+  exactly one success and one failure that correctly reports the winner's
+  name, and a third call against the now-claimed bid also fails cleanly.
+
+Either way, a failed claim never silently succeeds — the caller gets back
+`{ ok: false, currentEstimatorId, currentEstimatorName }` and the UI shows
+"Claimed by \<name\>" instead of a claim button.
+
+### Duplicate bid detection
+
+`lib/db.ts#findOpenDuplicateBids(buildingId, unitNumber)` queries the
+existing `job_requests` and `projects` tables for any still-open record at
+the same building + unit — no new table. The New Job Request flow
+(`app/job-requests/new/page.tsx` + `app/job-requests/actions.ts`) runs
+this check on submit; if matches exist and the form hasn't been
+explicitly confirmed, it round-trips back to the same page with a
+"Possible duplicate bid" warning listing each match's address/unit,
+status, and claimed-by, plus a link to open it. Proceeding requires an
+explicit "Create Anyway" click and a non-empty reason, which gets logged
+to `activity_log` via `logDuplicateBidOverride()` — that log entry is what
+the future "duplicate attempts prevented" report would count.
+
+### Bid workflow reporting (future)
+
+No new reporting UI was built, but every number the requirements listed is
+now computable from the columns above without further schema changes:
+avg time request→bid (`job_requests.received_at` → `projects.created_at`
+for its linked project), avg bid completion time (`bid_claimed_at` →
+`bid_completed_at`), bids completed / avg turnaround per estimator (group
+by `assigned_estimator_id`), unclaimed/outstanding bid counts
+(`bid_status = 'Unclaimed'`), bid acceptance rate (`Accepted` vs.
+`Rejected` counts), avg accepted→scheduled time (`bid_accepted_at` →
+`scheduled_at`), avg project duration (`project_started_at` →
+`project_completed_at`), and duplicate attempts prevented (count of
+`activity_log` rows with action `"Duplicate bid override — created
+anyway"`).
 
 ## Environment variables
 
@@ -269,3 +393,24 @@ shaped so each is a self-contained addition:
 - **No real SMS or Storage integration** — both are previewed/mocked as
   described above, per the spec's explicit instruction not to fabricate a
   working pipeline.
+- **Pipeline drag-and-drop** — the Pipeline kanban uses a "Move to stage"
+  dropdown + button per card instead of HTML5 drag-and-drop. This was a
+  deliberate correctness-over-cosmetics call: the dropdown works with zero
+  client JS and no library, and is unambiguous to test, whereas a
+  hand-rolled native DnD implementation adds real fragility (drop-target
+  detection, touch support, accessibility) for a purely cosmetic gain.
+- **Bid "priority"** — there's no dedicated priority column. The Bid
+  Dashboard derives a simple High/Normal flag from how long a bid has sat
+  unresolved (`app/job-requests/BidDashboard.tsx#derivePriority`) rather
+  than adding a schema column for a field nothing else in the spec
+  populates.
+- **Dev "acting as" user is a cookie, not a session** — intentionally, per
+  the spec's "no real auth yet" instruction. See the "Bid workflow /
+  project pipeline" section above for exactly how this maps onto real auth
+  later.
+- **Duplicate-check UX is a full-page round trip, not client-side** — the
+  New Job Request form re-checks for duplicates as a server action and
+  redirects back with the warning + prefilled fields, instead of a
+  client-side fetch/modal. This keeps the whole flow working with zero
+  client JS, consistent with how every other form in this app already
+  works, at the cost of one extra page load when a duplicate is found.
