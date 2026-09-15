@@ -41,7 +41,6 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   ]);
 
   const rowInputs = { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes };
-  const activeEmployees = employees.filter((e) => e.active);
 
   const monday = startOfWeek(anchor);
   const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));
@@ -76,7 +75,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
         subtitle="Daily, weekly and monthly job schedule"
         action={view === "day" ? <SendScheduleButton message={scheduleMessage} messages={scheduleMessages} /> : undefined}
       />
-      <ScheduleSubNav active="calendar" />
+      <ScheduleSubNav active="view" />
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden">
@@ -119,7 +118,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
           <Card className="p-3 mb-3">
             <div className="font-semibold text-slate-900">{dayLabel(activeDate)} <span className="text-slate-400 font-normal">{formatDateShort(activeDate)}</span></div>
           </Card>
-          <DailyList rows={buildScheduleJobRows(activeDate, rowInputs)} workTypes={workTypes} employees={activeEmployees} />
+          <DailyList rows={buildScheduleJobRows(activeDate, rowInputs)} />
         </>
       )}
 

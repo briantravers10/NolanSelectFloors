@@ -60,7 +60,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
         <div className="xl:col-span-2 space-y-4">
           <Card className="p-4">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Today&apos;s Jobs — Confirm Crew &amp; Status</h2>
-            <DailyList rows={rows} workTypes={workTypes} employees={employees.filter((e) => e.active)} />
+            <DailyList rows={rows} />
           </Card>
           <ActualHoursSection date={date} entries={actualLaborEntries} employees={employees.filter((e) => e.active)} projects={activeProjects.length > 0 ? activeProjects : projects} />
         </div>
