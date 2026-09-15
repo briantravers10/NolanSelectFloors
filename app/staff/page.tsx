@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listEmployeeSkills, listEmployees } from "@/lib/db";
-import { Card, PageHeader, PhoneLink } from "@/components/ui";
+import { Card, PageHeader, PhoneLink, LinkButton } from "@/components/ui";
+import { Icon } from "@/components/Icon";
 import { formatCurrency } from "@/lib/calculations";
 
 export default async function StaffPage() {
@@ -13,7 +14,11 @@ export default async function StaffPage() {
 
   return (
     <div>
-      <PageHeader title="Staff" subtitle={`${employees.filter((e) => e.active).length} active crew members.`} />
+      <PageHeader
+        title="Staff"
+        subtitle={`${employees.filter((e) => e.active).length} active crew members.`}
+        action={<LinkButton href="/staff/new"><Icon name="plus" className="w-4 h-4" />New Staff</LinkButton>}
+      />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

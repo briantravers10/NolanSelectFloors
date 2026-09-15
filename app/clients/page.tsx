@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listContacts, listProjects } from "@/lib/db";
-import { Card, PageHeader, PhoneLink, EmailLink } from "@/components/ui";
+import { Card, PageHeader, PhoneLink, EmailLink, LinkButton } from "@/components/ui";
+import { Icon } from "@/components/Icon";
 
 export default async function ClientsPage() {
   const [clients, buildings, contacts, projects] = await Promise.all([
@@ -21,7 +22,11 @@ export default async function ClientsPage() {
 
   return (
     <div>
-      <PageHeader title="Clients" subtitle="Property management companies you do recurring work for." />
+      <PageHeader
+        title="Clients"
+        subtitle="Property management companies you do recurring work for."
+        action={<LinkButton href="/clients/new"><Icon name="plus" className="w-4 h-4" />New Client</LinkButton>}
+      />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
