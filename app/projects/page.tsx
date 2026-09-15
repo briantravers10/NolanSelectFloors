@@ -4,9 +4,31 @@ import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { formatCurrency } from "@/lib/calculations";
 import { PROJECT_STATUSES } from "@/lib/types";
 import { projectLaborCost } from "@/lib/calculations";
+import { Pipeline } from "./Pipeline";
 
-export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
-  const { status } = await searchParams;
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string; view?: string }> }) {
+  const { status, view } = await searchParams;
+  const showPipeline = view === "pipeline";
+
+  return (
+    <div>
+      <PageHeader title="Projects" subtitle={showPipeline ? "Drag-free kanban across the 6 primary lifecycle stages." : "Every project, in one list."} />
+
+      <div className="flex flex-wrap gap-2 mb-5 border-b border-slate-200 pb-3">
+        <Link href="/projects" className={`text-sm font-medium rounded-lg px-3 py-1.5 ${!showPipeline ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+          List
+        </Link>
+        <Link href="/projects?view=pipeline" className={`text-sm font-medium rounded-lg px-3 py-1.5 ${showPipeline ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+          Pipeline
+        </Link>
+      </div>
+
+      {showPipeline ? <Pipeline /> : <ProjectsList status={status} />}
+    </div>
+  );
+}
+
+async function ProjectsList({ status }: { status?: string }) {
   const [projects, buildings, clients, assignments] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -22,8 +44,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <PageHeader title="Projects" subtitle={`${projects.length} projects across the pipeline.`} />
-
       <div className="flex flex-wrap gap-2 mb-5">
         <Link href="/projects" className={`text-xs font-medium rounded-full px-3 py-1 border ${!status ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>
           All

@@ -85,6 +85,18 @@ const BADGE_COLORS: Record<string, string> = {
   "Follow Up": "bg-orange-100 text-orange-700",
   Won: "bg-emerald-100 text-emerald-700",
   Lost: "bg-rose-100 text-rose-700",
+  // Pipeline stages (primary 6-stage bid → project lifecycle)
+  "Project Bid": "bg-violet-100 text-violet-700",
+  "Bid Accepted": "bg-indigo-100 text-indigo-700",
+  "Sent to Crew": "bg-cyan-100 text-cyan-700",
+  "Project In Process": "bg-blue-100 text-blue-700",
+  // Bid statuses
+  Unclaimed: "bg-rose-100 text-rose-700",
+  Claimed: "bg-amber-100 text-amber-700",
+  "Ready for Review": "bg-lime-100 text-lime-700",
+  "Completed/Sent": "bg-teal-100 text-teal-700",
+  Accepted: "bg-emerald-100 text-emerald-700",
+  Rejected: "bg-rose-100 text-rose-700",
 };
 
 export function StatusBadge({ status }: { status: string }) {

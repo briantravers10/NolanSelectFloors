@@ -2,19 +2,80 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  claimBid,
   createProjectCrewRequirement,
   createProjectMaterial,
   createProjectNote,
   createTask,
+  reassignOrReleaseBid,
+  updateBidStatus,
+  updateProjectPipelineStage,
   updateProjectStatus,
 } from "@/lib/db";
-import type { ProjectStatus, StaffCapability, MaterialStatus } from "@/lib/types";
+import { getActingUser } from "@/lib/current-user";
+import type { BidStatus, MaterialStatus, PipelineStage, ProjectStatus, StaffCapability } from "@/lib/types";
 
 export async function setProjectStatusAction(id: string, status: ProjectStatus) {
   await updateProjectStatus(id, status);
   revalidatePath(`/projects/${id}`);
   revalidatePath("/projects");
   revalidatePath("/dashboard");
+}
+
+function revalidateProjectViews(id: string) {
+  revalidatePath(`/projects/${id}`);
+  revalidatePath("/projects");
+  revalidatePath("/job-requests");
+  revalidatePath("/dashboard");
+}
+
+export async function setPipelineStageAction(id: string, stage: PipelineStage) {
+  await updateProjectPipelineStage(id, stage);
+  revalidateProjectViews(id);
+}
+
+/** Used by the Pipeline kanban's per-card "Move to stage" dropdown, where
+ * the target stage is chosen at submit time rather than bound ahead. */
+export async function movePipelineStageFormAction(id: string, formData: FormData) {
+  const stage = String(formData.get("stage") ?? "") as PipelineStage;
+  if (!stage) return;
+  await setPipelineStageAction(id, stage);
+}
+
+export async function setBidStatusAction(id: string, status: BidStatus) {
+  const actingUser = await getActingUser();
+  await updateBidStatus(id, status, actingUser.fullName);
+  revalidateProjectViews(id);
+}
+
+/** "Claim Bid" — atomic; if it fails, the page just re-renders showing who
+ * actually holds it now (claimBid itself resolves the race, this action
+ * has nothing left to check). */
+export async function claimBidAction(id: string) {
+  const actingUser = await getActingUser();
+  await claimBid(id, actingUser.id, actingUser.fullName);
+  revalidateProjectViews(id);
+}
+
+/** Manager-only in intent (see README): release a bid back to Unclaimed. */
+export async function releaseBidAction(id: string) {
+  const actingUser = await getActingUser();
+  await reassignOrReleaseBid(id, null, actingUser.fullName);
+  revalidateProjectViews(id);
+}
+
+/** Manager-only in intent (see README): reassign a bid to a different
+ * estimator, recording previous/new estimator + actor + timestamp. */
+export async function reassignBidAction(id: string, newEstimatorId: string) {
+  const actingUser = await getActingUser();
+  await reassignOrReleaseBid(id, newEstimatorId, actingUser.fullName);
+  revalidateProjectViews(id);
+}
+
+export async function reassignBidFormAction(id: string, formData: FormData) {
+  const newEstimatorId = String(formData.get("estimator_id") ?? "");
+  if (!newEstimatorId) return;
+  await reassignBidAction(id, newEstimatorId);
 }
 
 export async function addCrewRequirementAction(projectId: string, formData: FormData) {

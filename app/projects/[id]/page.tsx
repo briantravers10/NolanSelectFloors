@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
+  listActivityLog,
   listBuildings,
   listClientCompanies,
   listCrewRequirements,
   listEmployees,
+  listOfficeUsers,
   listProjectMaterials,
   listProjectNotes,
   listProjects,
@@ -12,7 +14,9 @@ import {
   listScheduleAssignments,
   listTasks,
 } from "@/lib/db";
+import { getActingUser } from "@/lib/current-user";
 import { Card, PageHeader, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
+import { BidOwnership } from "@/components/BidOwnership";
 import {
   compareCrewForProjectDate,
   computeProjectCosting,
@@ -21,12 +25,13 @@ import {
   isMissingDriver,
 } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
-import { PROJECT_STATUSES, STAFF_CAPABILITIES } from "@/lib/types";
+import { PIPELINE_STAGES, PROJECT_STATUSES, STAFF_CAPABILITIES } from "@/lib/types";
 import {
   addCrewRequirementAction,
   addProjectMaterialAction,
   addProjectNoteAction,
   addProjectTaskAction,
+  setPipelineStageAction,
   setProjectStatusAction,
 } from "../actions";
 
@@ -43,6 +48,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     materials,
     tasks,
     notes,
+    officeUsers,
+    actingUser,
+    activityLog,
   ] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -54,6 +62,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listProjectMaterials(),
     listTasks(),
     listProjectNotes(),
+    listOfficeUsers(),
+    getActingUser(),
+    listActivityLog(),
   ]);
 
   const project = projects.find((p) => p.id === id);
@@ -69,6 +80,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const projectTasks = tasks.filter((t) => t.related_type === "project" && t.related_id === id);
   const projectNotes = notes.filter((n) => n.project_id === id);
   const employeeById = new Map(employees.map((e) => [e.id, e]));
+  const projectActivity = activityLog.filter((a) => a.related_type === "project" && a.related_id === id);
 
   const costing = computeProjectCosting(project, assignments, materials, id);
 
@@ -77,7 +89,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       <PageHeader
         title={project.name}
         subtitle={building ? `${building.name} · ${client?.name ?? ""}` : undefined}
-        action={<StatusBadge status={project.status} />}
+        action={
+          <div className="flex flex-wrap gap-1.5 justify-end">
+            <StatusBadge status={project.pipeline_stage} />
+            <StatusBadge status={project.bid_status} />
+            <StatusBadge status={project.status} />
+          </div>
+        }
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -103,7 +121,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <span key={wt.id} className="text-xs bg-slate-100 rounded-full px-2.5 py-1 text-slate-600">{wt.work_type}</span>
               ))}
             </div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Move to Status</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Move to Pipeline Stage</div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {PIPELINE_STAGES.filter((s) => s !== project.pipeline_stage).map((s) => (
+                <form key={s} action={setPipelineStageAction.bind(null, project.id, s)}>
+                  <button type="submit" className="text-xs rounded-full border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-100">{s}</button>
+                </form>
+              ))}
+            </div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Move to Detailed Status</div>
             <div className="flex flex-wrap gap-2">
               {PROJECT_STATUSES.filter((s) => s !== project.status).map((s) => (
                 <form key={s} action={setProjectStatusAction.bind(null, project.id, s)}>
@@ -112,6 +138,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               ))}
             </div>
           </Card>
+
+          <BidOwnership project={project} officeUsers={officeUsers} actingUser={actingUser} />
 
           <Card className="p-4">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Crew Requirements</h2>
@@ -274,6 +302,23 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   <div key={n.id} className="text-sm border-l-2 border-slate-200 pl-3">
                     <div className="text-slate-700">{n.body}</div>
                     <div className="text-xs text-slate-400 mt-0.5">{n.author_name} · {formatDateLong(n.created_at.slice(0, 10))}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Activity</h2>
+            {projectActivity.length === 0 ? (
+              <EmptyState message="No activity logged yet." />
+            ) : (
+              <div className="space-y-2.5 max-h-96 overflow-y-auto">
+                {projectActivity.map((a) => (
+                  <div key={a.id} className="text-sm border-l-2 border-slate-200 pl-3">
+                    <div className="text-slate-700">{a.action}</div>
+                    {a.detail && <div className="text-xs text-slate-500 mt-0.5">{a.detail}</div>}
+                    <div className="text-xs text-slate-400 mt-0.5">{a.actor_name ?? "System"} · {formatDateLong(a.created_at.slice(0, 10))}</div>
                   </div>
                 ))}
               </div>

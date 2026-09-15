@@ -1,25 +1,33 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { listBuildings, listClientCompanies, listContacts, listJobRequests } from "@/lib/db";
+import { listBuildings, listClientCompanies, listContacts, listJobRequests, listOfficeUsers, listProjects } from "@/lib/db";
 import { Card, PageHeader, StatusBadge, PhoneLink, Button } from "@/components/ui";
+import { BidOwnership } from "@/components/BidOwnership";
+import { getActingUser } from "@/lib/current-user";
 import { formatDateLong } from "@/lib/dates";
 import { formatCurrency } from "@/lib/calculations";
 import { JOB_REQUEST_STATUSES } from "@/lib/types";
-import { convertToProjectAction, setJobRequestStatusAction } from "../actions";
+import { convertToProjectAction, createBidAction, setJobRequestStatusAction } from "../actions";
+
+const BIDDABLE_STATUSES = new Set(["New Request", "Site Visit Required", "Site Visit Scheduled", "Estimate Required"]);
 
 export default async function JobRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [jobRequests, buildings, clients, contacts] = await Promise.all([
+  const [jobRequests, buildings, clients, contacts, projects, officeUsers, actingUser] = await Promise.all([
     listJobRequests(),
     listBuildings(),
     listClientCompanies(),
     listContacts(),
+    listProjects(),
+    listOfficeUsers(),
+    getActingUser(),
   ]);
   const jr = jobRequests.find((j) => j.id === id);
   if (!jr) notFound();
   const building = buildings.find((b) => b.id === jr.building_id);
   const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
   const contact = contacts.find((c) => c.id === jr.contact_id);
+  const linkedProject = jr.converted_project_id ? projects.find((p) => p.id === jr.converted_project_id) : undefined;
 
   return (
     <div className="max-w-3xl">
@@ -74,14 +82,36 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
             </div>
           </Card>
 
-          {jr.status !== "Converted to Project" && jr.status !== "Declined" && jr.status !== "Cancelled" && (
-            <Card className="p-4">
-              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Convert to Project</h2>
-              <p className="text-sm text-slate-500 mb-3">Creates a new project pre-filled from this job request&apos;s building, unit, and estimate.</p>
-              <form action={convertToProjectAction.bind(null, jr.id)}>
-                <Button type="submit">Convert to Project</Button>
-              </form>
-            </Card>
+          {linkedProject ? (
+            <BidOwnership project={linkedProject} officeUsers={officeUsers} actingUser={actingUser} />
+          ) : (
+            jr.status !== "Converted to Project" &&
+            jr.status !== "Declined" &&
+            jr.status !== "Cancelled" && (
+              <Card className="p-4 space-y-4">
+                {BIDDABLE_STATUSES.has(jr.status) && (
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Create Bid</h2>
+                    <p className="text-sm text-slate-500 mb-3">
+                      Starts a project row in the &quot;Project Bid&quot; pipeline stage, unclaimed, so an estimator can
+                      claim it from the Bid Dashboard and work the estimate.
+                    </p>
+                    <form action={createBidAction.bind(null, jr.id)}>
+                      <Button type="submit">Create Bid (Unclaimed)</Button>
+                    </form>
+                  </div>
+                )}
+                <div className={BIDDABLE_STATUSES.has(jr.status) ? "border-t border-slate-100 pt-4" : ""}>
+                  <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Convert to Project</h2>
+                  <p className="text-sm text-slate-500 mb-3">
+                    For a job that&apos;s already approved — creates the project starting at &quot;Bid Accepted&quot;, skipping the bid stage.
+                  </p>
+                  <form action={convertToProjectAction.bind(null, jr.id)}>
+                    <Button type="submit">Convert to Project</Button>
+                  </form>
+                </div>
+              </Card>
+            )
           )}
         </div>
 
