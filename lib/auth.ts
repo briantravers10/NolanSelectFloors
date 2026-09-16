@@ -20,7 +20,7 @@
 // recursion — see the comment on getActingUser() in current-user.ts.
 import { createSupabaseServerClient } from "./supabase/server";
 import { getSupabaseClient } from "./supabaseClient";
-import { getOfficeUserByAuthId } from "./db";
+import { getOfficeUserByAuthId, hasAnyRealAuthAccount } from "./db";
 import { getActingUser as getDevActingUser, getCurrentCompanyId, type ActingUser } from "./current-user";
 import type { OfficeUser } from "./types";
 
@@ -72,7 +72,13 @@ function officeUserToActingUser(u: OfficeUser): ActingUser {
  *      state instead of silently defaulting to Owner or crashing).
  */
 export async function getCurrentSession(): Promise<Session | null> {
-  if (!isRealAuthConfigured()) {
+  // Bootstrap window: until at least one office_users row has a real
+  // account (auth_user_id set), treat real auth as not yet configured —
+  // see lib/db.ts#hasAnyRealAuthAccount() and README "Activating Real
+  // Login". Otherwise NSF_REAL_AUTH_ENABLED=true alone would lock
+  // everyone out of Company Setup → Staff Access before the first real
+  // account can ever be created.
+  if (!isRealAuthConfigured() || !(await hasAnyRealAuthAccount())) {
     return { isRealAuth: false, companyId: getCurrentCompanyId(), user: await getDevActingUser() };
   }
 

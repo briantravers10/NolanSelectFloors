@@ -27,6 +27,19 @@ async function readOfficeUsers(): Promise<OfficeUser[]> {
   return getStore().officeUsers;
 }
 
+/**
+ * Bootstrap check (build 12): true once at least one office_users row has
+ * a real Supabase Auth account (auth_user_id set). NSF_REAL_AUTH_ENABLED
+ * =true alone would otherwise lock every page — including Company Setup →
+ * Staff Access, the only place to create that first account — behind a
+ * login that can't yet succeed. Both this file's getActingUser() and
+ * lib/supabase/middleware.ts fall back to the dev "acting as" mechanism
+ * until this returns true, then real login is enforced everywhere.
+ */
+async function hasAnyRealAuthAccount(): Promise<boolean> {
+  return (await readOfficeUsers()).some((u) => Boolean(u.auth_user_id));
+}
+
 // Placeholder auth context. There is no login flow yet — the whole app
 // operates as this single company/user. When real auth (Supabase Auth +
 // the `users` table + role-based access) is added, swap the body of these
@@ -120,7 +133,7 @@ function noMatchingAccountUser(): ActingUser {
  * runtime recursion.
  */
 export async function getActingUser(): Promise<ActingUser> {
-  if (isRealAuthConfigured()) {
+  if (isRealAuthConfigured() && (await hasAnyRealAuthAccount())) {
     const session = await getCurrentSession();
     return session ? session.user : noMatchingAccountUser();
   }

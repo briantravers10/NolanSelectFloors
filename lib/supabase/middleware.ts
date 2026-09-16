@@ -67,9 +67,25 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const isApiRoute = pathname.startsWith("/api/");
 
   if (!user && !isLoginPage && !isApiRoute) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/login";
-    return NextResponse.redirect(redirectUrl);
+    // Bootstrap window: NSF_REAL_AUTH_ENABLED=true alone would otherwise
+    // lock everyone out of every page — including Company Setup → Staff
+    // Access, the ONE place an Owner/Admin can create the first real
+    // account — before a single real account exists. Enforce the redirect
+    // only once at least one office_users row actually has a real
+    // auth_user_id; until then, fall through to the dev "acting as"
+    // mechanism so the very first account can be created at all.
+    const { data: anyRealAccount } = await supabase
+      .from("office_users")
+      .select("id")
+      .not("auth_user_id", "is", null)
+      .limit(1)
+      .maybeSingle();
+
+    if (anyRealAccount) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/login";
+      return NextResponse.redirect(redirectUrl);
+    }
   }
 
   // IMPORTANT: `supabaseResponse` (not a fresh NextResponse) must be

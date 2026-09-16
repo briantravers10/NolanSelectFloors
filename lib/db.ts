@@ -207,6 +207,19 @@ export async function getOfficeUserByAuthId(authUserId: string): Promise<OfficeU
   return (await listOfficeUsers()).find((u) => u.auth_user_id === authUserId);
 }
 
+/**
+ * True once at least one office_users row has a real Supabase Auth account
+ * (auth_user_id set) — build 12 bootstrap check. NSF_REAL_AUTH_ENABLED=true
+ * alone would otherwise lock every page (including Company Setup → Staff
+ * Access, the only place to create that first account) behind a login that
+ * can't yet succeed. Both lib/auth.ts#getCurrentSession() and the request
+ * middleware (lib/supabase/middleware.ts) fall back to the dev "acting as"
+ * mechanism until this returns true, then real login is enforced everywhere.
+ */
+export async function hasAnyRealAuthAccount(): Promise<boolean> {
+  return (await listOfficeUsers()).some((u) => Boolean(u.auth_user_id));
+}
+
 // ---------------------------------------------------------------------
 // STAFF ACCOUNTS (build 11) — office_users create/update + the new
 // section_permissions grid. See lib/permissions.ts and README "Permissions
