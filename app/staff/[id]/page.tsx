@@ -7,18 +7,22 @@ import {
   listEmployeeSkills,
   listProjects,
   listScheduleAssignments,
+  listTimeOffForEmployee,
 } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, EmailLink, Stat, EmptyState, Button } from "@/components/ui";
 import { formatCurrency } from "@/lib/calculations";
 import { employeeLaborHistory, payRateLabel } from "@/lib/labor-cost";
-import { canEditPayRates, canViewLaborCost, getActingUser } from "@/lib/current-user";
-import { addDays, dayLabel, formatDateShort, isoDate, startOfWeek } from "@/lib/dates";
+import { canEditPayRates, canEditTimeOffAllowance, canViewLaborCost, canViewTimeOffAllowance, getActingUser } from "@/lib/current-user";
+import { addDays, dayLabel, formatDateLong, formatDateShort, isoDate, startOfWeek, todayIso } from "@/lib/dates";
 import { STAFF_CAPABILITIES } from "@/lib/types";
-import { updateEmployeePayRateAction } from "../actions";
+import type { TimeOffEntry } from "@/lib/types";
+import { computeTimeOffUsage, splitUpcomingAndPast } from "@/lib/time-off";
+import { AddTimeOffForm } from "@/components/staff/AddTimeOffForm";
+import { addTimeOffAction, deleteTimeOffAction, updateEmployeePayRateAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [employees, skills, assignments, projects, buildings, actualLaborEntries, actingUser] = await Promise.all([
+  const [employees, skills, assignments, projects, buildings, actualLaborEntries, actingUser, timeOffEntries] = await Promise.all([
     listEmployees(),
     listEmployeeSkills(),
     listScheduleAssignments(),
@@ -26,12 +30,17 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
     listBuildings(),
     listActualLaborEntries(),
     getActingUser(),
+    listTimeOffForEmployee(id),
   ]);
   const employee = employees.find((e) => e.id === id);
   if (!employee) notFound();
   const canViewRates = canViewLaborCost(actingUser);
   const canEditRates = canEditPayRates(actingUser);
+  const canViewAllowance = canViewTimeOffAllowance(actingUser);
+  const canEditAllowance = canEditTimeOffAllowance(actingUser);
   const history = employeeLaborHistory(id, actualLaborEntries, projects);
+  const { upcoming: upcomingTimeOff, past: pastTimeOff } = splitUpcomingAndPast(timeOffEntries, todayIso());
+  const timeOffUsage = computeTimeOffUsage(timeOffEntries, employee);
 
   const employeeCapabilities = new Set(skills.filter((s) => s.employee_id === id).map((s) => s.capability));
   const monday = startOfWeek(new Date());
@@ -61,7 +70,26 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
         <Stat label="Days Scheduled (This Week)" value={weekAssignments.length} />
         <Stat label="Normal / Time-and-Half" value={`${normalDays} / ${otDays}`} />
         {canViewRates && <Stat label="Projected Weekly Cost (Planned)" value={formatCurrency(weeklyCost)} />}
+        {canViewAllowance && (
+          <Stat
+            label={`Vacation Used (${timeOffUsage.year})`}
+            value={`${timeOffUsage.vacationUsed} of ${timeOffUsage.vacationAllowed ?? "—"} days`}
+            tone={timeOffUsage.vacationOver ? "bad" : "default"}
+          />
+        )}
+        {canViewAllowance && (
+          <Stat
+            label={`Sick Used (${timeOffUsage.year})`}
+            value={`${timeOffUsage.sickUsed} of ${timeOffUsage.sickAllowed ?? "—"} days`}
+            tone={timeOffUsage.sickOver ? "bad" : "default"}
+          />
+        )}
       </div>
+      {canViewAllowance && (timeOffUsage.vacationOver || timeOffUsage.sickOver) && (
+        <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-sm px-3.5 py-2.5">
+          ⚠ Over Allowance — {employee.first_name} has used more {timeOffUsage.vacationOver && timeOffUsage.sickOver ? "vacation and sick" : timeOffUsage.vacationOver ? "vacation" : "sick"} days than their {timeOffUsage.year} allowance. There is no email/notification system yet — this in-app banner and badge are the only alert for now.
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">
@@ -119,6 +147,49 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
               )}
             </Card>
           )}
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Time Off</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              A simple log of vacation/sick/personal/unpaid days — no balance or accrual tracking (see README). Scheduling this
+              person during a logged time-off range shows a warning on the Crew picker, but never blocks the assignment.
+            </p>
+
+            <AddTimeOffForm
+              action={addTimeOffAction.bind(null, employee.id)}
+              employeeFirstName={employee.first_name}
+              vacationUsed={timeOffUsage.vacationUsed}
+              vacationAllowed={timeOffUsage.vacationAllowed}
+              sickUsed={timeOffUsage.sickUsed}
+              sickAllowed={timeOffUsage.sickAllowed}
+            />
+
+            {upcomingTimeOff.length === 0 && pastTimeOff.length === 0 ? (
+              <EmptyState message="No time off logged for this employee." />
+            ) : (
+              <div className="space-y-4">
+                {upcomingTimeOff.length > 0 && (
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-500 uppercase mb-1.5">Upcoming / Current</div>
+                    <div className="space-y-1.5">
+                      {upcomingTimeOff.map((entry) => (
+                        <TimeOffRow key={entry.id} entry={entry} employeeId={employee.id} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {pastTimeOff.length > 0 && (
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-500 uppercase mb-1.5">Past</div>
+                    <div className="space-y-1.5">
+                      {pastTimeOff.map((entry) => (
+                        <TimeOffRow key={entry.id} entry={entry} employeeId={employee.id} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
           {employee.notes && (
             <Card className="p-4">
               <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Notes</h2>
@@ -158,6 +229,31 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
               )}
             </div>
           )}
+          {canViewAllowance && (
+            <div className="mb-4 pb-4 border-b border-slate-200">
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Annual Time-Off Allowance</h2>
+              {canEditAllowance ? (
+                <form action={updateEmployeeTimeOffAllowanceAction.bind(null, employee.id)} className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-slate-500 uppercase mb-1">Vacation Days / Yr</label>
+                      <input name="vacation_days_allowed" type="number" min="0" step="1" defaultValue={employee.vacation_days_allowed ?? ""} className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-500 uppercase mb-1">Sick Days / Yr</label>
+                      <input name="sick_days_allowed" type="number" min="0" step="1" defaultValue={employee.sick_days_allowed ?? ""} className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
+                    </div>
+                  </div>
+                  <Button type="submit" variant="secondary" className="text-xs py-1">Save Allowance</Button>
+                  <p className="text-[11px] text-slate-400">Set per employee — not a flat company-wide number. Leave blank if not tracked for this person yet.</p>
+                </form>
+              ) : (
+                <div className="text-sm text-slate-800">
+                  Vacation: {employee.vacation_days_allowed ?? "not set"} days/yr · Sick: {employee.sick_days_allowed ?? "not set"} days/yr
+                </div>
+              )}
+            </div>
+          )}
           <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Capabilities</h2>
           <div className="space-y-1.5">
             {STAFF_CAPABILITIES.map((cap) => (
@@ -175,6 +271,21 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
           </div>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function TimeOffRow({ entry, employeeId }: { entry: TimeOffEntry; employeeId: string }) {
+  const range = entry.start_date === entry.end_date ? formatDateLong(entry.start_date) : `${formatDateShort(entry.start_date)} – ${formatDateLong(entry.end_date)}`;
+  return (
+    <div className="flex items-start justify-between gap-2 text-sm border border-slate-200 rounded-lg px-2.5 py-2">
+      <div>
+        <div className="font-medium text-slate-800">{entry.type} <span className="text-slate-500 font-normal">— {range}</span></div>
+        {entry.notes && <div className="text-xs text-slate-500 mt-0.5">{entry.notes}</div>}
+      </div>
+      <form action={deleteTimeOffAction.bind(null, employeeId, entry.id)}>
+        <button type="submit" className="text-xs text-slate-400 hover:text-rose-600 shrink-0">Remove</button>
+      </form>
     </div>
   );
 }

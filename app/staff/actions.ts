@@ -2,9 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createEmployee, updateEmployee } from "@/lib/db";
-import { canEditPayRates, getActingUser } from "@/lib/current-user";
-import type { PayType, StaffCapability } from "@/lib/types";
+import { createEmployee, createTimeOffEntry, deleteTimeOffEntry, updateEmployee } from "@/lib/db";
+import { canEditPayRates, canEditTimeOffAllowance, getActingUser } from "@/lib/current-user";
+import type { PayType, StaffCapability, TimeOffType } from "@/lib/types";
+import { TIME_OFF_TYPES } from "@/lib/types";
 
 export async function createStaffAction(formData: FormData) {
   const first_name = String(formData.get("first_name") ?? "").trim();
@@ -62,4 +63,64 @@ export async function updateEmployeePayRateAction(employeeId: string, formData: 
   await updateEmployee(employeeId, { pay_type, daily_rate, hourly_rate }, actingUser.fullName);
   revalidatePath(`/staff/${employeeId}`);
   revalidatePath("/staff");
+}
+
+// ---------------------------------------------------------------------
+// VACATION & SICK DAY TRACKER (build 7) — see lib/db.ts and README
+// "Vacation & Sick Day Tracker". No access gating: day-off status is
+// visible/loggable by anyone, consistent with the rest of the Staff
+// section (only pay rates are gated — see canViewLaborCost/canEditPayRates
+// above).
+// ---------------------------------------------------------------------
+
+export async function addTimeOffAction(employeeId: string, formData: FormData) {
+  const startDate = String(formData.get("start_date") ?? "");
+  const endRaw = String(formData.get("end_date") ?? "");
+  const endDate = endRaw || startDate; // a single day off leaves "end date" blank
+  if (!startDate) return;
+  const type = String(formData.get("type") ?? "Vacation") as TimeOffType;
+  if (!TIME_OFF_TYPES.includes(type)) return;
+  const notes = String(formData.get("notes") ?? "") || undefined;
+
+  const actingUser = await getActingUser();
+  await createTimeOffEntry({
+    employee_id: employeeId,
+    start_date: startDate,
+    end_date: endDate < startDate ? startDate : endDate,
+    type,
+    notes,
+    actorName: actingUser.fullName,
+  });
+  revalidatePath(`/staff/${employeeId}`);
+  revalidatePath("/staff");
+  revalidatePath("/dashboard");
+}
+
+/**
+ * Updates an employee's annual vacation/sick allowance — gated the same
+ * way as updateEmployeePayRateAction above (Owner/Admin only; see
+ * lib/current-user.ts canEditTimeOffAllowance()). Re-checked server-side
+ * so the form (itself only rendered for an Owner/Admin acting user) can't
+ * be bypassed by a direct submit.
+ */
+export async function updateEmployeeTimeOffAllowanceAction(employeeId: string, formData: FormData) {
+  const actingUser = await getActingUser();
+  if (!canEditTimeOffAllowance(actingUser)) return;
+
+  const vacationRaw = String(formData.get("vacation_days_allowed") ?? "").trim();
+  const sickRaw = String(formData.get("sick_days_allowed") ?? "").trim();
+  const vacation_days_allowed = vacationRaw === "" ? undefined : Math.max(0, Number(vacationRaw));
+  const sick_days_allowed = sickRaw === "" ? undefined : Math.max(0, Number(sickRaw));
+
+  await updateEmployee(employeeId, { vacation_days_allowed, sick_days_allowed }, actingUser.fullName);
+  revalidatePath(`/staff/${employeeId}`);
+  revalidatePath("/staff");
+}
+
+export async function deleteTimeOffAction(employeeId: string, entryId: string) {
+  const actingUser = await getActingUser();
+  await deleteTimeOffEntry(entryId, actingUser.fullName);
+  revalidatePath(`/staff/${employeeId}`);
+  revalidatePath("/staff");
+  revalidatePath("/dashboard");
 }
