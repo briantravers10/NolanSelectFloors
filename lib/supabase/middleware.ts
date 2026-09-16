@@ -16,13 +16,22 @@ import { NextResponse, type NextRequest } from "next/server";
  * behavior. No cookie refresh, no redirect, dev "acting as" selector works
  * exactly as before.
  */
+function withPathnameHeader(request: NextRequest, response: NextResponse): NextResponse {
+  // Lets Server Components (the root layout, specifically) know the current
+  // path without a client-side hook, so /login can render standalone
+  // without the app shell (Sidebar/TopBar/MobileNav) around it — the App
+  // Router gives layouts no built-in server-side pathname access.
+  response.headers.set("x-pathname", request.nextUrl.pathname);
+  return response;
+}
+
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const realAuthEnabled = process.env.NSF_REAL_AUTH_ENABLED === "true";
 
   if (!url || !anonKey || !realAuthEnabled) {
-    return NextResponse.next();
+    return withPathnameHeader(request, NextResponse.next());
   }
 
   let supabaseResponse = NextResponse.next({ request });
@@ -66,5 +75,5 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // IMPORTANT: `supabaseResponse` (not a fresh NextResponse) must be
   // returned so the refreshed cookies set via setAll above actually reach
   // the browser.
-  return supabaseResponse;
+  return withPathnameHeader(request, supabaseResponse);
 }

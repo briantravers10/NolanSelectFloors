@@ -12,7 +12,7 @@ import type { SectionAccessLevel, SectionKey } from "@/lib/types";
  * A nav item whose sectionKey resolves to 'none' is hidden entirely, per
  * the client's ask that staff not even see sections they can't use.
  */
-export function Sidebar({ access }: { access: Record<SectionKey, SectionAccessLevel> }) {
+export function Sidebar({ access, realAuthOn }: { access: Record<SectionKey, SectionAccessLevel>; realAuthOn: boolean }) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.sectionKey || access[item.sectionKey] !== "none");
   return (
@@ -41,7 +41,7 @@ export function Sidebar({ access }: { access: Record<SectionKey, SectionAccessLe
         })}
       </nav>
       <div className="px-5 py-4 border-t border-slate-800 text-xs text-slate-500">
-        No login required — single-company demo mode.
+        {realAuthOn ? "Signed in" : "No login required — single-company demo mode."}
       </div>
     </aside>
   );
