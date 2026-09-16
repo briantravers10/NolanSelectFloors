@@ -51,6 +51,32 @@ export function isPhotoStorageConfigured(): boolean {
   return getSupabaseClient() !== null;
 }
 
+const DRAWINGS_BUCKET = process.env.SUPABASE_DRAWINGS_BUCKET || "project-drawings";
+
+/**
+ * Same soft-fail pattern as uploadProjectPhoto above, for the Drawings
+ * feature's file field — returns `unavailable: true` (never throws) when
+ * Supabase isn't configured or the bucket doesn't exist.
+ */
+export async function uploadProjectDrawing(file: File, projectId: string): Promise<PhotoUploadResult> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { unavailable: true, error: "File storage is not configured (no NEXT_PUBLIC_SUPABASE_URL / key set)." };
+  }
+  try {
+    const path = `project/${projectId}/${randomUUID()}-${file.name}`;
+    const arrayBuffer = await file.arrayBuffer();
+    const { error } = await client.storage.from(DRAWINGS_BUCKET).upload(path, arrayBuffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+    if (error) return { unavailable: true, error: error.message };
+    return { storage_path: path, unavailable: false };
+  } catch (err) {
+    return { unavailable: true, error: err instanceof Error ? err.message : "Unknown storage error" };
+  }
+}
+
 const INVOICE_BUCKET = process.env.SUPABASE_INVOICES_BUCKET || "invoice-files";
 
 /**
