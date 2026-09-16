@@ -1,6 +1,38 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { buildSeedData } from "@/lib/seed-data";
+
+/**
+ * The in-memory demo store uses short readable IDs ("co-1", "p-1", ...)
+ * since it never enforces a column type. Real Postgres columns here are
+ * `uuid`, which rejects those. Rather than reshaping the seed data or the
+ * schema, remap every id (and every reference to it, by exact string
+ * match, across every field of every row) to a fresh real UUID right
+ * before inserting — the mapping is entirely internal to this one seed
+ * run, so relationships stay intact either way.
+ */
+function collectIdMap(tables: { rows: unknown[] }[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const { rows } of tables) {
+    for (const row of rows) {
+      const id = (row as Record<string, unknown>).id;
+      if (typeof id === "string" && !map.has(id)) map.set(id, randomUUID());
+    }
+  }
+  return map;
+}
+
+function remapIds<T>(value: T, map: Map<string, string>): T {
+  if (typeof value === "string") return (map.get(value) ?? value) as T;
+  if (Array.isArray(value)) return value.map((v) => remapIds(v, map)) as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = remapIds(v, map);
+    return out as T;
+  }
+  return value;
+}
 
 /**
  * One-time admin endpoint to push the demo seed dataset (lib/seed-data.ts)
@@ -97,9 +129,12 @@ async function runSeed() {
     { name: "activity_log", rows: data.activityLog },
   ];
 
+  const idMap = collectIdMap(tables);
+  const remappedTables = tables.map((t) => ({ name: t.name, rows: remapIds(t.rows, idMap) }));
+
   const results: { table: string; inserted: number; error?: string }[] = [];
 
-  for (const { name, rows } of tables) {
+  for (const { name, rows } of remappedTables) {
     if (rows.length === 0) continue;
     const { error } = await supabase.from(name).insert(rows as never[]);
     if (error) {
@@ -111,7 +146,9 @@ async function runSeed() {
 
   for (const project of data.projects) {
     if (!project.job_request_id) continue;
-    await supabase.from("projects").update({ job_request_id: project.job_request_id }).eq("id", project.id);
+    const newProjectId = idMap.get(project.id) ?? project.id;
+    const newJobRequestId = idMap.get(project.job_request_id) ?? project.job_request_id;
+    await supabase.from("projects").update({ job_request_id: newJobRequestId }).eq("id", newProjectId);
   }
 
   return NextResponse.json({ success: true, results });
