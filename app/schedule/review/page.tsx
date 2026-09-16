@@ -10,6 +10,7 @@ import {
   listProjectScheduleDays,
   listProjects,
   listScheduleAssignments,
+  listSchedulePickupItems,
   listWorkTypes,
 } from "@/lib/db";
 import { Card, PageHeader, Button, Stat } from "@/components/ui";
@@ -28,7 +29,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const today = todayIso();
   const date = dateParam ?? today;
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, actualLaborEntries, confirmations, actingUser] =
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, actualLaborEntries, confirmations, actingUser, pickupItems] =
     await Promise.all([
       listProjects(),
       listBuildings(),
@@ -42,9 +43,10 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
       listActualLaborEntries(),
       listDailyScheduleConfirmations(),
       getActingUser(),
+      listSchedulePickupItems(),
     ]);
 
-  const rows = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes });
+  const rows = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems });
   const activeProjects = projects.filter((p) => rows.some((r) => r.projectId === p.id));
   const confirmation = confirmations.find((c) => c.work_date === date);
   const canViewCost = canViewLaborCost(actingUser);

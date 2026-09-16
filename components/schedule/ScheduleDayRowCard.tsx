@@ -91,6 +91,31 @@ export function ScheduleDayRowCard({ row }: { row: ScheduleJobRow }) {
           {row.notes ? row.notes : <span className="text-slate-500">No notes for this job/day.</span>}
         </div>
       </div>
+
+      {/* Items to Order / Collect — read-only, only shown when non-empty.
+          A lightweight supplementary list, deliberately small/quiet so it
+          doesn't compete with the fields above; toggling status only
+          happens from Create/Edit Schedule, per the View/Edit split. */}
+      {row.pickupItems.length > 0 && (
+        <div>
+          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Items to Collect</div>
+          <ul className="text-sm text-slate-800 mt-0.5 space-y-0.5">
+            {row.pickupItems.map((item) => (
+              <li key={item.id} className="flex items-center gap-1.5">
+                <span className="text-slate-400">•</span>
+                <span className={item.status === "Collected" ? "line-through text-slate-500" : ""}>{item.description}</span>
+                <span
+                  className={`text-xs font-medium ${
+                    item.status === "Collected" ? "text-emerald-700" : "text-amber-700"
+                  }`}
+                >
+                  {item.status === "Collected" ? "✓ Collected" : "— Needed"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

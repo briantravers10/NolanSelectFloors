@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { Employee, ProjectScheduleDay, WorkTypeRecord } from "@/lib/types";
+import type { Employee, ProjectScheduleDay, SchedulePickupItem, WorkTypeRecord } from "@/lib/types";
 import { COI_STATUSES, SCHEDULE_COLORS, SCHEDULE_JOB_STATUSES, SCHEDULE_MATERIALS_STATUSES } from "@/lib/types";
 import { Card, Button } from "@/components/ui";
-import { saveScheduleEntryAction } from "@/app/schedule/actions";
+import { addPickupItemAction, deletePickupItemAction, saveScheduleEntryAction, togglePickupItemStatusAction } from "@/app/schedule/actions";
 import { SCHEDULE_COLOR_FORM_LABELS } from "./badges";
 import { CrewPicker, type CrewTimeOffEntry } from "./CrewPicker";
 
@@ -26,6 +26,7 @@ export function ScheduleEditForm({
   selectedDay,
   selectedCrewEmployeeIds,
   timeOffEntries,
+  pickupItems,
 }: {
   date: string;
   jobOptions: { id: string; label: string }[];
@@ -35,6 +36,7 @@ export function ScheduleEditForm({
   selectedDay?: ProjectScheduleDay;
   selectedCrewEmployeeIds: string[];
   timeOffEntries: CrewTimeOffEntry[];
+  pickupItems: SchedulePickupItem[];
 }) {
   const isEditing = Boolean(selectedProjectId);
   // Lifted so the Crew picker's "⚠ On Vacation" / "⚠ Out Sick" warning
@@ -177,6 +179,72 @@ export function ScheduleEditForm({
             placeholder="Work description / notes for this job on this day…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-800 mb-1.5">Items to Order / Collect</label>
+          <p className="text-xs text-slate-500 mb-2">
+            Quick pickups for this specific job/day — e.g. &quot;3 buckets of glue&quot; or &quot;pick up dumpster key from super&quot;.
+            Not the full Materials system — added/marked collected right away, separate from the Save button below.
+          </p>
+          {selectedProjectId ? (
+            <>
+              {pickupItems.length > 0 && (
+                <ul className="space-y-1.5 mb-2">
+                  {pickupItems.map((item) => (
+                    <li key={item.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                      <span className={`flex-1 ${item.status === "Collected" ? "line-through text-slate-500" : "text-slate-800"}`}>
+                        {item.description}
+                      </span>
+                      <form action={togglePickupItemStatusAction.bind(null, item.id, selectedProjectId)}>
+                        <button
+                          type="submit"
+                          className={`text-xs font-medium rounded-full px-2.5 py-1 border whitespace-nowrap ${
+                            item.status === "Collected"
+                              ? "bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200"
+                              : "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                          }`}
+                        >
+                          {item.status === "Collected" ? "✓ Collected" : "Mark Collected"}
+                        </button>
+                      </form>
+                      <form action={deletePickupItemAction.bind(null, item.id, selectedProjectId)}>
+                        <button type="submit" className="text-xs text-red-600 hover:underline whitespace-nowrap">
+                          Remove
+                        </button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <form action={addPickupItemAction.bind(null, selectedProjectId, scheduleDate)} className="flex gap-2">
+                <input
+                  type="text"
+                  name="description"
+                  placeholder='e.g. "3 buckets of glue"'
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+                <Button type="submit" variant="secondary" className="text-sm py-2 px-4 shrink-0">
+                  Add
+                </Button>
+              </form>
+            </>
+          ) : (
+            <>
+              <div className="flex gap-2 opacity-50 pointer-events-none">
+                <input
+                  type="text"
+                  disabled
+                  placeholder='e.g. "3 buckets of glue"'
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+                <Button type="button" variant="secondary" disabled className="text-sm py-2 px-4 shrink-0">
+                  Add
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Select a job above and save this entry first, then reopen it here to add items.</p>
+            </>
+          )}
         </div>
 
         <Button type="submit" className="w-full justify-center text-base py-3">

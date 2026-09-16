@@ -8,6 +8,7 @@ import {
   listProjectScheduleDays,
   listProjects,
   listScheduleAssignments,
+  listSchedulePickupItems,
   listTimeOffEntries,
   listWorkTypes,
 } from "@/lib/db";
@@ -33,7 +34,7 @@ export default async function ScheduleEditPage({
   const { project: projectParam, date: dateParam } = await searchParams;
   const date = dateParam ?? todayIso();
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries] = await Promise.all([
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -44,6 +45,7 @@ export default async function ScheduleEditPage({
     listProjectScheduleDays(),
     listWorkTypes(),
     listTimeOffEntries(),
+    listSchedulePickupItems(),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -71,6 +73,7 @@ export default async function ScheduleEditPage({
   const selectedCrew = selectedProjectId
     ? assignments.filter((a) => a.project_id === selectedProjectId && a.schedule_date === date).map((a) => a.employee_id)
     : [];
+  const selectedPickupItems = selectedDay ? pickupItems.filter((i) => i.project_schedule_day_id === selectedDay.id) : [];
 
   return (
     <div>
@@ -127,6 +130,7 @@ export default async function ScheduleEditPage({
           selectedDay={selectedDay}
           selectedCrewEmployeeIds={selectedCrew}
           timeOffEntries={timeOffEntries.map((t) => ({ employee_id: t.employee_id, start_date: t.start_date, end_date: t.end_date, type: t.type }))}
+          pickupItems={selectedPickupItems}
         />
       </div>
     </div>

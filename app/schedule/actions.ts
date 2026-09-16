@@ -6,12 +6,15 @@ import {
   confirmDay,
   createActualLaborEntry,
   createScheduleAssignment,
+  createSchedulePickupItem,
   createWorkType,
   deleteActualLaborEntry,
   deleteScheduleAssignment,
+  deleteSchedulePickupItem,
   getOrCreateProjectScheduleDay,
   listScheduleAssignments,
   saveCompletionNotes,
+  toggleSchedulePickupItemStatus,
   updateProjectScheduleDay,
   updateScheduleAssignmentCallTime,
   updateWorkType,
@@ -106,6 +109,36 @@ export async function setScheduleNotesAction(projectId: string, date: string, fo
   const actingUser = await getActingUser();
   const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
   await updateProjectScheduleDay(day.id, { notes }, actingUser.fullName);
+  revalidateSchedule(projectId);
+}
+
+// ---------------------------------------------------------------------
+// Items to Order / Collect — a lightweight per-schedule-entry checklist
+// (build 8), separate from the heavier project_materials system. Each add
+// happens immediately (not deferred to "Save to Schedule"), the same "quick
+// inline add" convention as AddTimeOffForm, so getOrCreateProjectScheduleDay
+// is called here too — adding the first item can create the day row before
+// the main form is ever saved.
+// ---------------------------------------------------------------------
+
+export async function addPickupItemAction(projectId: string, date: string, formData: FormData) {
+  const description = String(formData.get("description") ?? "").trim();
+  if (!projectId || !date || !description) return;
+  const actingUser = await getActingUser();
+  const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
+  await createSchedulePickupItem({ project_schedule_day_id: day.id, description, actorName: actingUser.fullName });
+  revalidateSchedule(projectId);
+}
+
+export async function togglePickupItemStatusAction(id: string, projectId: string) {
+  const actingUser = await getActingUser();
+  await toggleSchedulePickupItemStatus(id, actingUser.fullName);
+  revalidateSchedule(projectId);
+}
+
+export async function deletePickupItemAction(id: string, projectId: string) {
+  const actingUser = await getActingUser();
+  await deleteSchedulePickupItem(id, actingUser.fullName);
   revalidateSchedule(projectId);
 }
 
