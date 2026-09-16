@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { getOfficeUser, listSectionPermissions } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { isOwnerActingUser } from "@/lib/permissions";
+import { isRealAuthConfigured } from "@/lib/auth";
 import { Card, PageHeader, Button } from "@/components/ui";
 import { AccessDenied } from "@/components/AccessDenied";
 import { ACCESS_ROLES, SECTION_KEYS, type SectionAccessLevel } from "@/lib/types";
 import { setStaffActiveAction, setStaffOwnerAction, updateStaffAccessRoleAction } from "../actions";
 import { SectionAccessRow } from "./SectionAccessRow";
+import { SetNewPasswordButton } from "./SetNewPasswordButton";
 
 export default async function StaffAccessDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -70,6 +72,18 @@ export default async function StaffAccessDetailPage({ params }: { params: Promis
           </Button>
         </form>
       </Card>
+
+      {isRealAuthConfigured() && (
+        <Card className="p-4 mb-6">
+          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Real Login</h2>
+          <p className="text-xs text-slate-500 mb-3">
+            {staffMember.auth_user_id
+              ? "This person has a real Supabase Auth account. Use this if they're locked out."
+              : "This person doesn't have a real login account yet — create one so they can sign in at /login."}
+          </p>
+          <SetNewPasswordButton officeUserId={id} hasRealAccount={!!staffMember.auth_user_id} hasEmail={!!staffMember.email} />
+        </Card>
+      )}
 
       <Card className="p-4">
         <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Section Access</h2>
