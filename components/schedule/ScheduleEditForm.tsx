@@ -1,9 +1,12 @@
+"use client";
+
+import { useState } from "react";
 import type { Employee, ProjectScheduleDay, WorkTypeRecord } from "@/lib/types";
 import { COI_STATUSES, SCHEDULE_COLORS, SCHEDULE_JOB_STATUSES, SCHEDULE_MATERIALS_STATUSES } from "@/lib/types";
 import { Card, Button } from "@/components/ui";
 import { saveScheduleEntryAction } from "@/app/schedule/actions";
 import { SCHEDULE_COLOR_FORM_LABELS } from "./badges";
-import { CrewPicker } from "./CrewPicker";
+import { CrewPicker, type CrewTimeOffEntry } from "./CrewPicker";
 
 /**
  * The one place every schedule control lives, per the client spec: a
@@ -22,6 +25,7 @@ export function ScheduleEditForm({
   selectedProjectId,
   selectedDay,
   selectedCrewEmployeeIds,
+  timeOffEntries,
 }: {
   date: string;
   jobOptions: { id: string; label: string }[];
@@ -30,8 +34,14 @@ export function ScheduleEditForm({
   selectedProjectId?: string;
   selectedDay?: ProjectScheduleDay;
   selectedCrewEmployeeIds: string[];
+  timeOffEntries: CrewTimeOffEntry[];
 }) {
   const isEditing = Boolean(selectedProjectId);
+  // Lifted so the Crew picker's "⚠ On Vacation" / "⚠ Out Sick" warning
+  // (see CrewPicker.tsx) re-computes live as this date changes — every
+  // other field below stays an uncontrolled `defaultValue` input, still
+  // submitted natively by this same <form action=...>.
+  const [scheduleDate, setScheduleDate] = useState(date);
 
   return (
     <Card className="p-6">
@@ -50,7 +60,8 @@ export function ScheduleEditForm({
           <input
             type="date"
             name="schedule_date"
-            defaultValue={date}
+            value={scheduleDate}
+            onChange={(ev) => setScheduleDate(ev.target.value)}
             required
             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
           />
@@ -87,7 +98,12 @@ export function ScheduleEditForm({
 
         <div>
           <label className="block text-sm font-semibold text-slate-800 mb-1.5">Crew</label>
-          <CrewPicker employees={employees} selectedEmployeeIds={selectedCrewEmployeeIds} />
+          <CrewPicker
+            employees={employees}
+            selectedEmployeeIds={selectedCrewEmployeeIds}
+            date={scheduleDate}
+            timeOffEntries={timeOffEntries}
+          />
         </div>
 
         <div>

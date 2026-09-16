@@ -10,7 +10,9 @@ import {
   listCrewRequirements,
   listScheduleAssignments,
   listTasks,
+  listTimeOffEntries,
 } from "./db";
+import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
 import {
   compareCrewForProjectDate,
   findDoubleBookings,
@@ -65,6 +67,7 @@ export async function getDashboardData() {
     assignments,
     projectMaterials,
     tasks,
+    timeOffEntries,
   ] = await Promise.all([
     listBuildings(),
     listClientCompanies(),
@@ -77,6 +80,7 @@ export async function getDashboardData() {
     listScheduleAssignments(),
     listProjectMaterials(),
     listTasks(),
+    listTimeOffEntries(),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -130,14 +134,20 @@ export async function getDashboardData() {
 
   const activeEmployees = employees.filter((e) => e.active);
   const todaysAvailability = new Map(availability.filter((a) => a.schedule_date === today).map((a) => [a.employee_id, a.status]));
+  // Vacation & Sick Day Tracker (build 7) — the real, auditable data source
+  // going forward (see README). `employee_availability` above predates it
+  // and still feeds this same stat, so both are honored: an employee counts
+  // as "off" if EITHER says so.
+  const todaysTimeOff = getTimeOffForDate(timeOffEntries, today);
   const workingIds = new Set(todaysAssignments.map((a) => a.employee_id));
   let staffWorking = 0;
   let staffOff = 0;
   let staffAvailable = 0;
   for (const emp of activeEmployees) {
     const status = todaysAvailability.get(emp.id);
-    if (workingIds.has(emp.id)) staffWorking++;
-    else if (status === "day_off" || status === "vacation" || status === "unavailable") staffOff++;
+    const loggedOff = todaysTimeOff.has(emp.id) || status === "day_off" || status === "vacation" || status === "unavailable";
+    if (workingIds.has(emp.id) && !loggedOff) staffWorking++;
+    else if (loggedOff) staffOff++;
     else staffAvailable++;
   }
 
@@ -178,6 +188,30 @@ export async function getDashboardData() {
       severity: "bad",
       message: `${emp ? `${emp.first_name} ${emp.last_name}` : "An employee"} is double-booked on ${db.schedule_date}: ${names}`,
       href: `/schedule?date=${db.schedule_date}`,
+    });
+  }
+
+  // Scheduled during logged time off (Vacation & Sick Day Tracker, build 7)
+  // — same "warn, don't block" pattern as double-booking above: this never
+  // removes anyone from the crew, it just surfaces the conflict. Grouped by
+  // (employee, time-off entry) rather than one item per assignment-day, so
+  // a multi-day vacation with several conflicting shifts is one clear
+  // attention item instead of flooding the list.
+  const conflictsByEntry = new Map<string, { entry: (typeof timeOffEntries)[number]; dates: Set<string> }>();
+  for (const a of assignments) {
+    const entry = isEmployeeOffOn(timeOffEntries, a.employee_id, a.schedule_date);
+    if (!entry) continue;
+    if (!conflictsByEntry.has(entry.id)) conflictsByEntry.set(entry.id, { entry, dates: new Set() });
+    conflictsByEntry.get(entry.id)!.dates.add(a.schedule_date);
+  }
+  for (const { entry, dates } of conflictsByEntry.values()) {
+    const emp = employeeById.get(entry.employee_id);
+    const sortedDates = Array.from(dates).sort();
+    const range = entry.start_date === entry.end_date ? entry.start_date : `${entry.start_date} to ${entry.end_date}`;
+    attention.push({
+      severity: "warn",
+      message: `${emp ? `${emp.first_name} ${emp.last_name}` : "An employee"} is scheduled on ${sortedDates.length} day(s) (${sortedDates[0]}${sortedDates.length > 1 ? "…" : ""}) while marked ${entry.type} (${range})`,
+      href: `/staff/${entry.employee_id}`,
     });
   }
 

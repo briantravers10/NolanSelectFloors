@@ -1,7 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Employee } from "@/lib/types";
+import type { Employee, TimeOffType } from "@/lib/types";
+import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
+
+/** The minimal shape CrewPicker needs from a TimeOffEntry — kept separate
+ * from the full db type so this client component doesn't need to import
+ * anything server-only. */
+export interface CrewTimeOffEntry {
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+  type: TimeOffType;
+}
 
 /**
  * Crew selection for the Create/Edit Schedule form. With 45+ employees,
@@ -9,8 +20,25 @@ import type { Employee } from "@/lib/types";
  * adds a type-to-filter search box, and always shows who's currently
  * selected as removable chips regardless of what's typed, so the office
  * employee never loses sight of who they've already picked.
+ *
+ * If `date` + `timeOffEntries` are provided, anyone with a logged
+ * Vacation/Sick/Personal/Unpaid entry covering that date gets a clear
+ * "⚠ On Vacation" / "⚠ Out Sick" warning next to their name — same
+ * "warn, don't block" philosophy as the existing double-booking warning
+ * (see lib/calculations.ts findDoubleBookings + the Dashboard's Attention
+ * Required list). The office employee can still check/keep them assigned.
  */
-export function CrewPicker({ employees, selectedEmployeeIds }: { employees: Employee[]; selectedEmployeeIds: string[] }) {
+export function CrewPicker({
+  employees,
+  selectedEmployeeIds,
+  date,
+  timeOffEntries = [],
+}: {
+  employees: Employee[];
+  selectedEmployeeIds: string[];
+  date?: string;
+  timeOffEntries?: CrewTimeOffEntry[];
+}) {
   const [query, setQuery] = useState("");
   const [checked, setChecked] = useState<Set<string>>(() => new Set(selectedEmployeeIds));
 
@@ -25,6 +53,12 @@ export function CrewPicker({ employees, selectedEmployeeIds }: { employees: Empl
     return employees.filter((e) => `${e.first_name} ${e.last_name}`.toLowerCase().includes(q));
   }, [employees, query]);
 
+  function offWarning(employeeId: string): string | null {
+    if (!date) return null;
+    const entry = isEmployeeOffOn(timeOffEntries, employeeId, date);
+    return entry ? timeOffWarningLabel(entry.type) : null;
+  }
+
   function toggle(id: string) {
     setChecked((prev) => {
       const next = new Set(prev);
@@ -38,18 +72,24 @@ export function CrewPicker({ employees, selectedEmployeeIds }: { employees: Empl
     <div>
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
-          {selected.map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              onClick={() => toggle(e.id)}
-              className="inline-flex items-center gap-1 rounded-full bg-sky-100 text-sky-800 border border-sky-300 px-2.5 py-1 text-xs font-medium hover:bg-sky-200"
-              title="Remove from crew"
-            >
-              {e.first_name} {e.last_name}
-              <span aria-hidden>×</span>
-            </button>
-          ))}
+          {selected.map((e) => {
+            const warning = offWarning(e.id);
+            return (
+              <button
+                key={e.id}
+                type="button"
+                onClick={() => toggle(e.id)}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                  warning ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200" : "bg-sky-100 text-sky-800 border-sky-300 hover:bg-sky-200"
+                }`}
+                title={warning ? `${warning} — remove from crew` : "Remove from crew"}
+              >
+                {e.first_name} {e.last_name}
+                {warning && <span className="font-semibold">{warning}</span>}
+                <span aria-hidden>×</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -67,19 +107,23 @@ export function CrewPicker({ employees, selectedEmployeeIds }: { employees: Empl
         ) : filtered.length === 0 ? (
           <div className="px-3 py-2.5 text-sm text-slate-500">No one matches &quot;{query}&quot;.</div>
         ) : (
-          filtered.map((e) => (
-            <label key={e.id} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50 cursor-pointer">
-              <input
-                type="checkbox"
-                name="employee_ids"
-                value={e.id}
-                checked={checked.has(e.id)}
-                onChange={() => toggle(e.id)}
-                className="rounded border-slate-300"
-              />
-              {e.first_name} {e.last_name}
-            </label>
-          ))
+          filtered.map((e) => {
+            const warning = offWarning(e.id);
+            return (
+              <label key={e.id} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="employee_ids"
+                  value={e.id}
+                  checked={checked.has(e.id)}
+                  onChange={() => toggle(e.id)}
+                  className="rounded border-slate-300"
+                />
+                {e.first_name} {e.last_name}
+                {warning && <span className="text-amber-700 font-semibold text-xs">{warning}</span>}
+              </label>
+            );
+          })
         )}
       </div>
       <p className="text-xs text-slate-500 mt-1">Search and check everyone assigned to this job on this date.</p>

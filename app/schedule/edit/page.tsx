@@ -8,6 +8,7 @@ import {
   listProjectScheduleDays,
   listProjects,
   listScheduleAssignments,
+  listTimeOffEntries,
   listWorkTypes,
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
@@ -32,7 +33,7 @@ export default async function ScheduleEditPage({
   const { project: projectParam, date: dateParam } = await searchParams;
   const date = dateParam ?? todayIso();
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes] = await Promise.all([
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -42,6 +43,7 @@ export default async function ScheduleEditPage({
     listScheduleAssignments(),
     listProjectScheduleDays(),
     listWorkTypes(),
+    listTimeOffEntries(),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -124,6 +126,7 @@ export default async function ScheduleEditPage({
           selectedProjectId={selectedProjectId}
           selectedDay={selectedDay}
           selectedCrewEmployeeIds={selectedCrew}
+          timeOffEntries={timeOffEntries.map((t) => ({ employee_id: t.employee_id, start_date: t.start_date, end_date: t.end_date, type: t.type }))}
         />
       </div>
     </div>
