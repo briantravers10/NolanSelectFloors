@@ -54,7 +54,13 @@ import type {
   WorkTypeRecord,
 } from "./types";
 
-export const COMPANY_ID = "co-1";
+// A fixed, valid UUID rather than a readable "co-1"-style id: this value is
+// stamped onto every record the app creates at runtime (via
+// getCurrentCompanyId()), so against a real Supabase project it must be a
+// real uuid AND match the companies row there — see
+// supabase/migrations/0014_canonical_company_id.sql, which pins the live
+// database to this exact value.
+export const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 
 export function buildSeedData() {
   const now = new Date();

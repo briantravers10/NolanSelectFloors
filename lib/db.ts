@@ -278,9 +278,22 @@ export async function updateOfficeUser(
   });
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True for a canonical UUID string — every id column in the real schema is
+ * a Postgres `uuid`, which rejects anything else. Module-private: this is a
+ * "use server" file, so every export must be an async Server Action. */
+function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
 export async function listSectionPermissions(officeUserId?: string): Promise<SectionPermission[]> {
   const client = sb();
   if (client) {
+    // The acting-user sentinels ("owner", "no-matching-account") are not
+    // UUIDs and never have rows — querying the uuid column with them would
+    // error rather than return nothing.
+    if (officeUserId && !isUuid(officeUserId)) return [];
     let query = client.from("section_permissions").select("*");
     if (officeUserId) query = query.eq("office_user_id", officeUserId);
     const { data, error } = await query;

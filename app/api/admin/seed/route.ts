@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { buildSeedData } from "@/lib/seed-data";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (value: string) => UUID_RE.test(value);
+
 /**
  * The in-memory demo store uses short readable IDs ("co-1", "p-1", ...)
  * since it never enforces a column type. Real Postgres columns here are
@@ -17,7 +20,9 @@ function collectIdMap(tables: { rows: unknown[] }[]): Map<string, string> {
   for (const { rows } of tables) {
     for (const row of rows) {
       const id = (row as Record<string, unknown>).id;
-      if (typeof id === "string" && !map.has(id)) map.set(id, randomUUID());
+      // Ids that are already real UUIDs (notably the fixed COMPANY_ID the
+      // app stamps on every runtime record) must stay exactly as they are.
+      if (typeof id === "string" && !map.has(id) && !isUuid(id)) map.set(id, randomUUID());
     }
   }
   return map;
@@ -88,6 +93,14 @@ async function runSeed() {
   }
 
   const supabase = createClient(url, key, { auth: { persistSession: false } });
+
+  // One-shot: a second run would duplicate every row (or half-fail on a
+  // unique constraint, leaving strays) — refuse if anything is there already.
+  const { count } = await supabase.from("companies").select("id", { count: "exact", head: true });
+  if ((count ?? 0) > 0) {
+    return NextResponse.json({ error: "The database already contains data — seeding is a one-time step and was not run again." }, { status: 409 });
+  }
+
   const data = buildSeedData();
 
   const tables: { name: string; rows: unknown[] }[] = [
