@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listContacts, findOpenDuplicateBids } from "@/lib/db";
 import { Card, PageHeader, Button, AlertPill } from "@/components/ui";
 import { createJobRequestAction } from "../actions";
+import { BuildingSelectWithReminder } from "./BuildingSelectWithReminder";
 
 export default async function NewJobRequestPage({
   searchParams,
@@ -57,17 +58,10 @@ export default async function NewJobRequestPage({
 
       <Card className="p-4">
         <form action={createJobRequestAction} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Building</label>
-            <select name="building_id" defaultValue={defaultBuildingId} required className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="">Select a building…</option>
-              {buildings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} — {clientById.get(b.client_company_id)?.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <BuildingSelectWithReminder
+            buildings={buildings.map((b) => ({ id: b.id, label: `${b.name} — ${clientById.get(b.client_company_id)?.name}` }))}
+            defaultBuildingId={defaultBuildingId}
+          />
           <div>
             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Contact (optional)</label>
             <select name="contact_id" defaultValue={sp.contact_id} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">

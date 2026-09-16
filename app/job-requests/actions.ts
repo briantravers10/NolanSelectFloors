@@ -6,12 +6,14 @@ import {
   createBidFromJobRequest,
   createJobRequest,
   findOpenDuplicateBids,
+  listBuildings,
   logDuplicateBidOverride,
   saveJobRequestEstimatedValue,
   updateJobRequestStatus,
   convertJobRequestToProject,
 } from "@/lib/db";
 import { getCurrentUser } from "@/lib/current-user";
+import { getLastWorkedWithClient, type LastWorkedWithResult } from "@/lib/last-worked";
 import type { JobRequestStatus } from "@/lib/types";
 
 export async function createJobRequestAction(formData: FormData) {
@@ -77,4 +79,18 @@ export async function convertToProjectAction(id: string) {
 export async function saveJobRequestEstimateAction(id: string, value: number) {
   await saveJobRequestEstimatedValue(id, value);
   revalidatePath(`/job-requests/${id}`);
+}
+
+/**
+ * Client-side hook for the New Job Request form's "last worked with"
+ * reminder (see lib/last-worked.ts) — the form is a plain server-rendered
+ * page, so this small server action lets the building <select> fetch the
+ * reminder on change without a full page navigation. Returns null for a
+ * building with no management company on file.
+ */
+export async function getLastWorkedForBuildingAction(buildingId: string): Promise<LastWorkedWithResult | null> {
+  if (!buildingId) return null;
+  const building = (await listBuildings()).find((b) => b.id === buildingId);
+  if (!building) return null;
+  return getLastWorkedWithClient(building.client_company_id);
 }

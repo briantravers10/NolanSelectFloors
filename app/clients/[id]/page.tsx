@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { listBuildings, listClientCompanies, listContacts, listJobRequests, listProjects } from "@/lib/db";
+import { listBuildingContacts, listBuildings, listClientCompanies, listContacts, listJobRequests, listProjects } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, EmailLink, StatusBadge, EmptyState, Stat } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
 import { formatCurrency } from "@/lib/calculations";
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [clients, buildings, contacts, projects, jobRequests] = await Promise.all([
+  const [clients, buildings, contacts, buildingContacts, projects, jobRequests] = await Promise.all([
     listClientCompanies(),
     listBuildings(),
     listContacts(),
+    listBuildingContacts(),
     listProjects(),
     listJobRequests(),
   ]);
@@ -30,6 +31,16 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
   const jobsThisYear = clientProjects.filter((p) => p.start_date && new Date(p.start_date).getFullYear() === thisYear).length;
   const lastJobReceived = clientJobRequests.slice().sort((a, b) => (b.received_at < a.received_at ? -1 : 1))[0];
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
+  const contactById = new Map(contacts.map((c) => [c.id, c]));
+
+  // Point of contact per building — primary contact first, falling back to
+  // whichever contact is linked, so it's visible right here without an
+  // extra click into the building page (see AGENTS.md Task 1).
+  function primaryContactFor(buildingId: string) {
+    const links = buildingContacts.filter((bc) => bc.building_id === buildingId);
+    const primary = links.find((l) => l.is_primary) ?? links[0];
+    return primary ? contactById.get(primary.contact_id) : undefined;
+  }
 
   return (
     <div>
@@ -141,12 +152,22 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             ))}
           </div>
           <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mt-5 mb-3">Buildings</h2>
-          <div className="space-y-1.5">
-            {clientBuildings.map((b) => (
-              <Link key={b.id} href={`/buildings/${b.id}`} className="block text-sm text-sky-700 hover:underline">
-                {b.name}
-              </Link>
-            ))}
+          <div className="space-y-2">
+            {clientBuildings.map((b) => {
+              const poc = primaryContactFor(b.id);
+              return (
+                <Link key={b.id} href={`/buildings/${b.id}`} className="block border border-slate-100 rounded-lg p-2.5 hover:border-sky-200">
+                  <div className="text-sm text-sky-700 font-medium">{b.name}</div>
+                  {poc ? (
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      POC: {poc.first_name} {poc.last_name}{poc.title ? ` (${poc.title})` : ""}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400 mt-0.5">No point of contact linked.</div>
+                  )}
+                </Link>
+              );
+            })}
           </div>
         </Card>
       </div>

@@ -17,6 +17,7 @@ import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { getActingUser } from "@/lib/current-user";
 import { formatDateLong } from "@/lib/dates";
 import { formatCurrency } from "@/lib/calculations";
+import { getLastWorkedWithClient } from "@/lib/last-worked";
 import { JOB_REQUEST_STATUSES } from "@/lib/types";
 import { convertToProjectAction, createBidAction, saveJobRequestEstimateAction, setJobRequestStatusAction } from "../actions";
 
@@ -43,6 +44,7 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
   const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
   const contact = contacts.find((c) => c.id === jr.contact_id);
   const linkedProject = jr.converted_project_id ? projects.find((p) => p.id === jr.converted_project_id) : undefined;
+  const lastWorked = client ? await getLastWorkedWithClient(client.id, jr.converted_project_id) : undefined;
 
   return (
     <div className="max-w-3xl">
@@ -51,6 +53,12 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
         subtitle={client?.name}
         action={<StatusBadge status={jr.status} />}
       />
+
+      {lastWorked && (
+        <Card className={`p-3 mb-5 text-sm ${lastWorked.hasPrior ? "bg-sky-50 border-sky-200 text-sky-800" : "bg-slate-50 text-slate-500"}`}>
+          {lastWorked.label}
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="md:col-span-2 space-y-5">
