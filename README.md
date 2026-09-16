@@ -1481,6 +1481,223 @@ just hasn't been (and can't be) executed here.
    OAuth callback (`realmId` query param) for whichever company the user
    authorized, and stored per-connection in `quickbooks_connections`.
 
+## Permissions & Staff Access (build 11)
+
+The client, in his own words: *"I need to be able to give everyone their
+own access. My friend will have the owner access and then he can select
+what staff members can or cant see. Some of the project managers only
+need to be able to see and or edit certain things so i need options for
+what they can do and if they can edit also."* Two decisions were made with
+the client up front: (1) login method = email + password, not magic link;
+(2) permission granularity = per-nav-section **None / View / Full-Edit**,
+set per staff member by the Owner/Admin.
+
+### Data-model decision: extending `office_users`, not a new `staff_accounts` table
+
+`office_users` (added in `0002_bid_workflow.sql`, extended once already in
+`0006_labor_cost_tracking.sql` with `access_role`) already **is** this
+app's staff-accounts table: every acting-user persona the dev selector can
+switch to (`lib/current-user.ts#listActingUserOptions`) is already backed
+by a row here, and it already has `full_name`/`email`/`role`/`active`. Its
+`role` column name (`estimator`/`manager`) is a legacy holdover from the
+bid-claim workflow, not a scope limitation. `0012_permissions_and_auth.sql`
+extends it with:
+
+- `auth_user_id` (nullable text) — will hold the real Supabase Auth user's
+  id once "Add Staff Account" creates one. Null for everyone today.
+- `is_owner` (boolean) — unrestricted, full-edit access to **every**
+  section, always, per the client's description of his friend's Owner
+  access. Not subject to the `section_permissions` grid at all.
+- A unique index on `email` (nullable-safe — only enforced once set),
+  needed for real email+password sign-in later.
+
+A second `staff_accounts` table was considered and rejected: it would fork
+the staff directory in two and require a join at every one of the many
+existing `office_users` read sites for no benefit.
+
+### `section_permissions` — the new fine-grained layer
+
+One row per (staff member, nav section) with the access level the
+Owner/Admin has granted:
+
+```
+section_permissions(
+  id, company_id, office_user_id, section_key, access_level, updated_by, updated_at
+)
+```
+
+`access_level` is `none | view | edit`. **No row for a (user, section) pair
+means `none`** — secure by default, so a brand-new staff account sees
+nothing until the Owner/Admin explicitly grants access. `section_key`
+matches `lib/types.ts` `SECTION_KEYS`, which mirrors the real nav
+destinations in `components/nav-items.ts` one-for-one, plus `quickbooks`
+(a sub-route of Company Setup that already had its own access_role gate —
+see below).
+
+### How this relates to the existing `access_role` tier
+
+Both layers stay, and both apply where they overlap — the more
+restrictive one wins:
+
+| Layer | Governs | Set by |
+|---|---|---|
+| `access_role` (`owner_admin`/`office_staff`/`field_employee`, build 6) | A handful of specific **sensitive sub-features** regardless of section access: editing pay rates (`canEditPayRates`), viewing labor-cost dollar figures (`canViewLaborCost`), managing the QuickBooks **connection** itself (`canManageQuickBooksConnection`) | Set on the office_user row directly (Company Setup → Staff Access edit page) |
+| `section_permissions` (build 11) | Whether a user can **open a nav section at all**, and whether they can create/edit/delete inside it | Owner/Admin, per staff member, per section — Company Setup → Staff Access |
+
+Concretely: an `office_staff`-tier user with `edit` on the `staff` section
+can add employees and manage capabilities, but still can't see or edit pay
+rates unless their `access_role` is also `owner_admin`. Same pattern on
+the QuickBooks page: `canViewQuickBooks`/`canManageQuickBooksConnection`
+(access_role) AND `section_permissions.quickbooks` (new layer) are both
+checked — either one denying is a denial (`app/company-setup/quickbooks/page.tsx`).
+
+`is_owner` short-circuits both: an Owner/Admin's `getSectionAccess()`
+always returns `edit` without even querying `section_permissions`
+(`lib/permissions.ts#getSectionAccessFor`), matching the access_role
+`owner_admin` tier's existing "sees everything" behavior.
+
+### The permission engine (`lib/permissions.ts`)
+
+- `getSectionAccess(sectionKey)` / `getSectionAccessFor(actingUser, sectionKey)` — the
+  core lookup: `is_owner` (or the dev "acting as" Owner/Manager sentinel) →
+  `edit`; otherwise looks up `section_permissions`, defaulting to `none`.
+- `canView(sectionKey)` / `canEdit(sectionKey)` — booleans for the current
+  acting user, used exactly like the existing `canViewLaborCost`-style
+  checks throughout the app.
+- `getAllSectionAccess(actingUser)` — every section's level in one pair of
+  lookups, used by the nav (hide sections) and the staff-access edit grid
+  (pre-fill current values) instead of N separate calls.
+- `requireSectionAccess(sectionKey)` — the route-guard entry point every
+  section's `page.tsx` calls in one line (see below).
+- `isOwnerActingUser()` — gates the staff-access management UI itself:
+  true for the dev Owner/Manager sentinel or an `is_owner` office_user row;
+  a plain `access_role: 'owner_admin'` tier does **not**, by itself, grant
+  staff-access management — only an explicit Owner flag does.
+
+### Enforcement
+
+Three layers, in order of how much they actually protect:
+
+1. **Server-action gating (the real security boundary)** — every major
+   section's create/edit/delete server actions (`app/*/actions.ts`) call
+   `canEdit(sectionKey)` (or the section-specific check, e.g. QuickBooks'
+   actions check both the existing `access_role` gate and the new section
+   gate) and silently no-op when it fails. This is what actually stops a
+   view-only user from writing data — hiding a button is not a security
+   boundary by itself.
+2. **Route guards** — each section's `page.tsx` calls
+   `requireSectionAccess(sectionKey)` in its first line and renders the
+   shared `<AccessDenied section="..." />` component when the result is
+   `'none'`, instead of the page content. This is the least-invasive
+   pattern for ~14 sections: one line per page, one reusable component,
+   rather than a bespoke empty state per section.
+3. **Nav hiding** — `app/layout.tsx` computes the acting user's full
+   access map once per request (`getAllSectionAccess`) and passes it to
+   `Sidebar`/`MobileNav`, which filter out any nav item whose section
+   resolves to `'none'` — a staff member with no access to a section
+   doesn't even see it listed.
+
+`'view'`-only pages hide their Create/Edit/Delete controls in the UI, but
+the server action behind each one is the actual enforcement — see (1).
+Given the size of this surface (~14 sections), the create actions for
+every section are gated; a handful of secondary per-row actions inside
+larger sections (e.g. individual schedule-day field updates) reuse the
+same section's `canEdit` check rather than each having a bespoke one.
+
+### Owner/Admin staff-access management UI
+
+`/company-setup/staff-access` (linked from Company Setup, visible only
+when `isOwnerActingUser()` is true):
+
+- **List** — every `office_users` row: name, email, access-role tier,
+  Owner flag, active/inactive, with a link to each one's edit page.
+- **+ Add Staff Account** — name, email, bid-claim role, access-role tier,
+  and a full section × None/View/Edit grid (`StaffAccessGridFields.tsx`),
+  all set at creation time via `createStaffAccountAction`.
+- **Per-account edit page** (`/company-setup/staff-access/[id]`) —
+  auto-submitting None/View/Edit selects per section
+  (`SectionAccessRow.tsx`, same "select → auto-submit hidden form"
+  pattern as `ActingUserSelector.tsx`), plus buttons to
+  activate/deactivate the account, change the legacy access-role tier, and
+  **grant/revoke Owner status**. Every action re-checks
+  `isOwnerActingUser()` server-side — the page being Owner-gated is not
+  itself the security boundary, `app/company-setup/staff-access/actions.ts`
+  is.
+
+### Audit logging
+
+Every staff-account change and every section-permission change is logged
+to the existing `activity_log` table via `lib/db.ts`'s `logActivity()`
+helper (the same one used by pay-rate edits, crew assignment changes,
+etc.): `createOfficeUser`/`updateOfficeUser` log who added/changed which
+account and what changed; `setSectionPermission` logs the office user
+name, the section key, and the **old value → new value** transition, plus
+who made the change and when.
+
+### Seed data — demonstrating the client's exact scenario
+
+The 3 existing office users (`0006_labor_cost_tracking.sql`) now also
+demonstrate the requested access-tier scenarios:
+
+| Staff member | `is_owner` | Section access |
+|---|---|---|
+| Sarah Bennett | **true** | Everything, unrestricted — "my friend" |
+| Emma Castillo | false | `edit` on every operational section (Dashboard through Reports); `view` only on Company Setup / QuickBooks |
+| David Okoye | false | `view` only, and only on Dashboard, Schedule, Projects, Tasks — the "PM only needs to see certain things" persona; everything else defaults to `none` |
+
+Switch between them with the TopBar's "Acting as" selector to see the
+nav-hiding, route guards, and server-action gating live.
+
+### Activating Real Login (`lib/auth.ts`)
+
+There is intentionally no real login yet, but the codebase is already
+shaped for it, mirroring the exact "architected but not live" pattern used
+for `lib/routing.ts`, `lib/google-calendar.ts`, and QuickBooks before it
+went live:
+
+- **`lib/auth.ts#getCurrentSession()`** is the one function real pages
+  would eventually call instead of `lib/current-user.ts`'s dev "acting as"
+  cookie mechanism. Today, `isRealAuthConfigured()` is always false (no
+  real Supabase project exists to test against), so it always falls back
+  to the existing dev mechanism, completely unchanged. Nothing in this
+  codebase calls it yet — this is the boundary the future work plugs into,
+  not a live code path.
+- **`/login`** already renders a real email + password form
+  (`app/login/page.tsx`). Submitting it today always shows an honest "Real
+  login isn't connected yet — using demo mode" message and hands off to
+  the existing "Acting as" selector in the TopBar — it never fakes a
+  successful sign-in, exactly like the QuickBooks/Google Calendar "Connect"
+  buttons before those were wired up.
+- **What changes once a real Supabase project with Auth is connected**:
+  1. Set `NSF_REAL_AUTH_ENABLED=true` (new env var, see below) once real
+     accounts exist — this flips `isRealAuthConfigured()` on.
+  2. **"Add Staff Account"** additionally creates a real Supabase Auth user
+     via the Admin API (`supabase.auth.admin.createUser`) with a temporary
+     password or invite email, and stores the returned user id on
+     `office_users.auth_user_id`.
+  3. **`/login`**'s form submits to a real `supabase.auth.signInWithPassword`
+     call instead of the honest-stub `loginAction`, and on success sets a
+     real Supabase session cookie.
+  4. **`getCurrentSession()`** reads that session (via `@supabase/ssr`'s
+     `createServerClient`), looks up the matching `office_users` row by
+     `auth_user_id`, and returns `null` — never a default Owner persona —
+     when nothing matches, unlike today's demo fallback.
+  5. The dev "acting as" selector (`ActingUserSelector.tsx`) can then be
+     hidden behind the same `isRealAuthConfigured()` check, though nothing
+     requires removing it immediately — it can keep working as a
+     Owner/Admin-only "view as" debugging tool if useful.
+  6. No schema changes are needed beyond what `0012_permissions_and_auth.sql`
+     already added — `office_users.email`/`auth_user_id` are already there.
+  7. Add Supabase RLS policies scoped to `auth.uid()` as defense-in-depth
+     on top of the app-level `section_permissions`/`access_role` checks
+     that already exist (same recommendation as the pre-existing "How auth
+     will be added later" note below).
+
+No real Supabase Auth account or session is created anywhere in this
+build — there is no real Supabase project connected in this environment to
+create one against. Everything above is the honest stub + a correct
+abstraction boundary, not a partial implementation.
+
 ## Environment variables
 
 | Variable | Required? | Purpose |
@@ -1497,6 +1714,7 @@ just hasn't been (and can't be) executed here.
 | `QUICKBOOKS_REDIRECT_URI` | No | Must exactly match a Redirect URI registered on the Intuit app |
 | `QUICKBOOKS_ENVIRONMENT` | No | `sandbox` (default) or `production` |
 | `QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN` | No | From the Intuit app's Webhooks subscription page — verifies `intuit-signature` |
+| `NSF_REAL_AUTH_ENABLED` | No | Set to `true` once real Supabase Auth accounts exist (see "Permissions & Staff Access" → "Activating Real Login") — flips `lib/auth.ts#isRealAuthConfigured()` on |
 
 None of these are required to run, build, or deploy the app.
 
@@ -1513,6 +1731,12 @@ None of these are required to run, build, or deploy the app.
    `/dashboard`.
 
 ## How auth will be added later
+
+See also "Permissions & Staff Access" → "Activating Real Login" above,
+which is the up-to-date, detailed version of this note as of build 11
+(`lib/auth.ts`, the `/login` stub, and exactly what "Add Staff Account"
+would do differently once a real Supabase project is connected). This
+section is kept for the original build-1 context:
 
 There is intentionally no login yet, but the codebase is already shaped
 for it:
