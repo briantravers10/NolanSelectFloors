@@ -39,6 +39,7 @@ import type {
   ProjectWorkType,
   ScheduleAssignment,
   Task,
+  TimeOffEntry,
   User,
   WorkTypeRecord,
 } from "./types";
@@ -275,17 +276,22 @@ export function buildSeedData() {
   //     were snapshotted at $300 (his rate before a raise) — proves a later
   //     raise never retroactively changes an already-logged job's cost.
   const employees: Employee[] = [
-    { id: "e-1", company_id: COMPANY_ID, first_name: "Miguel", last_name: "Alvarez", title: "Foreman / Supervisor", phone: "(917) 555-2201", email: "malvarez@nolanselectfloors.com", day_rate: 430, pay_type: "daily", daily_rate: 430, is_driver: true, active: true, hire_date: "2016-05-02", created_at: "2016-05-02T00:00:00.000Z" },
-    { id: "e-2", company_id: COMPANY_ID, first_name: "Dennis", last_name: "Cho", title: "Lead Installer", phone: "(917) 555-2202", email: "dcho@nolanselectfloors.com", day_rate: 390, pay_type: "daily", daily_rate: 390, is_driver: true, active: true, hire_date: "2017-08-14", created_at: "2017-08-14T00:00:00.000Z" },
-    { id: "e-3", company_id: COMPANY_ID, first_name: "Jamal", last_name: "Turner", title: "Floor Sander", phone: "(917) 555-2203", email: "jturner@nolanselectfloors.com", day_rate: 360, pay_type: "hourly", hourly_rate: 45, is_driver: false, active: true, hire_date: "2018-02-19", created_at: "2018-02-19T00:00:00.000Z" },
-    { id: "e-4", company_id: COMPANY_ID, first_name: "Ray", last_name: "Kowalski", title: "Finisher", phone: "(917) 555-2204", email: "rkowalski@nolanselectfloors.com", day_rate: 365, pay_type: "daily", daily_rate: 365, is_driver: false, active: true, hire_date: "2018-06-11", created_at: "2018-06-11T00:00:00.000Z" },
-    { id: "e-5", company_id: COMPANY_ID, first_name: "Victor", last_name: "Sousa", title: "Installer", phone: "(917) 555-2205", email: "vsousa@nolanselectfloors.com", day_rate: 340, pay_type: "hourly", hourly_rate: 42.5, is_driver: false, active: true, hire_date: "2019-01-07", created_at: "2019-01-07T00:00:00.000Z" },
-    { id: "e-6", company_id: COMPANY_ID, first_name: "Andre", last_name: "Willis", title: "Installer / Laborer", phone: "(917) 555-2206", email: "awillis@nolanselectfloors.com", day_rate: 325, pay_type: "daily", daily_rate: 325, is_driver: true, active: true, hire_date: "2019-09-23", created_at: "2019-09-23T00:00:00.000Z" },
-    { id: "e-7", company_id: COMPANY_ID, first_name: "Tommy", last_name: "Nguyen", title: "Tile Installer", phone: "(917) 555-2207", email: "tnguyen@nolanselectfloors.com", day_rate: 350, pay_type: "hourly", hourly_rate: 43.75, is_driver: false, active: true, hire_date: "2020-03-16", created_at: "2020-03-16T00:00:00.000Z" },
-    { id: "e-8", company_id: COMPANY_ID, first_name: "Sal", last_name: "Marchetti", title: "Carpet Installer", phone: "(917) 555-2208", email: "smarchetti@nolanselectfloors.com", day_rate: 330, pay_type: "daily", daily_rate: 330, is_driver: false, active: true, hire_date: "2020-07-01", created_at: "2020-07-01T00:00:00.000Z" },
-    { id: "e-9", company_id: COMPANY_ID, first_name: "B.J.", last_name: "Fontaine", title: "Laborer", phone: "(917) 555-2209", email: "bfontaine@nolanselectfloors.com", day_rate: 260, pay_type: "hourly", hourly_rate: 32.5, is_driver: true, active: true, hire_date: "2021-04-05", created_at: "2021-04-05T00:00:00.000Z" },
-    { id: "e-10", company_id: COMPANY_ID, first_name: "Eric", last_name: "Stavros", title: "Installer", phone: "(917) 555-2210", email: "estavros@nolanselectfloors.com", day_rate: 345, pay_type: "daily", daily_rate: 345, is_driver: false, active: true, hire_date: "2021-10-18", created_at: "2021-10-18T00:00:00.000Z" },
-    { id: "e-11", company_id: COMPANY_ID, first_name: "Paulie", last_name: "Reyes", title: "Demo / Floor Prep", phone: "(917) 555-2211", email: "preyes@nolanselectfloors.com", day_rate: 300, pay_type: "hourly", hourly_rate: 37.5, is_driver: false, active: true, hire_date: "2022-05-09", created_at: "2022-05-09T00:00:00.000Z" },
+    // vacation_days_allowed / sick_days_allowed (build 7): deliberately
+    // varying per employee, not a flat company-wide number — Tommy (e-7)
+    // is seeded with only 3 vacation days allowed against a 4-day logged
+    // vacation below, so the "over allowance" warning/badge has a real
+    // seeded case to demonstrate.
+    { id: "e-1", company_id: COMPANY_ID, first_name: "Miguel", last_name: "Alvarez", title: "Foreman / Supervisor", phone: "(917) 555-2201", email: "malvarez@nolanselectfloors.com", day_rate: 430, pay_type: "daily", daily_rate: 430, is_driver: true, active: true, hire_date: "2016-05-02", vacation_days_allowed: 15, sick_days_allowed: 7, created_at: "2016-05-02T00:00:00.000Z" },
+    { id: "e-2", company_id: COMPANY_ID, first_name: "Dennis", last_name: "Cho", title: "Lead Installer", phone: "(917) 555-2202", email: "dcho@nolanselectfloors.com", day_rate: 390, pay_type: "daily", daily_rate: 390, is_driver: true, active: true, hire_date: "2017-08-14", vacation_days_allowed: 12, sick_days_allowed: 6, created_at: "2017-08-14T00:00:00.000Z" },
+    { id: "e-3", company_id: COMPANY_ID, first_name: "Jamal", last_name: "Turner", title: "Floor Sander", phone: "(917) 555-2203", email: "jturner@nolanselectfloors.com", day_rate: 360, pay_type: "hourly", hourly_rate: 45, is_driver: false, active: true, hire_date: "2018-02-19", vacation_days_allowed: 10, sick_days_allowed: 5, created_at: "2018-02-19T00:00:00.000Z" },
+    { id: "e-4", company_id: COMPANY_ID, first_name: "Ray", last_name: "Kowalski", title: "Finisher", phone: "(917) 555-2204", email: "rkowalski@nolanselectfloors.com", day_rate: 365, pay_type: "daily", daily_rate: 365, is_driver: false, active: true, hire_date: "2018-06-11", vacation_days_allowed: 10, sick_days_allowed: 5, created_at: "2018-06-11T00:00:00.000Z" },
+    { id: "e-5", company_id: COMPANY_ID, first_name: "Victor", last_name: "Sousa", title: "Installer", phone: "(917) 555-2205", email: "vsousa@nolanselectfloors.com", day_rate: 340, pay_type: "hourly", hourly_rate: 42.5, is_driver: false, active: true, hire_date: "2019-01-07", vacation_days_allowed: 8, sick_days_allowed: 4, created_at: "2019-01-07T00:00:00.000Z" },
+    { id: "e-6", company_id: COMPANY_ID, first_name: "Andre", last_name: "Willis", title: "Installer / Laborer", phone: "(917) 555-2206", email: "awillis@nolanselectfloors.com", day_rate: 325, pay_type: "daily", daily_rate: 325, is_driver: true, active: true, hire_date: "2019-09-23", vacation_days_allowed: 10, sick_days_allowed: 5, created_at: "2019-09-23T00:00:00.000Z" },
+    { id: "e-7", company_id: COMPANY_ID, first_name: "Tommy", last_name: "Nguyen", title: "Tile Installer", phone: "(917) 555-2207", email: "tnguyen@nolanselectfloors.com", day_rate: 350, pay_type: "hourly", hourly_rate: 43.75, is_driver: false, active: true, hire_date: "2020-03-16", vacation_days_allowed: 3, sick_days_allowed: 5, created_at: "2020-03-16T00:00:00.000Z" },
+    { id: "e-8", company_id: COMPANY_ID, first_name: "Sal", last_name: "Marchetti", title: "Carpet Installer", phone: "(917) 555-2208", email: "smarchetti@nolanselectfloors.com", day_rate: 330, pay_type: "daily", daily_rate: 330, is_driver: false, active: true, hire_date: "2020-07-01", vacation_days_allowed: 10, sick_days_allowed: 5, created_at: "2020-07-01T00:00:00.000Z" },
+    { id: "e-9", company_id: COMPANY_ID, first_name: "B.J.", last_name: "Fontaine", title: "Laborer", phone: "(917) 555-2209", email: "bfontaine@nolanselectfloors.com", day_rate: 260, pay_type: "hourly", hourly_rate: 32.5, is_driver: true, active: true, hire_date: "2021-04-05", vacation_days_allowed: 12, sick_days_allowed: 5, created_at: "2021-04-05T00:00:00.000Z" },
+    { id: "e-10", company_id: COMPANY_ID, first_name: "Eric", last_name: "Stavros", title: "Installer", phone: "(917) 555-2210", email: "estavros@nolanselectfloors.com", day_rate: 345, pay_type: "daily", daily_rate: 345, is_driver: false, active: true, hire_date: "2021-10-18", vacation_days_allowed: 10, sick_days_allowed: 5, created_at: "2021-10-18T00:00:00.000Z" },
+    { id: "e-11", company_id: COMPANY_ID, first_name: "Paulie", last_name: "Reyes", title: "Demo / Floor Prep", phone: "(917) 555-2211", email: "preyes@nolanselectfloors.com", day_rate: 300, pay_type: "hourly", hourly_rate: 37.5, is_driver: false, active: true, hire_date: "2022-05-09", vacation_days_allowed: 8, sick_days_allowed: 4, created_at: "2022-05-09T00:00:00.000Z" },
     { id: "e-12", company_id: COMPANY_ID, first_name: "Chris", last_name: "Boateng", title: "Laborer", phone: "(917) 555-2212", email: "cboateng@nolanselectfloors.com", day_rate: 250, pay_type: "hourly", hourly_rate: 31.25, is_driver: false, active: true, hire_date: "2023-02-27", created_at: "2023-02-27T00:00:00.000Z" },
   ];
 
@@ -316,6 +322,71 @@ export function buildSeedData() {
     { id: "av-1", employee_id: "e-7", schedule_date: t(3), status: "vacation", notes: "Approved vacation — back next Monday." },
     { id: "av-2", employee_id: "e-12", schedule_date: t(4), status: "day_off", notes: "Personal day." },
     { id: "av-3", employee_id: "e-4", schedule_date: t(1), status: "day_off" },
+  ];
+
+  // ---------------------------------------------------------------------
+  // VACATION & SICK DAY TRACKER (build 7) — see
+  // supabase/migrations/0007_time_off.sql and README. A handful of
+  // realistic entries: one CURRENTLY ACTIVE vacation and one sick day this
+  // week, each deliberately overlapping an existing schedule_assignments
+  // row below (e-7 on p-11, e-4 on p-1) so the scheduling-conflict warning
+  // in the Crew picker has something real to demonstrate without needing
+  // to remove anyone from the crew — plus a past and a future entry for
+  // realism.
+  // ---------------------------------------------------------------------
+  const timeOffEntries: TimeOffEntry[] = [
+    {
+      id: "to-1",
+      company_id: COMPANY_ID,
+      employee_id: "e-7", // Tommy Nguyen — scheduled on p-11 (Tile) today through +4 days below
+      start_date: t(0),
+      end_date: t(3),
+      type: "Vacation",
+      notes: "Approved vacation — back Thursday. Dispatcher forgot to pull him off p-11.",
+      created_by: "Brian Travers",
+      created_at: `${t(-10)}T09:00:00.000Z`,
+      updated_by: "Brian Travers",
+      updated_at: `${t(-10)}T09:00:00.000Z`,
+    },
+    {
+      id: "to-2",
+      company_id: COMPANY_ID,
+      employee_id: "e-4", // Ray Kowalski — scheduled on p-1 (Finisher) today through +4 days below
+      start_date: t(1),
+      end_date: t(1),
+      type: "Sick",
+      notes: "Called in sick this morning.",
+      created_by: "Sarah Bennett",
+      created_at: `${t(1)}T06:45:00.000Z`,
+      updated_by: "Sarah Bennett",
+      updated_at: `${t(1)}T06:45:00.000Z`,
+    },
+    {
+      id: "to-3",
+      company_id: COMPANY_ID,
+      employee_id: "e-9", // B.J. Fontaine — past vacation, realism only
+      start_date: t(-20),
+      end_date: t(-16),
+      type: "Vacation",
+      notes: "Annual trip home to visit family.",
+      created_by: "Brian Travers",
+      created_at: `${t(-35)}T00:00:00.000Z`,
+      updated_by: "Brian Travers",
+      updated_at: `${t(-35)}T00:00:00.000Z`,
+    },
+    {
+      id: "to-4",
+      company_id: COMPANY_ID,
+      employee_id: "e-5", // Victor Sousa — future personal day, realism only
+      start_date: t(12),
+      end_date: t(12),
+      type: "Personal",
+      notes: "Kid's school event.",
+      created_by: "Brian Travers",
+      created_at: `${t(-1)}T00:00:00.000Z`,
+      updated_by: "Brian Travers",
+      updated_at: `${t(-1)}T00:00:00.000Z`,
+    },
   ];
 
   // ---------------------------------------------------------------------
@@ -914,6 +985,7 @@ export function buildSeedData() {
     employees,
     employeeSkills,
     employeeAvailability,
+    timeOffEntries,
     projectCrewRequirements,
     scheduleAssignments,
     materials,

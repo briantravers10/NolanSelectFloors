@@ -42,6 +42,7 @@ async function main() {
     { name: "employees", rows: data.employees },
     { name: "employee_skills", rows: data.employeeSkills },
     { name: "employee_availability", rows: data.employeeAvailability },
+    { name: "time_off_entries", rows: data.timeOffEntries },
     { name: "project_crew_requirements", rows: data.projectCrewRequirements },
     { name: "schedule_assignments", rows: data.scheduleAssignments },
     { name: "materials", rows: data.materials },

@@ -375,6 +375,11 @@ export interface Employee {
   hire_date?: string;
   notes?: string;
   created_at: string;
+  // ANNUAL time-off allowance (build 7, Vacation & Sick Day Tracker) — per
+  // employee, NOT a flat company-wide number. Nullable: unset means "not
+  // tracked yet", not "zero allowed". See README.
+  vacation_days_allowed?: number;
+  sick_days_allowed?: number;
 }
 
 export interface EmployeeSkill {
@@ -389,6 +394,35 @@ export interface EmployeeAvailability {
   schedule_date: string;
   status: AvailabilityStatus;
   notes?: string;
+}
+
+// ---------------------------------------------------------------------
+// VACATION & SICK DAY TRACKER (build 7, see
+// supabase/migrations/0007_time_off.sql and README "Vacation & Sick Day
+// Tracker" for why this is a NEW table rather than an extension of
+// `EmployeeAvailability` above).
+// ---------------------------------------------------------------------
+
+export const TIME_OFF_TYPES = ["Vacation", "Sick", "Personal", "Unpaid"] as const;
+export type TimeOffType = (typeof TIME_OFF_TYPES)[number];
+
+/**
+ * A simple day-off LOG entry — a single day is start_date === end_date.
+ * Deliberately NOT an accrual/balance system: no "days remaining" concept
+ * is tracked here or anywhere else. See README.
+ */
+export interface TimeOffEntry {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+  type: TimeOffType;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_by?: string;
+  updated_at: string;
 }
 
 export interface ProjectCrewRequirement {
