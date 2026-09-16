@@ -736,6 +736,124 @@ audited change in the app (crew assignments, status changes, etc.).
 - **Per-employee history** — `lib/labor-cost.ts#employeeLaborHistory`, shown
   on the staff profile page.
 
+## Vacation & Sick Day Tracker (build 7)
+
+A simple, auditable day-off LOG for employees — see
+`supabase/migrations/0007_time_off.sql`, `lib/time-off.ts`, and
+`lib/db.ts`'s time-off CRUD functions.
+
+### Data model decision — new table, not an extension of `employee_availability`
+
+The original spec (build 1) called for an `employee_availability` table
+with statuses (`working`/`available`/`day_off`/`vacation`/`unavailable`),
+and that table does exist (`supabase/migrations/0001_init.sql`) — it's
+seeded and it already powers the Dashboard's "Staff Off" stat
+(`lib/dashboard.ts`). But it was never built out any further: no
+create/edit UI, no audit trail, and — critically — no date RANGE concept,
+since it's one row per employee per single calendar day.
+
+Rather than overload that table for this phase, a new **`time_off_entries`**
+table was added instead:
+
+- a multi-day vacation is ONE row (`start_date`/`end_date`), not N single-day
+  rows to create/edit/delete in lockstep
+- `type` (`Vacation` / `Sick` / `Personal` / `Unpaid`) matches what an owner
+  actually wants to log, closer to the client's ask than a generic
+  5-value availability status
+- `created_by`/`updated_by` + `activity_log` audit entries (who logged
+  whose time off, and when) follow this app's existing audit pattern —
+  `employee_availability` has none of that
+
+`employee_availability` is left completely untouched — still seeded, still
+read by the Dashboard. The two sources are **additive, not conflicting**:
+the Dashboard's "Staff Off" stat now counts someone as off if EITHER
+source says so (`lib/dashboard.ts`), so nothing that worked before regressed.
+
+**Deliberately simple**: this is a day-off LOG, not an accrual/balance
+system. There's no "vacation days remaining" running balance, no monthly
+accrual, and no pro-rating by hire date — only a flat "N days allowed per
+calendar year" compared against a year-to-date sum (see below). A real
+accrual/balance system (monthly accrual, rollover rules, pro-rating new
+hires) could be layered on top of this same `time_off_entries` table later
+without changing anything built here.
+
+### Annual Allowance (vacation / sick days awarded)
+
+Each employee has their own `vacation_days_allowed` / `sick_days_allowed`
+(nullable integers, added to `employees` in the same migration) — **not** a
+flat company-wide number, since different hires get different allowances.
+Unset (`null`) means "not tracked yet" for that employee, not "zero days
+allowed", so a brand-new hire never shows as instantly over-allowance.
+
+Usage is a **pure computed rollup**, not a stored balance:
+`lib/time-off.ts#computeTimeOffUsage` sums an employee's `time_off_entries`
+days (clipped to the current calendar year) separately for `Vacation` and
+`Sick` entries, and compares each sum to the employee's allowance.
+`Personal`/`Unpaid` entries never count against either allowance.
+
+This is surfaced in three places:
+- **Staff profile** (`/staff/[id]`) — "Vacation Used" / "Sick Used" stat
+  tiles showing `X of Y days` for the current year, plus a rose "Over
+  Allowance" banner when either is exceeded.
+- **"+ Add Time Off" form** (`components/staff/AddTimeOffForm.tsx`) — a
+  live, non-blocking inline warning as the office employee picks
+  dates/type: *"⚠ This would put Tommy over his allowed vacation days
+  (already used 3 of 3)"*. Saving is never blocked — same "warn, don't
+  block" philosophy as everywhere else in this app.
+- **Staff list** (`/staff`) — a small rose "⚠ Over Allowance" badge next to
+  anyone currently over, so the owner notices without opening every
+  profile.
+
+**No real notification system exists yet** (same as the Email Assistant /
+Invoice Routing rules further down this README — architected for, not
+wired to a live pipeline). These in-app banners/badges/inline warnings
+**are** the notification for now; there is no email or push alert sent
+when someone goes over their allowance.
+
+### Access control
+
+Reuses the exact same access-role gate as pay rates from the Labor Cost
+Tracking phase (`lib/current-user.ts` `canViewLaborCost`/`canEditPayRates`),
+via two thin wrappers — `canViewTimeOffAllowance`/`canEditTimeOffAllowance`
+— kept as separate named functions so the two concerns (pay vs. time-off
+allowance) can diverge later even though they're identical today:
+Owner/Admin can view AND edit the allowance numbers, Office Staff can view
+only, Field/Employee can't see them at all.
+
+This gate applies ONLY to the allowance numbers and the "Over Allowance"
+badge/banner — **whether someone is currently on vacation/sick/etc. is
+visible to everyone** (the "X today" badge on the Staff list, the Crew
+picker warning below), consistent with the rest of this app's philosophy
+that day-off status itself isn't sensitive, only pay-adjacent dollar/HR
+figures are.
+
+### Scheduling-conflict warning
+
+`lib/time-off.ts#isEmployeeOffOn` / `getTimeOffForDate` are pure functions
+over a `time_off_entries` array (same convention as
+`lib/calculations.ts#findDoubleBookings`), so callers fetch the data once
+and pass it in — no data fetching inside the helpers themselves.
+
+- **Crew picker** (`components/schedule/CrewPicker.tsx`) — when the
+  selected schedule date falls within a checked/selected employee's logged
+  time off, their name gets a clear "⚠ On Vacation" / "⚠ Out Sick" / "⚠
+  Personal Day" / "⚠ Unpaid Leave" label, both in the checklist and on
+  their removable chip. The warning re-computes live as the Date field
+  changes (`ScheduleEditForm.tsx` lifts that one field's state into a
+  `useState`, everything else in the form stays an uncontrolled
+  `defaultValue` input submitted natively, same "use client" scope as
+  before).
+- **Dashboard** (`lib/dashboard.ts`) — every `schedule_assignments` row
+  that falls inside a logged time-off range becomes an Attention Required
+  item ("Tommy Nguyen is scheduled on 4 day(s) … while marked Vacation
+  …"), grouped by (employee, time-off entry) rather than one item per
+  conflicting day so a multi-day vacation doesn't flood the list.
+
+Exactly like the existing double-booking warning, **this never blocks the
+assignment** — the office employee can still keep them on the crew if
+there's a legitimate reason (someone came back early, an emergency
+call-in, etc.).
+
 ## Email Assistant & Invoice Routing (Architecture, Not Yet Live)
 
 The long-term goal is an AI assistant watching the owner's Gmail that
@@ -899,6 +1017,18 @@ shaped so each is a self-contained addition:
 
 ## What was deliberately simplified for this version
 
+- **Vacation & Sick Day Tracker (build 7)** — a day-off LOG, not an
+  accrual/balance system: no monthly accrual, no rollover, no pro-rating
+  by hire date. Allowance is a flat "N days per calendar year" set once
+  per employee, compared against a year-to-date sum — see README
+  "Vacation & Sick Day Tracker — Annual Allowance". Editing an existing
+  time-off entry isn't exposed in the UI (`lib/db.ts#updateTimeOffEntry`
+  exists and is ready to wire to one); the "+ Add" / "Remove" pair covers
+  the common corrections with far less UI, same call as the Labor Cost
+  phase's actual-hours entries above. There's also no real email/push
+  notification when someone goes over their allowance — the in-app
+  banner/badge/inline-warning IS the notification for now, same "not yet
+  live" treatment as the Email Assistant / Invoice Routing rules below.
 - **File uploads** — `documents` and `photos` tables and their UI exist
   and are wired to real (seed) data, but there is no working upload
   pipeline. A real implementation would add a Supabase Storage bucket per
