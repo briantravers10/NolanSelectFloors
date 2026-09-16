@@ -8,6 +8,7 @@ import { addDays, isoDate, startOfWeek } from "./dates";
 import type {
   ActivityLogEntry,
   ActualLaborEntry,
+  AgendaEvent,
   Building,
   BuildingRegion,
   BuildingContact,
@@ -38,6 +39,7 @@ import type {
   ProjectScheduleDay,
   ProjectWorkType,
   ScheduleAssignment,
+  SchedulePickupItem,
   Task,
   TimeOffEntry,
   User,
@@ -386,6 +388,102 @@ export function buildSeedData() {
       created_at: `${t(-1)}T00:00:00.000Z`,
       updated_by: "Brian Travers",
       updated_at: `${t(-1)}T00:00:00.000Z`,
+    },
+  ];
+
+  // ---------------------------------------------------------------------
+  // OWNER'S PERSONAL AGENDA (build 8) — a handful of realistic entries
+  // across the current week: site visit meetings, a management-company
+  // check-in, and a personal reminder, so /agenda has something to show
+  // out of the box. All owned by the OWNER_ACTING_ID sentinel "owner" (see
+  // lib/current-user.ts). Every entry is source: 'Manual' — no Google
+  // Calendar sync runs in this environment (see lib/google-calendar.ts).
+  // ---------------------------------------------------------------------
+  const agendaEvents: AgendaEvent[] = [
+    {
+      id: "ag-1",
+      company_id: COMPANY_ID,
+      owner_user_id: "owner",
+      title: "Site visit — The Wexford, Unit 4B refinish walkthrough",
+      event_date: t(0),
+      start_time: "09:00",
+      end_time: "09:45",
+      location: "220 Grove Street, Jersey City, NJ",
+      notes: "Confirm stain color with tenant before crew starts sanding.",
+      related_type: "building",
+      related_id: "b-1",
+      source: "Manual",
+      external_event_id: null,
+      created_at: `${t(-5)}T08:00:00.000Z`,
+      updated_at: `${t(-5)}T08:00:00.000Z`,
+    },
+    {
+      id: "ag-2",
+      company_id: COMPANY_ID,
+      owner_user_id: "owner",
+      title: "Quarterly check-in — Vanguard Property Group",
+      event_date: t(1),
+      start_time: "13:30",
+      end_time: "14:30",
+      location: "70 Hudson St, Jersey City, NJ (their office)",
+      notes: "Review Q3 job volume, discuss upcoming Liberty Harbor Lofts common-area work.",
+      related_type: "client_company",
+      related_id: "cc-1",
+      source: "Manual",
+      external_event_id: null,
+      created_at: `${t(-6)}T08:00:00.000Z`,
+      updated_at: `${t(-6)}T08:00:00.000Z`,
+    },
+    {
+      id: "ag-3",
+      company_id: COMPANY_ID,
+      owner_user_id: "owner",
+      title: "Estimate walkthrough — Harborview Tower lobby tile",
+      event_date: t(2),
+      start_time: "10:00",
+      end_time: "11:00",
+      location: "1 Harbor Drive, Stamford, CT",
+      notes: "Bring laser measure — board wants final sq ft before sign-off.",
+      related_type: "building",
+      related_id: "b-13",
+      source: "Manual",
+      external_event_id: null,
+      created_at: `${t(-3)}T08:00:00.000Z`,
+      updated_at: `${t(-3)}T08:00:00.000Z`,
+    },
+    {
+      id: "ag-4",
+      company_id: COMPANY_ID,
+      owner_user_id: "owner",
+      title: "Dentist appointment",
+      event_date: t(3),
+      start_time: "15:00",
+      end_time: null,
+      location: "Jersey City Dental Group",
+      notes: "Personal — not job related.",
+      related_type: null,
+      related_id: null,
+      source: "Manual",
+      external_event_id: null,
+      created_at: `${t(-2)}T08:00:00.000Z`,
+      updated_at: `${t(-2)}T08:00:00.000Z`,
+    },
+    {
+      id: "ag-5",
+      company_id: COMPANY_ID,
+      owner_user_id: "owner",
+      title: "Call: Meridian Residential Management — vendor portal renewal",
+      event_date: t(4),
+      start_time: "11:00",
+      end_time: "11:30",
+      location: null,
+      notes: "Their vendor portal insurance cert expires end of month — confirm renewal submitted.",
+      related_type: "client_company",
+      related_id: "cc-2",
+      source: "Manual",
+      external_event_id: null,
+      created_at: `${t(-1)}T08:00:00.000Z`,
+      updated_at: `${t(-1)}T08:00:00.000Z`,
     },
   ];
 
@@ -749,6 +847,51 @@ export function buildSeedData() {
   ];
 
   // ---------------------------------------------------------------------
+  // SCHEDULE PICKUP ITEMS — "Items to Order / Collect" (build 8). A
+  // lightweight per-schedule-entry checklist, deliberately separate from
+  // the heavier project_materials system — see README / lib/types.ts
+  // SchedulePickupItem. A handful across a few schedule days, mixing
+  // Needed/Collected, so the feature has real demo data on both View
+  // Schedule and Create/Edit Schedule.
+  // ---------------------------------------------------------------------
+  function scheduleDayId(projectId: string, date: string): string {
+    const day = projectScheduleDays.find((d) => d.project_id === projectId && d.schedule_date === date);
+    if (!day) throw new Error(`Seed data: no schedule day for ${projectId} on ${date}`);
+    return day.id;
+  }
+  let spiId = 1;
+  function addPickupItem(
+    projectId: string,
+    date: string,
+    description: string,
+    status: SchedulePickupItem["status"]
+  ): SchedulePickupItem {
+    return {
+      id: `spi-${spiId++}`,
+      company_id: COMPANY_ID,
+      project_schedule_day_id: scheduleDayId(projectId, date),
+      description,
+      status,
+      created_by: "Miguel Alvarez",
+      updated_by: "Miguel Alvarez",
+      created_at: `${date}T06:30:00.000Z`,
+      updated_at: `${date}T06:30:00.000Z`,
+    };
+  }
+  const schedulePickupItems: SchedulePickupItem[] = [
+    // p-1 — Wexford 4B, priority staining day.
+    addPickupItem("p-1", t(1), "3 buckets of wood glue", "Needed"),
+    addPickupItem("p-1", t(1), "Box of finish nails", "Collected"),
+    // p-2 — Liberty Harbor 12C, LVP starting tomorrow.
+    addPickupItem("p-2", t(1), "Roll of blue painter's tape", "Needed"),
+    // p-11 — Shippan Landing common area, tile on backorder day.
+    addPickupItem("p-11", t(2), "Pick up dumpster key from super", "Needed"),
+    addPickupItem("p-11", t(2), "Extra grout — matching sample from unit 2B", "Collected"),
+    // p-15 — Fort Greene 7A, baseboard return-in-progress day.
+    addPickupItem("p-15", t(1), "Replacement baseboard profile — confirm with supplier before pickup", "Needed"),
+  ];
+
+  // ---------------------------------------------------------------------
   // ACTUAL LABOR ENTRIES — actual hours worked, separate from the planned
   // schedule_assignments above. Demonstrates the planned-vs-actual split,
   // one employee working two jobs in a single day, an unusually-high daily
@@ -986,6 +1129,7 @@ export function buildSeedData() {
     employeeSkills,
     employeeAvailability,
     timeOffEntries,
+    agendaEvents,
     projectCrewRequirements,
     scheduleAssignments,
     materials,
@@ -1005,6 +1149,7 @@ export function buildSeedData() {
     emailRoutingRules,
     workTypes,
     projectScheduleDays,
+    schedulePickupItems,
     actualLaborEntries,
     dailyScheduleConfirmations,
     weekStart: isoDate(monday),

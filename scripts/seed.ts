@@ -60,6 +60,7 @@ async function main() {
     { name: "email_routing_rules", rows: data.emailRoutingRules },
     { name: "work_types", rows: data.workTypes },
     { name: "project_schedule_days", rows: data.projectScheduleDays },
+    { name: "schedule_pickup_items", rows: data.schedulePickupItems },
     { name: "actual_labor_entries", rows: data.actualLaborEntries },
     { name: "daily_schedule_confirmations", rows: data.dailyScheduleConfirmations },
     { name: "activity_log", rows: data.activityLog },

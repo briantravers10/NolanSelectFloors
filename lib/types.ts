@@ -730,6 +730,29 @@ export interface ProjectScheduleDay {
   updated_at: string;
 }
 
+export const SCHEDULE_PICKUP_STATUSES = ["Needed", "Collected"] as const;
+export type SchedulePickupStatus = (typeof SCHEDULE_PICKUP_STATUSES)[number];
+
+/**
+ * "Items to Order / Collect" — a lightweight, per-schedule-entry checklist
+ * (build 8), e.g. "3 buckets of glue" or "pick up dumpster key from super".
+ * Deliberately NOT the heavier `project_materials`/`Material` system (which
+ * tracks supplier/cost/delivery-date at the project level) — see README.
+ * One free-text `description` (the quantity, if any, is typed right into
+ * it) and a two-value status are enough for a quick "grab this" list.
+ */
+export interface SchedulePickupItem {
+  id: string;
+  company_id: string;
+  project_schedule_day_id: string;
+  description: string;
+  status: SchedulePickupStatus;
+  created_by?: string;
+  updated_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /**
  * Actual hours worked — separate from the planned `schedule_assignments`
  * rows. An employee can have multiple entries on the same day across
@@ -767,4 +790,40 @@ export interface DailyScheduleConfirmation {
   confirmed_by: string;
   confirmed_at: string;
   notes?: string;
+}
+
+// ---------------------------------------------------------------------
+// OWNER'S PERSONAL AGENDA (build 8, see
+// supabase/migrations/0008_owner_agenda.sql). SEPARATE from the
+// operational job Schedule above — this is the owner's own meetings, site
+// visits and personal reminders. Architected for a future Google Calendar
+// sync (see lib/google-calendar.ts and README "Owner's Agenda & Future
+// Google Calendar Sync") but no live Google API call is made anywhere in
+// this codebase yet.
+// ---------------------------------------------------------------------
+
+export const AGENDA_EVENT_SOURCES = ["Manual", "Google Calendar"] as const;
+export type AgendaEventSource = (typeof AGENDA_EVENT_SOURCES)[number];
+
+export interface AgendaEvent {
+  id: string;
+  company_id: string;
+  /** office_users.id, or the OWNER_ACTING_ID sentinel "owner" — see
+   * lib/current-user.ts. Plain text, not a foreign key, since there is no
+   * users table yet. */
+  owner_user_id: string;
+  title: string;
+  event_date: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  location?: string | null;
+  notes?: string | null;
+  related_type?: RelatedRecordType | null;
+  related_id?: string | null;
+  source: AgendaEventSource;
+  /** Placeholder for a future Google Calendar event id, to prevent
+   * duplicate sync inserts. Always null until real sync is built. */
+  external_event_id?: string | null;
+  created_at: string;
+  updated_at: string;
 }
