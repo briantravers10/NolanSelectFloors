@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { listBuildingContacts, listBuildings, listClientCompanies, listContacts, listJobRequests, listProjects } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, EmailLink, StatusBadge, EmptyState, Stat } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,9 +24,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
   const clientProjects = projects.filter((p) => buildingIds.has(p.building_id)).sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
   const clientJobRequests = jobRequests.filter((j) => buildingIds.has(j.building_id));
 
-  const activeStatuses = ["Approved", "Pre-Construction", "Materials Required", "Materials Ordered", "Materials Ready", "Ready to Schedule", "Scheduled", "In Progress", "Paused", "Punch List"];
-  const activeProjects = clientProjects.filter((p) => activeStatuses.includes(p.status));
-  const previousProjects = clientProjects.filter((p) => !activeStatuses.includes(p.status));
+  const activeProjects = clientProjects.filter(isActiveProjectStage);
+  const previousProjects = clientProjects.filter((p) => !isActiveProjectStage(p));
   const thisYear = new Date().getFullYear();
   const jobsThisYear = clientProjects.filter((p) => p.start_date && new Date(p.start_date).getFullYear() === thisYear).length;
   const lastJobReceived = clientJobRequests.slice().sort((a, b) => (b.received_at < a.received_at ? -1 : 1))[0];
@@ -87,7 +86,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                     </div>
                     <div className="text-right">
                       <div className="text-sm text-slate-700">{formatCurrency(p.project_value)}</div>
-                      <StatusBadge status={p.status} />
+                      <StatusBadge status={p.pipeline_stage} />
                     </div>
                   </Link>
                 ))}
@@ -109,7 +108,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                     </div>
                     <div className="text-right">
                       <div className="text-sm text-slate-700">{formatCurrency(p.project_value)}</div>
-                      <StatusBadge status={p.status} />
+                      <StatusBadge status={p.pipeline_stage} />
                     </div>
                   </Link>
                 ))}

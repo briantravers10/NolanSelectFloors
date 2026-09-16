@@ -45,10 +45,10 @@ import type {
   PricingFormulaComponent,
   Project,
   ProjectCrewRequirement,
+  ProjectDrawing,
   ProjectMaterial,
   ProjectNote,
   ProjectScheduleDay,
-  ProjectStatus,
   ProjectWorkType,
   RelatedRecordType,
   ScheduleAssignment,
@@ -1245,7 +1245,6 @@ async function insertProjectFromJobRequest(
     unit_number: jr.unit_number,
     name: overrides?.name ?? `${building?.name ?? "Building"}${jr.unit_number ? " — Unit " + jr.unit_number : ""}`,
     description: jr.description,
-    status: "Approved",
     project_value: overrides?.project_value ?? jr.estimate_amount ?? 0,
     other_cost: 0,
     needs_transportation: overrides?.needs_transportation ?? true,
@@ -1292,31 +1291,15 @@ export async function convertJobRequestToProject(
 /**
  * "Create Bid" — used from an earlier-stage job request that still needs
  * to be estimated. Creates the SAME kind of project row, but starts it
- * unclaimed at pipeline_stage "Project Bid" so it shows up on the Bid
+ * unclaimed at pipeline_stage "Bid Sent" so it shows up on the Bid
  * Dashboard for an estimator to claim.
  */
 export async function createBidFromJobRequest(jobRequestId: string): Promise<Project> {
   const jr = getStore().jobRequests.find((j) => j.id === jobRequestId);
   if (!jr) throw new Error("Job request not found");
-  const project = await insertProjectFromJobRequest(jr, undefined, "Project Bid", "Unclaimed");
+  const project = await insertProjectFromJobRequest(jr, undefined, "Bid Sent", "Unclaimed");
   logActivity({ action: "Created bid", related_type: "project", related_id: project.id, detail: `From job request ${jobRequestId} — unclaimed, awaiting an estimator` });
   return project;
-}
-
-export async function updateProjectStatus(id: string, status: ProjectStatus): Promise<void> {
-  const client = sb();
-  const now = new Date().toISOString();
-  if (client) {
-    const { error } = await client.from("projects").update({ status, updated_at: now }).eq("id", id);
-    if (error) throw error;
-  } else {
-    const project = getStore().projects.find((p) => p.id === id);
-    if (project) {
-      project.status = status;
-      project.updated_at = now;
-    }
-  }
-  logActivity({ action: `Project status changed to ${status}`, related_type: "project", related_id: id });
 }
 
 // ---------------------------------------------------------------------
@@ -1327,11 +1310,14 @@ export async function updateProjectStatus(id: string, status: ProjectStatus): Pr
 // stamps, the first time a project reaches it. Never overwritten on a
 // later re-visit (e.g. moving back and forth), which is what keeps these
 // columns usable for future turnaround/duration reporting.
+// NOTE: `sent_to_crew_at` is kept as a column (harmless, unused going
+// forward) since "Sent to Crew" was merged into "In Progress" in the
+// 5-stage simplification — see README "Project Pipeline Stage
+// Simplification".
 const STAGE_TIMESTAMP_FIELD: Partial<Record<PipelineStage, keyof Project>> = {
   Scheduled: "scheduled_at",
-  "Sent to Crew": "sent_to_crew_at",
-  "Project In Process": "project_started_at",
-  "Project Completed": "project_completed_at",
+  "In Progress": "project_started_at",
+  Complete: "project_completed_at",
 };
 
 // Same idea for bid_status transitions.
@@ -1517,7 +1503,7 @@ export async function findOpenDuplicateBids(buildingId: string, unitNumber?: str
   }
   for (const p of projects) {
     if (p.building_id !== buildingId || norm(p.unit_number) !== norm(unitNumber)) continue;
-    if (p.pipeline_stage === "Project Completed") continue;
+    if (p.pipeline_stage === "Complete") continue;
     matches.push({
       type: "project",
       id: p.id,
@@ -1872,6 +1858,7 @@ export async function createPhotoRecord(input: {
   file_name: string;
   storage_path?: string;
   category?: PhotoCategory;
+  title?: string;
   caption?: string;
   taken_at?: string;
   uploaded_by?: string;
@@ -1890,7 +1877,85 @@ export async function createPhotoRecord(input: {
   } else {
     getStore().photos.unshift(record);
   }
-  logActivity({ action: "Added progress photo entry", related_type: input.related_type, related_id: input.related_id, detail: input.caption });
+  logActivity({ action: "Added progress photo entry", related_type: input.related_type, related_id: input.related_id, detail: input.title ?? input.caption });
+  return record;
+}
+
+// ---------------------------------------------------------------------
+// PROJECT DRAWINGS (build 9) — Procore-style "Drawings" tool with version
+// history. See lib/types.ts ProjectDrawing and README "Photos & Drawings".
+// ---------------------------------------------------------------------
+
+export async function listProjectDrawings(): Promise<ProjectDrawing[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("project_drawings").select("*").order("uploaded_at", { ascending: false });
+    if (!error && data) return data as ProjectDrawing[];
+  }
+  return [...getStore().projectDrawings].sort((a, b) => (a.uploaded_at < b.uploaded_at ? 1 : -1));
+}
+
+/**
+ * Uploads a NEW drawing, or a new VERSION of an existing one when
+ * `supersedes_id` is given (the id of the row being replaced). Superseding
+ * flips the old row's `is_current_version` to false — it is never deleted,
+ * so full history stays available via "Version History" — and inserts a
+ * brand-new row at `version + 1`, `is_current_version: true`, inheriting
+ * the same drawing_name/drawing_number.
+ */
+export async function createProjectDrawing(input: {
+  project_id: string;
+  drawing_name: string;
+  drawing_number?: string;
+  file_reference?: string;
+  notes?: string;
+  uploaded_by?: string;
+  storage_unavailable?: boolean;
+  supersedes_id?: string;
+}): Promise<ProjectDrawing> {
+  const client = sb();
+  const now = new Date().toISOString();
+  const existingDrawings = await listProjectDrawings();
+  const supersedes = input.supersedes_id ? existingDrawings.find((d) => d.id === input.supersedes_id) : undefined;
+
+  if (supersedes) {
+    if (client) {
+      const { error } = await client.from("project_drawings").update({ is_current_version: false }).eq("id", supersedes.id);
+      if (error) throw error;
+    } else {
+      const row = getStore().projectDrawings.find((d) => d.id === supersedes.id);
+      if (row) row.is_current_version = false;
+    }
+  }
+
+  const record: ProjectDrawing = {
+    id: `pd-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    project_id: input.project_id,
+    drawing_name: supersedes?.drawing_name ?? input.drawing_name,
+    drawing_number: supersedes?.drawing_number ?? input.drawing_number,
+    version: supersedes ? supersedes.version + 1 : 1,
+    file_reference: input.file_reference,
+    is_current_version: true,
+    uploaded_by: input.uploaded_by,
+    uploaded_at: now,
+    notes: input.notes,
+    storage_unavailable: input.storage_unavailable,
+    created_at: now,
+  };
+  if (client) {
+    const { error } = await client.from("project_drawings").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().projectDrawings.push(record);
+  }
+  logActivity({
+    action: supersedes ? "Uploaded new drawing version" : "Added drawing",
+    related_type: "project",
+    related_id: input.project_id,
+    actor_name: input.uploaded_by,
+    detail: `${record.drawing_name}${record.drawing_number ? ` (${record.drawing_number})` : ""} — v${record.version}`,
+  });
   return record;
 }
 

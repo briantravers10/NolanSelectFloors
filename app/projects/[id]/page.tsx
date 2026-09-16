@@ -31,19 +31,19 @@ import {
   isMissingDriver,
 } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
-import { PIPELINE_STAGES, PROJECT_STATUSES, STAFF_CAPABILITIES } from "@/lib/types";
+import { PIPELINE_STAGES, STAFF_CAPABILITIES } from "@/lib/types";
 import {
   addCrewRequirementAction,
+  addProjectDrawingAction,
   addProjectMaterialAction,
   addProjectNoteAction,
   addProjectPhotoAction,
   addProjectTaskAction,
   movePipelineStageFormAction,
   saveProjectEstimateAction,
-  setProjectStatusAction,
 } from "../actions";
 import { PHOTO_CATEGORIES } from "@/lib/types";
-import { listPhotos } from "@/lib/db";
+import { listPhotos, listProjectDrawings } from "@/lib/db";
 import { isPhotoStorageConfigured } from "@/lib/storage";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -63,6 +63,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     actingUser,
     activityLog,
     photos,
+    drawings,
     pricingFormulas,
     formulaComponents,
     materialRateItems,
@@ -82,6 +83,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     getActingUser(),
     listActivityLog(),
     listPhotos(),
+    listProjectDrawings(),
     listPricingFormulas(),
     listPricingFormulaComponents(),
     listMaterialRateItems(),
@@ -109,6 +111,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     .filter((ph) => ph.related_type === "project" && ph.related_id === id)
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   const photoStorageConfigured = isPhotoStorageConfigured();
+  const projectDrawings = drawings.filter((d) => d.project_id === id).sort((a, b) => (a.uploaded_at < b.uploaded_at ? 1 : -1));
+  const currentDrawings = projectDrawings.filter((d) => d.is_current_version);
+  const drawingsByName = new Map<string, typeof projectDrawings>();
+  for (const d of projectDrawings) {
+    const key = `${d.drawing_name}__${d.drawing_number ?? ""}`;
+    if (!drawingsByName.has(key)) drawingsByName.set(key, []);
+    drawingsByName.get(key)!.push(d);
+  }
 
   const costing = computeProjectCosting(project, assignments, materials, id);
   const canViewCost = canViewLaborCost(actingUser);
@@ -123,7 +133,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <div className="flex flex-wrap gap-1.5 justify-end">
             <StatusBadge status={project.pipeline_stage} />
             <StatusBadge status={project.bid_status} />
-            <StatusBadge status={project.status} />
           </div>
         }
       />
@@ -161,14 +170,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <Button type="submit" variant="secondary">Move</Button>
               <span className="text-xs text-slate-400">Can move forward or backward — e.g. to undo an accidental advance.</span>
             </form>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Move to Detailed Status</div>
-            <div className="flex flex-wrap gap-2">
-              {PROJECT_STATUSES.filter((s) => s !== project.status).map((s) => (
-                <form key={s} action={setProjectStatusAction.bind(null, project.id, s)}>
-                  <button type="submit" className="text-xs rounded-full border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-100">{s}</button>
-                </form>
-              ))}
-            </div>
           </Card>
 
           <BidOwnership project={project} officeUsers={officeUsers} actingUser={actingUser} />
@@ -387,12 +388,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
           <Card className="p-4">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Photos &amp; Progress</h2>
+            <p className="text-xs text-slate-500 mb-3">Organized into albums by category, Procore-style. Titles are optional.</p>
             {!photoStorageConfigured && (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
                 Photo storage isn&apos;t configured yet — entries below are saved without an image until Supabase Storage credentials are set (see README).
               </p>
             )}
             <form action={addProjectPhotoAction.bind(null, project.id)} className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+              <input name="title" placeholder="Title (optional)" className="sm:col-span-2 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
               <input name="caption" placeholder="Caption / note" required className="sm:col-span-2 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
               <select name="category" defaultValue="Progress" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
                 {PHOTO_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -404,24 +407,108 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             {projectPhotos.length === 0 ? (
               <EmptyState message="No photos or progress entries yet." />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {projectPhotos.map((ph) => (
-                  <div key={ph.id} className="border border-slate-100 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-semibold uppercase text-sky-700 bg-sky-50 rounded-full px-2 py-0.5">{ph.category ?? "Other"}</span>
-                      <span className="text-xs text-slate-400">{formatDateLong(ph.taken_at?.slice(0, 10) ?? ph.created_at.slice(0, 10))}</span>
+              <div className="space-y-4">
+                {PHOTO_CATEGORIES.filter((cat) => projectPhotos.some((ph) => (ph.category ?? "Other") === cat)).map((cat) => (
+                  <div key={cat}>
+                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                      {cat} album ({projectPhotos.filter((ph) => (ph.category ?? "Other") === cat).length})
                     </div>
-                    <p className="text-sm text-slate-700 mb-1">{ph.caption}</p>
-                    {ph.storage_unavailable || !ph.storage_path ? (
-                      <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                        Photo storage isn&apos;t configured yet — this entry was saved without an image.
-                      </div>
-                    ) : (
-                      <div className="text-xs text-slate-500">Stored at {ph.storage_path}</div>
-                    )}
-                    <div className="text-[11px] text-slate-400 mt-1">{ph.uploaded_by ?? "—"}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {projectPhotos
+                        .filter((ph) => (ph.category ?? "Other") === cat)
+                        .map((ph) => (
+                          <div key={ph.id} className="border border-slate-100 rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[11px] font-semibold uppercase text-sky-700 bg-sky-50 rounded-full px-2 py-0.5">{ph.category ?? "Other"}</span>
+                              <span className="text-xs text-slate-400">{formatDateLong(ph.taken_at?.slice(0, 10) ?? ph.created_at.slice(0, 10))}</span>
+                            </div>
+                            {ph.title && <div className="text-sm font-medium text-slate-900 mb-0.5">{ph.title}</div>}
+                            <p className="text-sm text-slate-700 mb-1">{ph.caption}</p>
+                            {ph.storage_unavailable || !ph.storage_path ? (
+                              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                                Photo storage isn&apos;t configured yet — this entry was saved without an image.
+                              </div>
+                            ) : (
+                              <div className="text-xs text-slate-500">Stored at {ph.storage_path}</div>
+                            )}
+                            <div className="text-[11px] text-slate-400 mt-1">{ph.uploaded_by ?? "—"}</div>
+                          </div>
+                        ))}
+                    </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Drawings</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Plans and drawings with version history, Procore-style — uploading against an existing drawing supersedes it.
+            </p>
+            {!photoStorageConfigured && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                File storage isn&apos;t configured yet — entries below are saved without a file until Supabase Storage credentials are set (see README).
+              </p>
+            )}
+            <form action={addProjectDrawingAction.bind(null, project.id)} className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+              <select name="supersedes_id" defaultValue="" className="sm:col-span-2 rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
+                <option value="">New drawing…</option>
+                {currentDrawings.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    Upload new version of: {d.drawing_name}{d.drawing_number ? ` (${d.drawing_number})` : ""} — currently v{d.version}
+                  </option>
+                ))}
+              </select>
+              <input name="drawing_name" placeholder="Drawing name (e.g. Lobby Floor Plan)" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <input name="drawing_number" placeholder="Drawing # (optional, e.g. A-101)" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <input name="notes" placeholder="Notes (optional)" className="sm:col-span-2 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+              <input name="file" type="file" accept="application/pdf,image/*" className="sm:col-span-2 text-sm" />
+              <Button type="submit" className="sm:col-span-2">Upload Drawing</Button>
+            </form>
+            {currentDrawings.length === 0 ? (
+              <EmptyState message="No drawings uploaded yet." />
+            ) : (
+              <div className="space-y-3">
+                {currentDrawings.map((d) => {
+                  const history = (drawingsByName.get(`${d.drawing_name}__${d.drawing_number ?? ""}`) ?? []).filter((h) => h.id !== d.id);
+                  return (
+                    <div key={d.id} className="border border-slate-100 rounded-lg p-3">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">
+                            {d.drawing_name}{d.drawing_number ? ` · ${d.drawing_number}` : ""}
+                          </div>
+                          <div className="text-xs text-slate-500">Current — v{d.version} · {formatDateLong(d.uploaded_at.slice(0, 10))} · {d.uploaded_by ?? "—"}</div>
+                        </div>
+                        <span className="text-[11px] font-semibold uppercase text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 shrink-0">Current</span>
+                      </div>
+                      {d.notes && <p className="text-sm text-slate-700 mb-1">{d.notes}</p>}
+                      {d.storage_unavailable || !d.file_reference ? (
+                        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-1">
+                          File storage isn&apos;t configured yet — this entry was saved without a file.
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-500 mb-1">Stored at {d.file_reference}</div>
+                      )}
+                      {history.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="text-xs text-sky-600 hover:underline cursor-pointer">Version History ({history.length})</summary>
+                          <div className="mt-2 space-y-1.5 pl-3 border-l-2 border-slate-200">
+                            {history
+                              .sort((a, b) => b.version - a.version)
+                              .map((h) => (
+                                <div key={h.id} className="text-xs text-slate-500">
+                                  v{h.version} · {formatDateLong(h.uploaded_at.slice(0, 10))} · {h.uploaded_by ?? "—"}
+                                  {h.notes ? ` — ${h.notes}` : ""}
+                                </div>
+                              ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Card>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listProjectMaterials, listProjects } from "@/lib/db";
 import { Card, PageHeader, StatusBadge, EmptyState } from "@/components/ui";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
 import { addDays, isoDate, todayIso } from "@/lib/dates";
 import { MATERIAL_STATUSES } from "@/lib/types";
 
@@ -12,10 +12,9 @@ export default async function MaterialsPage() {
 
   const today = todayIso();
   const soon = isoDate(addDays(new Date(), 5));
-  const activeStatuses = new Set(["Approved", "Pre-Construction", "Materials Required", "Materials Ordered", "Materials Ready", "Ready to Schedule", "Scheduled", "In Progress", "Paused", "Punch List"]);
   const activeMaterials = projectMaterials.filter((m) => {
     const p = projectById.get(m.project_id);
-    return p && activeStatuses.has(p.status);
+    return p && isActiveProjectStage(p);
   });
 
   const warnings = activeMaterials.filter((m) => {

@@ -54,17 +54,10 @@ const BADGE_COLORS: Record<string, string> = {
   "Converted to Project": "bg-slate-200 text-slate-600",
   Declined: "bg-rose-100 text-rose-700",
   Cancelled: "bg-rose-100 text-rose-700",
-  // Project statuses
-  "Pre-Construction": "bg-amber-100 text-amber-700",
-  "Materials Required": "bg-orange-100 text-orange-700",
-  "Materials Ordered": "bg-orange-100 text-orange-700",
-  "Materials Ready": "bg-lime-100 text-lime-700",
-  Scheduled: "bg-sky-100 text-sky-700",
-  "In Progress": "bg-blue-100 text-blue-700",
-  Paused: "bg-rose-100 text-rose-700",
-  "Punch List": "bg-purple-100 text-purple-700",
+  // Task/lead/misc "Completed" and invoice "Paid" (kept — still used by
+  // those, even though the old 13-value ProjectStatus that also used them
+  // is gone; see README "Project Pipeline Stage Simplification").
   Completed: "bg-emerald-100 text-emerald-700",
-  Invoiced: "bg-teal-100 text-teal-700",
   Paid: "bg-slate-200 text-slate-600",
   // Material statuses
   Needed: "bg-rose-100 text-rose-700",
@@ -85,11 +78,15 @@ const BADGE_COLORS: Record<string, string> = {
   "Follow Up": "bg-orange-100 text-orange-700",
   Won: "bg-emerald-100 text-emerald-700",
   Lost: "bg-rose-100 text-rose-700",
-  // Pipeline stages (primary 6-stage bid → project lifecycle)
-  "Project Bid": "bg-violet-100 text-violet-700",
+  // Pipeline stages — simplified to 5 values (build 9, see README "Project
+  // Pipeline Stage Simplification"): Bid Sent, Bid Accepted, Scheduled, In
+  // Progress, Complete. `Scheduled` and `In Progress` are shared color keys
+  // also used by Task/COI/Bid statuses — kept consistent across the app.
+  "Bid Sent": "bg-sky-100 text-sky-700",
   "Bid Accepted": "bg-indigo-100 text-indigo-700",
-  "Sent to Crew": "bg-cyan-100 text-cyan-700",
-  "Project In Process": "bg-blue-100 text-blue-700",
+  Scheduled: "bg-amber-100 text-amber-700",
+  "In Progress": "bg-orange-100 text-orange-700",
+  Complete: "bg-emerald-100 text-emerald-700",
   // Bid statuses
   Unclaimed: "bg-rose-100 text-rose-700",
   Claimed: "bg-amber-100 text-amber-700",

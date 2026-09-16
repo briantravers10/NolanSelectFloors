@@ -3,6 +3,7 @@ import { listBuildings, listClientCompanies, listProjects } from "@/lib/db";
 import { Card, PageHeader, LinkButton } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 import { BUILDING_REGIONS } from "@/lib/types";
+import { isActiveProjectStage } from "@/lib/calculations";
 import { BuildingMapLoader, type MapPin } from "@/components/BuildingMapLoader";
 
 export default async function BuildingsPage({ searchParams }: { searchParams: Promise<{ region?: string; view?: string }> }) {
@@ -10,8 +11,6 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
   const showMap = view === "map";
   const [buildings, clients, projects] = await Promise.all([listBuildings(), listClientCompanies(), listProjects()]);
   const clientById = new Map(clients.map((c) => [c.id, c]));
-
-  const activeStatuses = new Set(["Approved", "Pre-Construction", "Materials Required", "Materials Ordered", "Materials Ready", "Ready to Schedule", "Scheduled", "In Progress", "Paused", "Punch List"]);
 
   const regionsPresent = BUILDING_REGIONS.filter((r) => buildings.some((b) => b.region === r));
   const filtered = region ? buildings.filter((b) => b.region === region) : buildings;
@@ -77,13 +76,13 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
           </p>
         </>
       ) : region ? (
-        <BuildingGrid buildings={filtered} clientById={clientById} projects={projects} activeStatuses={activeStatuses} />
+        <BuildingGrid buildings={filtered} clientById={clientById} projects={projects} />
       ) : (
         <div className="space-y-8">
           {regionsPresent.map((r) => (
             <div key={r}>
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{r} ({buildings.filter((b) => b.region === r).length})</div>
-              <BuildingGrid buildings={buildings.filter((b) => b.region === r)} clientById={clientById} projects={projects} activeStatuses={activeStatuses} />
+              <BuildingGrid buildings={buildings.filter((b) => b.region === r)} clientById={clientById} projects={projects} />
             </div>
           ))}
         </div>
@@ -96,17 +95,15 @@ function BuildingGrid({
   buildings,
   clientById,
   projects,
-  activeStatuses,
 }: {
   buildings: Awaited<ReturnType<typeof listBuildings>>;
   clientById: Map<string, Awaited<ReturnType<typeof listClientCompanies>>[number]>;
   projects: Awaited<ReturnType<typeof listProjects>>;
-  activeStatuses: Set<string>;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
       {buildings.map((b) => {
-        const activeJobs = projects.filter((p) => p.building_id === b.id && activeStatuses.has(p.status)).length;
+        const activeJobs = projects.filter((p) => p.building_id === b.id && isActiveProjectStage(p)).length;
         return (
           <Link key={b.id} href={`/buildings/${b.id}`}>
             <Card className="p-4 h-full hover:border-sky-300 hover:shadow-md transition-all">

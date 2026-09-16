@@ -2,11 +2,7 @@ import { listBuildings, listClientCompanies, listProjects } from "@/lib/db";
 import { PageHeader } from "@/components/ui";
 import { HaulAwayPlanner } from "@/components/buildings/HaulAwayPlanner";
 import { isLiveRoutingConfigured } from "@/lib/routing";
-
-const ACTIVE_STATUSES = new Set([
-  "Approved", "Pre-Construction", "Materials Required", "Materials Ordered",
-  "Materials Ready", "Ready to Schedule", "Scheduled", "In Progress", "Paused", "Punch List",
-]);
+import { isActiveProjectStage } from "@/lib/calculations";
 
 export default async function HaulAwayRunPage() {
   const [projects, buildings, clients] = await Promise.all([listProjects(), listBuildings(), listClientCompanies()]);
@@ -14,7 +10,7 @@ export default async function HaulAwayRunPage() {
   const clientById = new Map(clients.map((c) => [c.id, c]));
 
   const candidates = projects
-    .filter((p) => ACTIVE_STATUSES.has(p.status))
+    .filter(isActiveProjectStage)
     .map((p) => {
       const building = buildingById.get(p.building_id);
       return { project: p, building, client: building ? clientById.get(building.client_company_id) : undefined };

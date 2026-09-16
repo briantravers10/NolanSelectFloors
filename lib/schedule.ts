@@ -80,22 +80,21 @@ export function mapJobStatusToPipelineStage(status: ScheduleJobStatus): Pipeline
     case "Scheduled":
       return "Scheduled";
     case "In Progress":
-      return "Project In Process";
+      return "In Progress";
     case "Complete":
-      return "Project Completed";
+      return "Complete";
   }
 }
 
 export function mapPipelineStageToJobStatus(stage: PipelineStage): ScheduleJobStatus {
   switch (stage) {
-    case "Project Bid":
+    case "Bid Sent":
     case "Bid Accepted":
     case "Scheduled":
       return "Scheduled";
-    case "Sent to Crew":
-    case "Project In Process":
+    case "In Progress":
       return "In Progress";
-    case "Project Completed":
+    case "Complete":
       return "Complete";
   }
 }

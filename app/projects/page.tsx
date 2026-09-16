@@ -2,13 +2,13 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listProjects, listScheduleAssignments } from "@/lib/db";
 import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { formatCurrency } from "@/lib/calculations";
-import { PIPELINE_STAGES, PROJECT_STATUSES } from "@/lib/types";
+import { PIPELINE_STAGES } from "@/lib/types";
 import { projectLaborCost } from "@/lib/calculations";
 import { Pipeline } from "./Pipeline";
 import { ByBuilding } from "./ByBuilding";
 
-export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string; view?: string; stage?: string }> }) {
-  const { status, view, stage } = await searchParams;
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ view?: string; stage?: string }> }) {
+  const { view, stage } = await searchParams;
   const showPipeline = view === "pipeline";
   const showByBuilding = view === "by-building";
 
@@ -18,7 +18,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         title="Projects"
         subtitle={
           showPipeline
-            ? "Drag-free kanban across the 6 primary lifecycle stages."
+            ? "Drag-free kanban across the 5 simplified lifecycle stages."
             : showByBuilding
               ? "Every job, grouped by building and ordered by unit."
               : "Every project, in one list."
@@ -57,12 +57,12 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         ))}
       </div>
 
-      {showPipeline ? <Pipeline stageFilter={stage} /> : showByBuilding ? <ByBuilding stageFilter={stage} /> : <ProjectsList status={status} stage={stage} />}
+      {showPipeline ? <Pipeline stageFilter={stage} /> : showByBuilding ? <ByBuilding stageFilter={stage} /> : <ProjectsList stage={stage} />}
     </div>
   );
 }
 
-async function ProjectsList({ status, stage }: { status?: string; stage?: string }) {
+async function ProjectsList({ stage }: { stage?: string }) {
   const [projects, buildings, clients, assignments] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -72,24 +72,14 @@ async function ProjectsList({ status, stage }: { status?: string; stage?: string
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
 
+  // The old 13-value detailed `status` filter is gone — the 5-value
+  // pipeline_stage (see the sub-nav above) is now the only status filter.
   let filtered = projects.slice();
   if (stage) filtered = filtered.filter((p) => p.pipeline_stage === stage);
-  if (status) filtered = filtered.filter((p) => p.status === status);
   filtered.sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2 mb-5">
-        <Link href={stage ? `/projects?stage=${encodeURIComponent(stage)}` : "/projects"} className={`text-xs font-medium rounded-full px-3 py-1 border ${!status ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>
-          All Statuses
-        </Link>
-        {PROJECT_STATUSES.map((s) => (
-          <Link key={s} href={`/projects?status=${encodeURIComponent(s)}${stage ? `&stage=${encodeURIComponent(stage)}` : ""}`} className={`text-xs font-medium rounded-full px-3 py-1 border ${status === s ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>
-            {s}
-          </Link>
-        ))}
-      </div>
-
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -99,7 +89,6 @@ async function ProjectsList({ status, stage }: { status?: string; stage?: string
                 <th className="px-4 py-3">Building</th>
                 <th className="px-4 py-3">Management Co.</th>
                 <th className="px-4 py-3">Stage</th>
-                <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Start</th>
                 <th className="px-4 py-3 text-right">Value</th>
                 <th className="px-4 py-3 text-right">Labor Cost</th>
@@ -119,7 +108,6 @@ async function ProjectsList({ status, stage }: { status?: string; stage?: string
                     <td className="px-4 py-3 text-slate-600">{building?.name}</td>
                     <td className="px-4 py-3 text-slate-600">{client?.name}</td>
                     <td className="px-4 py-3"><StatusBadge status={p.pipeline_stage} /></td>
-                    <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                     <td className="px-4 py-3 text-slate-600">{p.start_date ?? "—"}</td>
                     <td className="px-4 py-3 text-right">{formatCurrency(p.project_value)}</td>
                     <td className="px-4 py-3 text-right">{formatCurrency(projectLaborCost(assignments, p.id))}</td>

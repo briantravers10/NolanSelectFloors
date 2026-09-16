@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   claimBid,
   createProjectCrewRequirement,
+  createProjectDrawing,
   createProjectMaterial,
   createProjectNote,
   createPhotoRecord,
@@ -12,18 +13,10 @@ import {
   saveProjectEstimatedValue,
   updateBidStatus,
   updateProjectPipelineStage,
-  updateProjectStatus,
 } from "@/lib/db";
-import { uploadProjectPhoto } from "@/lib/storage";
+import { uploadProjectDrawing, uploadProjectPhoto } from "@/lib/storage";
 import { getActingUser } from "@/lib/current-user";
-import type { BidStatus, MaterialStatus, PhotoCategory, PipelineStage, ProjectStatus, StaffCapability } from "@/lib/types";
-
-export async function setProjectStatusAction(id: string, status: ProjectStatus) {
-  await updateProjectStatus(id, status);
-  revalidatePath(`/projects/${id}`);
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-}
+import type { BidStatus, MaterialStatus, PhotoCategory, PipelineStage, StaffCapability } from "@/lib/types";
 
 function revalidateProjectViews(id: string) {
   revalidatePath(`/projects/${id}`);
@@ -129,6 +122,7 @@ export async function addProjectNoteAction(projectId: string, formData: FormData
 export async function addProjectPhotoAction(projectId: string, formData: FormData) {
   const caption = String(formData.get("caption") ?? "").trim();
   if (!caption) return;
+  const title = String(formData.get("title") ?? "").trim() || undefined;
   const category = String(formData.get("category") ?? "Progress") as PhotoCategory;
   const takenAt = String(formData.get("taken_at") ?? "") || undefined;
   const actingUser = await getActingUser();
@@ -150,10 +144,45 @@ export async function addProjectPhotoAction(projectId: string, formData: FormDat
     file_name: fileName,
     storage_path,
     category,
+    title,
     caption,
     taken_at: takenAt ? `${takenAt}T00:00:00.000Z` : undefined,
     uploaded_by: actingUser.fullName,
     storage_unavailable,
+  });
+  revalidatePath(`/projects/${projectId}`);
+}
+
+/** Drawings & Plans (Procore-inspired, build 9): uploads a new drawing, or
+ * a new VERSION of an existing one when `supersedes_id` is set (see
+ * lib/db.ts createProjectDrawing). Same soft-fail storage pattern as
+ * Photos above — never fabricates a successful upload. */
+export async function addProjectDrawingAction(projectId: string, formData: FormData) {
+  const drawingName = String(formData.get("drawing_name") ?? "").trim();
+  const supersedesId = String(formData.get("supersedes_id") ?? "") || undefined;
+  if (!drawingName && !supersedesId) return;
+  const drawingNumber = String(formData.get("drawing_number") ?? "").trim() || undefined;
+  const notes = String(formData.get("notes") ?? "").trim() || undefined;
+  const actingUser = await getActingUser();
+  const file = formData.get("file");
+
+  let file_reference: string | undefined;
+  let storage_unavailable = true;
+  if (file instanceof File && file.size > 0) {
+    const result = await uploadProjectDrawing(file, projectId);
+    file_reference = result.storage_path;
+    storage_unavailable = result.unavailable;
+  }
+
+  await createProjectDrawing({
+    project_id: projectId,
+    drawing_name: drawingName,
+    drawing_number: drawingNumber,
+    file_reference,
+    notes,
+    uploaded_by: actingUser.fullName,
+    storage_unavailable,
+    supersedes_id: supersedesId,
   });
   revalidatePath(`/projects/${projectId}`);
 }

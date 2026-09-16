@@ -9,7 +9,7 @@ import {
   listProjects,
 } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, StatusBadge, EmptyState } from "@/components/ui";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
 import type { Building } from "@/lib/types";
 
 const FIELD_LABELS: { key: keyof Building; label: string }[] = [
@@ -43,9 +43,8 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
     .filter((x) => x.contact);
 
   const buildingProjects = projects.filter((p) => p.building_id === id).sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
-  const activeStatuses = new Set(["Approved", "Pre-Construction", "Materials Required", "Materials Ordered", "Materials Ready", "Ready to Schedule", "Scheduled", "In Progress", "Paused", "Punch List"]);
-  const activeProjects = buildingProjects.filter((p) => activeStatuses.has(p.status));
-  const pastProjects = buildingProjects.filter((p) => !activeStatuses.has(p.status));
+  const activeProjects = buildingProjects.filter(isActiveProjectStage);
+  const pastProjects = buildingProjects.filter((p) => !isActiveProjectStage(p));
   const buildingJobRequests = jobRequests.filter((j) => j.building_id === id);
 
   return (
@@ -95,7 +94,7 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
                     </div>
                     <div className="text-right">
                       <div className="text-sm text-slate-700">{formatCurrency(p.project_value)}</div>
-                      <StatusBadge status={p.status} />
+                      <StatusBadge status={p.pipeline_stage} />
                     </div>
                   </Link>
                 ))}
@@ -115,7 +114,7 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
                       <div className="text-sm font-medium text-slate-800">{p.unit_number ? `Unit ${p.unit_number}` : p.name}</div>
                       <div className="text-xs text-slate-500">{p.name}</div>
                     </div>
-                    <StatusBadge status={p.status} />
+                    <StatusBadge status={p.pipeline_stage} />
                   </Link>
                 ))}
               </div>

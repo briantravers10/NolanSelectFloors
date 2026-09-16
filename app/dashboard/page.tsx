@@ -52,7 +52,7 @@ export default async function DashboardPage() {
                         </div>
                         <div className="text-xs text-slate-500">{job.clientName} · PM: {job.pmName}</div>
                       </div>
-                      <StatusBadge status={job.project.status} />
+                      <StatusBadge status={job.project.pipeline_stage} />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
                       <span>{job.project.name}</span>
@@ -95,7 +95,7 @@ export default async function DashboardPage() {
                     </div>
                     <div className="text-right">
                       <div className="text-sm text-slate-700">{project.start_date}</div>
-                      <StatusBadge status={project.status} />
+                      <StatusBadge status={project.pipeline_stage} />
                     </div>
                   </Link>
                 ))}

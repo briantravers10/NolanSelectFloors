@@ -54,7 +54,7 @@ export default async function CompletedJobsPage({
     return link ? contactById.get(link.contact_id) : undefined;
   }
 
-  const completedProjects = projects.filter((p) => p.pipeline_stage === "Project Completed");
+  const completedProjects = projects.filter((p) => p.pipeline_stage === "Complete");
 
   const summaries = await Promise.all(
     completedProjects.map(async (project) => {

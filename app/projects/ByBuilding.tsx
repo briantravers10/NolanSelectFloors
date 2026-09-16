@@ -52,7 +52,7 @@ export async function ByBuilding({ stageFilter }: { stageFilter?: string } = {})
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-sm text-slate-700">{formatCurrency(p.project_value)}</div>
-                    <StatusBadge status={p.status} />
+                    <StatusBadge status={p.pipeline_stage} />
                   </div>
                 </Link>
               ))}

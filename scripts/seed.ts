@@ -52,6 +52,7 @@ async function main() {
     { name: "project_notes", rows: data.projectNotes },
     { name: "documents", rows: data.documents },
     { name: "photos", rows: data.photos },
+    { name: "project_drawings", rows: data.projectDrawings },
     { name: "new_business_leads", rows: data.newBusinessLeads },
     { name: "material_rate_items", rows: data.materialRateItems },
     { name: "pricing_formulas", rows: data.pricingFormulas },

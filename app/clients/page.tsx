@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listContacts, listProjects } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, EmailLink, LinkButton } from "@/components/ui";
 import { Icon } from "@/components/Icon";
+import { isActiveProjectStage } from "@/lib/calculations";
 
 export default async function ClientsPage() {
   const [clients, buildings, contacts, projects] = await Promise.all([
@@ -16,7 +17,7 @@ export default async function ClientsPage() {
     const buildingIds = new Set(clientBuildings.map((b) => b.id));
     const clientContacts = contacts.filter((ct) => ct.client_company_id === c.id);
     const clientProjects = projects.filter((p) => buildingIds.has(p.building_id));
-    const activeProjects = clientProjects.filter((p) => !["Completed", "Invoiced", "Paid"].includes(p.status));
+    const activeProjects = clientProjects.filter(isActiveProjectStage);
     return { client: c, buildingCount: clientBuildings.length, contactCount: clientContacts.length, projectCount: clientProjects.length, activeCount: activeProjects.length };
   });
 

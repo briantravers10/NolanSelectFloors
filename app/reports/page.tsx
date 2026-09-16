@@ -9,7 +9,7 @@ import {
   listScheduleAssignments,
 } from "@/lib/db";
 import { Card, PageHeader } from "@/components/ui";
-import { computeProjectCosting, formatCurrency, formatPercent, summarizeWeek } from "@/lib/calculations";
+import { computeProjectCosting, formatCurrency, formatPercent, isActiveProjectStage, summarizeWeek } from "@/lib/calculations";
 import { addDays, isoDate, startOfWeek } from "@/lib/dates";
 
 const TABS = ["labor", "projects", "clients"] as const;
@@ -150,9 +150,8 @@ function ProjectsReport({
 }) {
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
-  const activeStatuses = new Set(["Approved", "Pre-Construction", "Materials Required", "Materials Ordered", "Materials Ready", "Ready to Schedule", "Scheduled", "In Progress", "Paused", "Punch List"]);
-  const active = projects.filter((p) => activeStatuses.has(p.status));
-  const completed = projects.filter((p) => !activeStatuses.has(p.status));
+  const active = projects.filter(isActiveProjectStage);
+  const completed = projects.filter((p) => !isActiveProjectStage(p));
 
   const byClient = new Map<string, { value: number; count: number }>();
   for (const p of projects) {

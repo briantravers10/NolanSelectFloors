@@ -22,6 +22,19 @@ export interface DayLaborSummary {
   timeAndHalfDays: number;
 }
 
+/**
+ * "Is this project still active/upcoming" (vs. past job history) — used by
+ * Buildings/Clients/Materials/Reports/Haul-Away to split active vs.
+ * historical projects. Previously keyed off the old 13-value detailed
+ * `ProjectStatus` (a hardcoded "active statuses" set repeated in half a
+ * dozen pages); re-pointed to the simplified 5-value `pipeline_stage` per
+ * the Project Pipeline Stage Simplification (build 9, see README) — a
+ * project is active until it reaches "Complete".
+ */
+export function isActiveProjectStage(p: Pick<Project, "pipeline_stage">): boolean {
+  return p.pipeline_stage !== "Complete";
+}
+
 export function assignmentsForDate(assignments: ScheduleAssignment[], date: string): ScheduleAssignment[] {
   return assignments.filter((a) => a.schedule_date === date);
 }

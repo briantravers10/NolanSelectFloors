@@ -129,7 +129,7 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
                   <div>
                     <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Create Bid</h2>
                     <p className="text-sm text-slate-500 mb-3">
-                      Starts a project row in the &quot;Project Bid&quot; pipeline stage, unclaimed, so an estimator can
+                      Starts a project row in the &quot;Bid Sent&quot; pipeline stage, unclaimed, so an estimator can
                       claim it from the Bid Dashboard and work the estimate.
                     </p>
                     <form action={createBidAction.bind(null, jr.id)}>

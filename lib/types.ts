@@ -37,37 +37,20 @@ export const JOB_REQUEST_STATUSES = [
 ] as const;
 export type JobRequestStatus = (typeof JOB_REQUEST_STATUSES)[number];
 
-export const PROJECT_STATUSES = [
-  "Approved",
-  "Pre-Construction",
-  "Materials Required",
-  "Materials Ordered",
-  "Materials Ready",
-  "Ready to Schedule",
-  "Scheduled",
-  "In Progress",
-  "Paused",
-  "Punch List",
-  "Completed",
-  "Invoiced",
-  "Paid",
-] as const;
-export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
-
-// The 6 primary lifecycle stages a project moves through, entered once and
-// updated on the SAME projects row (never duplicated per stage). This is
-// separate from the more granular `ProjectStatus` above, which continues to
-// track fine-grained sub-states (materials, punch list, invoicing, etc.)
-// within these primary stages. See supabase/migrations/0002_bid_workflow.sql
-// for the reconciliation notes.
-export const PIPELINE_STAGES = [
-  "Project Bid",
-  "Bid Accepted",
-  "Scheduled",
-  "Sent to Crew",
-  "Project In Process",
-  "Project Completed",
-] as const;
+// ---------------------------------------------------------------------
+// PROJECT PIPELINE STAGE — simplified to 5 values per the client's own
+// words: "When a project is started, all i need is bid send, bid accepted,
+// scheduled, in progress and then complete. I dont need any more info on
+// the status of the job." (build 9, see
+// supabase/migrations/0010_simplify_project_status.sql and README "Project
+// Pipeline Stage Simplification"). This REPLACES the old 6-stage
+// PIPELINE_STAGES ("Project Bid" -> ... -> "Project Completed") AND the old
+// 13-value `ProjectStatus`/`PROJECT_STATUSES` detailed-status enum, which
+// both previously lived on this same `projects` row — see the migration
+// and README for exactly how the old values map onto these 5 and why the
+// old `status` column was dropped rather than kept-but-hidden.
+// ---------------------------------------------------------------------
+export const PIPELINE_STAGES = ["Bid Sent", "Bid Accepted", "Scheduled", "In Progress", "Complete"] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 export const BID_STATUSES = [
@@ -302,7 +285,6 @@ export interface Project {
   unit_number?: string;
   name: string;
   description?: string;
-  status: ProjectStatus;
   project_value: number;
   other_cost: number;
   needs_transportation: boolean;
@@ -533,6 +515,17 @@ export interface DocumentRecord {
 export const PHOTO_CATEGORIES = ["Before", "Progress", "After", "Floor Plan", "Other"] as const;
 export type PhotoCategory = (typeof PHOTO_CATEGORIES)[number];
 
+/**
+ * Procore-inspired "Photos" tool (build 9, see
+ * supabase/migrations/0010_simplify_project_status.sql and README "Photos &
+ * Drawings"). `category` doubles as the album a photo is grouped into on
+ * the gallery grid (Before/Progress/After/Floor Plan/Other) — a separate
+ * `album` column was deliberately NOT added since `category` already
+ * expresses exactly that grouping; see README for the reasoning. `title` is
+ * a new, explicitly OPTIONAL short label shown above the (also optional)
+ * longer `caption`/note — per the client's own words: "photos with titles
+ * on them (optional)".
+ */
 export interface PhotoRecord {
   id: string;
   company_id: string;
@@ -541,12 +534,42 @@ export interface PhotoRecord {
   file_name: string;
   storage_path?: string;
   category?: PhotoCategory;
+  title?: string;
   caption?: string;
   taken_at?: string;
   uploaded_by?: string;
   // Set when an upload was attempted but photo storage wasn't configured —
   // the entry (caption/category/date) is still saved, just without an
   // image. See lib/storage.ts.
+  storage_unavailable?: boolean;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------
+// DRAWINGS (build 9) — Procore-inspired "Drawings" tool: a project's plan
+// files with version history. See supabase/migrations/0010_simplify_project_status.sql
+// and README "Photos & Drawings" for the full write-up. A new drawing
+// (matched by drawing_name, optionally + drawing_number) starts at version
+// 1 with is_current_version = true. Uploading a new version of an EXISTING
+// drawing inserts a NEW row at version+1 with is_current_version = true and
+// flips the previous current row's is_current_version to false — the old
+// row is never deleted, so full version history stays available.
+// ---------------------------------------------------------------------
+export interface ProjectDrawing {
+  id: string;
+  company_id: string;
+  project_id: string;
+  drawing_name: string;
+  drawing_number?: string;
+  version: number;
+  file_reference?: string;
+  is_current_version: boolean;
+  uploaded_by?: string;
+  uploaded_at: string;
+  notes?: string;
+  // Same soft-fail storage pattern as PhotoRecord.storage_unavailable — set
+  // when an upload was attempted but file storage wasn't configured. See
+  // lib/storage.ts.
   storage_unavailable?: boolean;
   created_at: string;
 }

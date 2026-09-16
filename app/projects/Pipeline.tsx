@@ -6,8 +6,10 @@ import { PIPELINE_STAGES } from "@/lib/types";
 import { movePipelineStageFormAction } from "./actions";
 
 /**
- * Visual Project Pipeline — a kanban across the 6 primary lifecycle
- * stages. Cards link straight to the existing project detail page, and
+ * Visual Project Pipeline — a kanban across the 5 simplified lifecycle
+ * stages (Bid Sent, Bid Accepted, Scheduled, In Progress, Complete — see
+ * README "Project Pipeline Stage Simplification"). Cards link straight to
+ * the existing project detail page, and
  * the "Move to" dropdown updates the SAME projects row shown there and on
  * the Bid Dashboard (verified: both read from lib/db.ts#listProjects()).
  *
@@ -30,7 +32,7 @@ export async function Pipeline({ stageFilter }: { stageFilter?: string } = {}) {
   const visibleStages = stageFilter ? PIPELINE_STAGES.filter((s) => s === stageFilter) : PIPELINE_STAGES;
 
   return (
-    <div className={`grid grid-cols-1 md:grid-cols-2 ${stageFilter ? "" : "xl:grid-cols-6"} gap-4`}>
+    <div className={`grid grid-cols-1 md:grid-cols-2 ${stageFilter ? "" : "xl:grid-cols-5"} gap-4`}>
       {visibleStages.map((stage) => {
         const items = projects.filter((p) => p.pipeline_stage === stage);
         return (
