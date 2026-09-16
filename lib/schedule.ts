@@ -18,6 +18,7 @@ import type {
   ScheduleColor,
   ScheduleJobStatus,
   ScheduleMaterialsStatus,
+  SchedulePickupItem,
   WorkTypeRecord,
 } from "./types";
 import { round2 } from "./calculations";
@@ -204,6 +205,9 @@ export interface ScheduleJobRow {
   notes?: string;
   scheduleDayId?: string;
   earliestCallTime?: string | null;
+  // "Items to Order / Collect" (build 8) — empty when the job/day has no
+  // project_schedule_days row yet, or none were added.
+  pickupItems: SchedulePickupItem[];
 }
 
 export interface ScheduleRowInputs {
@@ -216,6 +220,9 @@ export interface ScheduleRowInputs {
   assignments: ScheduleAssignment[];
   scheduleDays: ProjectScheduleDay[];
   workTypes: WorkTypeRecord[];
+  // Optional — omitted callers (e.g. older call sites) simply render no
+  // pickup items rather than needing every page updated at once.
+  pickupItems?: SchedulePickupItem[];
 }
 
 function pointOfContact(
@@ -238,7 +245,7 @@ function pointOfContact(
  * project_schedule_days row OR a schedule_assignments row for the date
  * shows up — a job can be on the schedule with crew not yet assigned. */
 export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): ScheduleJobRow[] {
-  const { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes } = input;
+  const { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems = [] } = input;
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -295,6 +302,7 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       notes: scheduleDay?.notes || project.description,
       scheduleDayId: scheduleDay?.id,
       earliestCallTime,
+      pickupItems: scheduleDay ? pickupItems.filter((i) => i.project_schedule_day_id === scheduleDay.id) : [],
     });
   }
 
@@ -323,6 +331,10 @@ const SCHEDULE_ACTIVITY_PREFIXES = [
   "Added work type",
   "Updated work type",
   "Updated completion notes",
+  "Added pickup item",
+  "Marked pickup item collected",
+  "Marked pickup item needed",
+  "Removed pickup item",
 ];
 
 export function isScheduleActivity(action: string): boolean {

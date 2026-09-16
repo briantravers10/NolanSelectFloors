@@ -15,6 +15,8 @@ import { mapJobStatusToPipelineStage } from "./schedule";
 import type {
   ActivityLogEntry,
   ActualLaborEntry,
+  AgendaEvent,
+  AgendaEventSource,
   BidStatus,
   Building,
   BuildingContact,
@@ -48,7 +50,10 @@ import type {
   ProjectScheduleDay,
   ProjectStatus,
   ProjectWorkType,
+  RelatedRecordType,
   ScheduleAssignment,
+  SchedulePickupItem,
+  SchedulePickupStatus,
   StaffCapability,
   Task,
   TaskStatus,
@@ -627,6 +632,110 @@ export async function updateProjectScheduleDay(id: string, patch: ScheduleDayPat
   }
 
   return client ? { ...before, ...fullPatch } as ProjectScheduleDay : before;
+}
+
+// ---------------------------------------------------------------------
+// SCHEDULE PICKUP ITEMS — "Items to Order / Collect" (build 8). A
+// lightweight per-schedule-day checklist, deliberately separate from the
+// heavier project_materials system. See lib/types.ts SchedulePickupItem /
+// README for the full write-up.
+// ---------------------------------------------------------------------
+
+export async function listSchedulePickupItems(): Promise<SchedulePickupItem[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("schedule_pickup_items").select("*").order("created_at");
+    if (!error && data) return data as SchedulePickupItem[];
+  }
+  return getStore().schedulePickupItems;
+}
+
+export async function listSchedulePickupItemsForDay(projectScheduleDayId: string): Promise<SchedulePickupItem[]> {
+  return (await listSchedulePickupItems()).filter((i) => i.project_schedule_day_id === projectScheduleDayId);
+}
+
+export async function createSchedulePickupItem(input: {
+  project_schedule_day_id: string;
+  description: string;
+  actorName: string;
+}): Promise<SchedulePickupItem> {
+  const now = new Date().toISOString();
+  const record: SchedulePickupItem = {
+    id: `spi-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    project_schedule_day_id: input.project_schedule_day_id,
+    description: input.description,
+    status: "Needed",
+    created_by: input.actorName,
+    updated_by: input.actorName,
+    created_at: now,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("schedule_pickup_items").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().schedulePickupItems.push(record);
+  }
+  const day = (await listProjectScheduleDays()).find((d) => d.id === input.project_schedule_day_id);
+  logActivity({
+    action: "Added pickup item",
+    related_type: "project",
+    related_id: day?.project_id,
+    actor_name: input.actorName,
+    detail: `${input.description}${day ? ` (${day.schedule_date})` : ""}`,
+  });
+  return record;
+}
+
+/** Flips a pickup item between Needed and Collected — the checkbox-equivalent
+ * toggle, only ever done from Create/Edit Schedule (never from the
+ * read-only View Schedule, same convention as every other schedule field). */
+export async function toggleSchedulePickupItemStatus(id: string, actorName: string): Promise<SchedulePickupItem | undefined> {
+  const items = await listSchedulePickupItems();
+  const existing = items.find((i) => i.id === id);
+  if (!existing) return undefined;
+  const nextStatus: SchedulePickupStatus = existing.status === "Needed" ? "Collected" : "Needed";
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("schedule_pickup_items").update({ status: nextStatus, updated_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    Object.assign(existing, { status: nextStatus, updated_at: now });
+  }
+  const day = (await listProjectScheduleDays()).find((d) => d.id === existing.project_schedule_day_id);
+  logActivity({
+    action: nextStatus === "Collected" ? "Marked pickup item collected" : "Marked pickup item needed",
+    related_type: "project",
+    related_id: day?.project_id,
+    actor_name: actorName,
+    detail: existing.description,
+  });
+  return { ...existing, status: nextStatus, updated_at: now };
+}
+
+export async function deleteSchedulePickupItem(id: string, actorName: string): Promise<void> {
+  const items = await listSchedulePickupItems();
+  const existing = items.find((i) => i.id === id);
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("schedule_pickup_items").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    const idx = store.schedulePickupItems.findIndex((i) => i.id === id);
+    if (idx >= 0) store.schedulePickupItems.splice(idx, 1);
+  }
+  const day = existing ? (await listProjectScheduleDays()).find((d) => d.id === existing.project_schedule_day_id) : undefined;
+  logActivity({
+    action: "Removed pickup item",
+    related_type: "project",
+    related_id: day?.project_id,
+    actor_name: actorName,
+    detail: existing?.description ?? id,
+  });
 }
 
 export async function listActualLaborEntries(): Promise<ActualLaborEntry[]> {
@@ -1810,4 +1919,164 @@ export async function saveCompanySetupAnswer(section: string, questionKey: strin
       });
     }
   }
+}
+
+// ---------------------------------------------------------------------
+// OWNER'S PERSONAL AGENDA (build 8) — see
+// supabase/migrations/0008_owner_agenda.sql, lib/google-calendar.ts and
+// README "Owner's Agenda & Future Google Calendar Sync". Separate from the
+// operational Schedule; every entry belongs to one owner_user_id (see
+// lib/current-user.ts).
+// ---------------------------------------------------------------------
+
+export async function listAgendaEvents(): Promise<AgendaEvent[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("agenda_events").select("*").order("event_date");
+    if (!error && data) return data as AgendaEvent[];
+  }
+  return [...getStore().agendaEvents].sort((a, b) => a.event_date.localeCompare(b.event_date) || (a.start_time ?? "").localeCompare(b.start_time ?? ""));
+}
+
+export async function listAgendaEventsForOwner(ownerUserId: string): Promise<AgendaEvent[]> {
+  return (await listAgendaEvents()).filter((e) => e.owner_user_id === ownerUserId);
+}
+
+export async function createAgendaEvent(input: {
+  owner_user_id: string;
+  title: string;
+  event_date: string;
+  start_time?: string;
+  end_time?: string;
+  location?: string;
+  notes?: string;
+  related_type?: RelatedRecordType;
+  related_id?: string;
+  actorName?: string;
+}): Promise<AgendaEvent> {
+  const now = new Date().toISOString();
+  const record: AgendaEvent = {
+    id: `ag-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    owner_user_id: input.owner_user_id,
+    title: input.title,
+    event_date: input.event_date,
+    start_time: input.start_time || null,
+    end_time: input.end_time || null,
+    location: input.location || null,
+    notes: input.notes || null,
+    related_type: input.related_type ?? null,
+    related_id: input.related_id ?? null,
+    source: "Manual",
+    external_event_id: null,
+    created_at: now,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("agenda_events").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().agendaEvents.push(record);
+  }
+  logActivity({
+    action: "Added agenda event",
+    related_type: input.related_type,
+    related_id: input.related_id,
+    actor_name: input.actorName,
+    detail: `${input.title} — ${input.event_date}${input.start_time ? ` at ${input.start_time}` : ""}`,
+  });
+  return record;
+}
+
+export async function updateAgendaEvent(
+  id: string,
+  patch: Partial<Pick<AgendaEvent, "title" | "event_date" | "start_time" | "end_time" | "location" | "notes">>,
+  actorName?: string
+): Promise<void> {
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("agenda_events").update({ ...patch, updated_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const entry = getStore().agendaEvents.find((e) => e.id === id);
+    if (entry) Object.assign(entry, patch, { updated_at: now });
+  }
+  logActivity({ action: "Edited agenda event", related_type: undefined, related_id: id, actor_name: actorName, detail: JSON.stringify(patch) });
+}
+
+export async function deleteAgendaEvent(id: string, actorName?: string): Promise<void> {
+  const client = sb();
+  const existing = (await listAgendaEvents()).find((e) => e.id === id);
+  if (client) {
+    const { error } = await client.from("agenda_events").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    const idx = store.agendaEvents.findIndex((e) => e.id === id);
+    if (idx >= 0) store.agendaEvents.splice(idx, 1);
+  }
+  logActivity({
+    action: "Deleted agenda event",
+    actor_name: actorName,
+    detail: existing ? `${existing.title} — ${existing.event_date}` : id,
+  });
+}
+
+/** Marks an agenda event as synced from Google Calendar — called by a
+ * future real sync implementation (see lib/google-calendar.ts). Unused
+ * today since no live sync runs, but kept here so the write path exists
+ * once one does. */
+export async function upsertGoogleAgendaEvent(input: {
+  owner_user_id: string;
+  external_event_id: string;
+  title: string;
+  event_date: string;
+  start_time?: string;
+  end_time?: string;
+  location?: string;
+  notes?: string;
+  source?: AgendaEventSource;
+}): Promise<AgendaEvent> {
+  const existing = (await listAgendaEvents()).find(
+    (e) => e.owner_user_id === input.owner_user_id && e.external_event_id === input.external_event_id
+  );
+  const now = new Date().toISOString();
+  if (existing) {
+    await updateAgendaEvent(existing.id, {
+      title: input.title,
+      event_date: input.event_date,
+      start_time: input.start_time,
+      end_time: input.end_time,
+      location: input.location,
+      notes: input.notes,
+    });
+    return { ...existing, ...input, updated_at: now };
+  }
+  const record: AgendaEvent = {
+    id: `ag-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    owner_user_id: input.owner_user_id,
+    title: input.title,
+    event_date: input.event_date,
+    start_time: input.start_time || null,
+    end_time: input.end_time || null,
+    location: input.location || null,
+    notes: input.notes || null,
+    related_type: null,
+    related_id: null,
+    source: input.source ?? "Google Calendar",
+    external_event_id: input.external_event_id,
+    created_at: now,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("agenda_events").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().agendaEvents.push(record);
+  }
+  return record;
 }
