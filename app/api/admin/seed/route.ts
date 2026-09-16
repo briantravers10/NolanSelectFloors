@@ -14,19 +14,37 @@ import { buildSeedData } from "@/lib/seed-data";
  * SUPABASE_SERVICE_ROLE_KEY to be set — returns a clear error otherwise
  * rather than silently doing nothing.
  *
- * Call once after applying all migrations, e.g.:
+ * Call once after applying all migrations, either:
  *   curl -X POST https://<your-domain>/api/admin/seed \
  *     -H "x-seed-secret: <SEED_ADMIN_SECRET value>"
+ * or, from any browser (including a phone, no terminal needed):
+ *   https://<your-domain>/api/admin/seed?secret=<SEED_ADMIN_SECRET value>
  */
-export async function POST(req: NextRequest) {
+function checkSecret(req: NextRequest): NextResponse | null {
   const configuredSecret = process.env.SEED_ADMIN_SECRET;
   if (!configuredSecret) {
     return NextResponse.json({ error: "SEED_ADMIN_SECRET is not set — refusing to run." }, { status: 503 });
   }
-  const providedSecret = req.headers.get("x-seed-secret");
+  const providedSecret = req.headers.get("x-seed-secret") ?? req.nextUrl.searchParams.get("secret");
   if (providedSecret !== configuredSecret) {
-    return NextResponse.json({ error: "Invalid or missing x-seed-secret header." }, { status: 401 });
+    return NextResponse.json({ error: "Invalid or missing secret." }, { status: 401 });
   }
+  return null;
+}
+
+export async function GET(req: NextRequest) {
+  const denied = checkSecret(req);
+  if (denied) return denied;
+  return runSeed();
+}
+
+export async function POST(req: NextRequest) {
+  const denied = checkSecret(req);
+  if (denied) return denied;
+  return runSeed();
+}
+
+async function runSeed() {
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
