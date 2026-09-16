@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { saveCompanySetupAnswer } from "@/lib/db";
 import { QUESTIONNAIRE } from "@/lib/questionnaire";
+import { canEdit } from "@/lib/permissions";
 
 export async function saveQuestionnaireAction(formData: FormData) {
+  if (!(await canEdit("company_setup"))) return;
   for (const section of QUESTIONNAIRE) {
     for (const q of section.questions) {
       const fieldName = `${section.key}__${q.key}`;

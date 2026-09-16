@@ -20,6 +20,7 @@ import {
   updateWorkType,
 } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
+import { canEdit } from "@/lib/permissions";
 import type { CoiStatus, ScheduleColor, ScheduleJobStatus, ScheduleMaterialsStatus, StaffCapability } from "@/lib/types";
 
 function revalidateSchedule(projectId?: string) {
@@ -32,6 +33,7 @@ function revalidateSchedule(projectId?: string) {
 }
 
 export async function addAssignmentAction(formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const project_id = String(formData.get("project_id") ?? "");
   const employee_id = String(formData.get("employee_id") ?? "");
   const schedule_date = String(formData.get("schedule_date") ?? "");
@@ -45,12 +47,14 @@ export async function addAssignmentAction(formData: FormData) {
 }
 
 export async function setAssignmentCallTimeAction(id: string, projectId: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const call_time = String(formData.get("call_time") ?? "").trim() || "7:00 AM";
   await updateScheduleAssignmentCallTime(id, call_time);
   revalidateSchedule(projectId);
 }
 
 export async function removeAssignmentAction(id: string, projectId: string) {
+  if (!(await canEdit("schedule"))) return;
   const actingUser = await getActingUser();
   await deleteScheduleAssignment(id, actingUser.fullName);
   revalidateSchedule(projectId);
@@ -61,6 +65,7 @@ export async function removeAssignmentAction(id: string, projectId: string) {
 // ---------------------------------------------------------------------
 
 export async function setScheduleColorAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const color = String(formData.get("schedule_color") ?? "") as ScheduleColor;
   if (!color) return;
   const actingUser = await getActingUser();
@@ -70,6 +75,7 @@ export async function setScheduleColorAction(projectId: string, date: string, fo
 }
 
 export async function setCoiStatusAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const coi_status = String(formData.get("coi_status") ?? "") as CoiStatus;
   if (!coi_status) return;
   const actingUser = await getActingUser();
@@ -79,6 +85,7 @@ export async function setCoiStatusAction(projectId: string, date: string, formDa
 }
 
 export async function setMaterialsStatusAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const materials_status = String(formData.get("materials_status") ?? "") as ScheduleMaterialsStatus;
   if (!materials_status) return;
   const actingUser = await getActingUser();
@@ -88,6 +95,7 @@ export async function setMaterialsStatusAction(projectId: string, date: string, 
 }
 
 export async function setJobStatusAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const job_status = String(formData.get("job_status") ?? "") as ScheduleJobStatus;
   if (!job_status) return;
   const actingUser = await getActingUser();
@@ -97,6 +105,7 @@ export async function setJobStatusAction(projectId: string, date: string, formDa
 }
 
 export async function setWorkTypeAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const work_type_id = String(formData.get("work_type_id") ?? "") || undefined;
   const actingUser = await getActingUser();
   const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
@@ -105,6 +114,7 @@ export async function setWorkTypeAction(projectId: string, date: string, formDat
 }
 
 export async function setScheduleNotesAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const notes = String(formData.get("notes") ?? "");
   const actingUser = await getActingUser();
   const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
@@ -122,6 +132,7 @@ export async function setScheduleNotesAction(projectId: string, date: string, fo
 // ---------------------------------------------------------------------
 
 export async function addPickupItemAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const description = String(formData.get("description") ?? "").trim();
   if (!projectId || !date || !description) return;
   const actingUser = await getActingUser();
@@ -131,12 +142,14 @@ export async function addPickupItemAction(projectId: string, date: string, formD
 }
 
 export async function togglePickupItemStatusAction(id: string, projectId: string) {
+  if (!(await canEdit("schedule"))) return;
   const actingUser = await getActingUser();
   await toggleSchedulePickupItemStatus(id, actingUser.fullName);
   revalidateSchedule(projectId);
 }
 
 export async function deletePickupItemAction(id: string, projectId: string) {
+  if (!(await canEdit("schedule"))) return;
   const actingUser = await getActingUser();
   await deleteSchedulePickupItem(id, actingUser.fullName);
   revalidateSchedule(projectId);
@@ -156,6 +169,7 @@ export async function deletePickupItemAction(id: string, projectId: string) {
 // ---------------------------------------------------------------------
 
 export async function saveScheduleEntryAction(formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const project_id = String(formData.get("project_id") ?? "");
   const schedule_date = String(formData.get("schedule_date") ?? "");
   if (!project_id || !schedule_date) return;
@@ -210,6 +224,7 @@ export async function saveScheduleEntryAction(formData: FormData) {
 // ---------------------------------------------------------------------
 
 export async function addActualLaborEntryAction(formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const employee_id = String(formData.get("employee_id") ?? "");
   const project_id = String(formData.get("project_id") ?? "");
   const work_date = String(formData.get("work_date") ?? "");
@@ -224,6 +239,7 @@ export async function addActualLaborEntryAction(formData: FormData) {
 }
 
 export async function deleteActualLaborEntryAction(id: string) {
+  if (!(await canEdit("schedule"))) return;
   const actingUser = await getActingUser();
   await deleteActualLaborEntry(id, actingUser.fullName);
   revalidateSchedule();
@@ -234,6 +250,7 @@ export async function deleteActualLaborEntryAction(id: string) {
 // ---------------------------------------------------------------------
 
 export async function confirmDayAction(workDate: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const notes = String(formData.get("notes") ?? "") || undefined;
   const actingUser = await getActingUser();
   await confirmDay(workDate, actingUser.fullName, notes);
@@ -245,6 +262,7 @@ export async function confirmDayAction(workDate: string, formData: FormData) {
 // ---------------------------------------------------------------------
 
 export async function saveCompletionNotesAction(projectId: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
   const body = String(formData.get("completion_notes") ?? "").trim();
   if (!body) return;
   const actingUser = await getActingUser();
@@ -257,6 +275,7 @@ export async function saveCompletionNotesAction(projectId: string, formData: For
 // ---------------------------------------------------------------------
 
 export async function addWorkTypeAction(formData: FormData) {
+  if (!(await canEdit("company_setup"))) return;
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   await createWorkType(name);
@@ -264,6 +283,7 @@ export async function addWorkTypeAction(formData: FormData) {
 }
 
 export async function renameWorkTypeAction(id: string, formData: FormData) {
+  if (!(await canEdit("company_setup"))) return;
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   await updateWorkType(id, { name });
@@ -271,6 +291,7 @@ export async function renameWorkTypeAction(id: string, formData: FormData) {
 }
 
 export async function toggleWorkTypeActiveAction(id: string, active: boolean) {
+  if (!(await canEdit("company_setup"))) return;
   await updateWorkType(id, { active });
   revalidatePath("/company-setup");
 }

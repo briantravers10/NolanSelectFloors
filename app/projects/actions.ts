@@ -16,6 +16,7 @@ import {
 } from "@/lib/db";
 import { uploadProjectDrawing, uploadProjectPhoto } from "@/lib/storage";
 import { getActingUser } from "@/lib/current-user";
+import { canEdit } from "@/lib/permissions";
 import type { BidStatus, MaterialStatus, PhotoCategory, PipelineStage, StaffCapability } from "@/lib/types";
 
 function revalidateProjectViews(id: string) {
@@ -26,6 +27,7 @@ function revalidateProjectViews(id: string) {
 }
 
 export async function setPipelineStageAction(id: string, stage: PipelineStage) {
+  if (!(await canEdit("projects"))) return;
   await updateProjectPipelineStage(id, stage);
   revalidateProjectViews(id);
 }
@@ -39,6 +41,7 @@ export async function movePipelineStageFormAction(id: string, formData: FormData
 }
 
 export async function setBidStatusAction(id: string, status: BidStatus) {
+  if (!(await canEdit("projects"))) return;
   const actingUser = await getActingUser();
   await updateBidStatus(id, status, actingUser.fullName);
   revalidateProjectViews(id);
@@ -48,6 +51,7 @@ export async function setBidStatusAction(id: string, status: BidStatus) {
  * actually holds it now (claimBid itself resolves the race, this action
  * has nothing left to check). */
 export async function claimBidAction(id: string) {
+  if (!(await canEdit("projects"))) return;
   const actingUser = await getActingUser();
   await claimBid(id, actingUser.id, actingUser.fullName);
   revalidateProjectViews(id);
@@ -55,6 +59,7 @@ export async function claimBidAction(id: string) {
 
 /** Manager-only in intent (see README): release a bid back to Unclaimed. */
 export async function releaseBidAction(id: string) {
+  if (!(await canEdit("projects"))) return;
   const actingUser = await getActingUser();
   await reassignOrReleaseBid(id, null, actingUser.fullName);
   revalidateProjectViews(id);
@@ -63,6 +68,7 @@ export async function releaseBidAction(id: string) {
 /** Manager-only in intent (see README): reassign a bid to a different
  * estimator, recording previous/new estimator + actor + timestamp. */
 export async function reassignBidAction(id: string, newEstimatorId: string) {
+  if (!(await canEdit("projects"))) return;
   const actingUser = await getActingUser();
   await reassignOrReleaseBid(id, newEstimatorId, actingUser.fullName);
   revalidateProjectViews(id);
@@ -75,6 +81,7 @@ export async function reassignBidFormAction(id: string, formData: FormData) {
 }
 
 export async function addCrewRequirementAction(projectId: string, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
   const role = String(formData.get("role")) as StaffCapability;
   const quantity = Number(formData.get("quantity") ?? 1);
   const scheduleDate = String(formData.get("schedule_date") ?? "") || null;
@@ -83,6 +90,7 @@ export async function addCrewRequirementAction(projectId: string, formData: Form
 }
 
 export async function addProjectMaterialAction(projectId: string, formData: FormData) {
+  if (!(await canEdit("materials"))) return;
   await createProjectMaterial({
     project_id: projectId,
     description: String(formData.get("description") ?? ""),
@@ -98,6 +106,7 @@ export async function addProjectMaterialAction(projectId: string, formData: Form
 }
 
 export async function addProjectTaskAction(projectId: string, formData: FormData) {
+  if (!(await canEdit("tasks"))) return;
   await createTask({
     title: String(formData.get("title") ?? ""),
     related_type: "project",
@@ -109,6 +118,7 @@ export async function addProjectTaskAction(projectId: string, formData: FormData
 }
 
 export async function addProjectNoteAction(projectId: string, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
   const body = String(formData.get("body") ?? "");
   if (!body.trim()) return;
   await createProjectNote({ project_id: projectId, author_name: "Brian Travers", body });
@@ -120,6 +130,7 @@ export async function addProjectNoteAction(projectId: string, formData: FormData
  * (caption/category/date) with `storage_unavailable: true` so the UI can
  * show an honest "saved without an image" notice instead of pretending. */
 export async function addProjectPhotoAction(projectId: string, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
   const caption = String(formData.get("caption") ?? "").trim();
   if (!caption) return;
   const title = String(formData.get("title") ?? "").trim() || undefined;
@@ -158,6 +169,7 @@ export async function addProjectPhotoAction(projectId: string, formData: FormDat
  * lib/db.ts createProjectDrawing). Same soft-fail storage pattern as
  * Photos above — never fabricates a successful upload. */
 export async function addProjectDrawingAction(projectId: string, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
   const drawingName = String(formData.get("drawing_name") ?? "").trim();
   const supersedesId = String(formData.get("supersedes_id") ?? "") || undefined;
   if (!drawingName && !supersedesId) return;
@@ -190,6 +202,7 @@ export async function addProjectDrawingAction(projectId: string, formData: FormD
 /** Saves a computed suggested price from the Estimate Calculator onto the
  * project's `project_value` field. */
 export async function saveProjectEstimateAction(id: string, value: number) {
+  if (!(await canEdit("projects"))) return;
   await saveProjectEstimatedValue(id, value);
   revalidatePath(`/projects/${id}`);
 }

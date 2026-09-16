@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { createTask, updateTaskStatus } from "@/lib/db";
 import type { TaskStatus } from "@/lib/types";
+import { canEdit } from "@/lib/permissions";
 
 export async function addTaskAction(formData: FormData) {
+  if (!(await canEdit("tasks"))) return;
   const title = String(formData.get("title") ?? "");
   if (!title.trim()) return;
   await createTask({ title, due_date: String(formData.get("due_date") ?? "") || undefined });
@@ -12,6 +14,7 @@ export async function addTaskAction(formData: FormData) {
 }
 
 export async function setTaskStatusAction(id: string, status: TaskStatus) {
+  if (!(await canEdit("tasks"))) return;
   await updateTaskStatus(id, status);
   revalidatePath("/tasks");
   revalidatePath("/dashboard");

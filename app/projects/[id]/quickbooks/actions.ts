@@ -12,6 +12,7 @@ import {
   updateQuickBooksConnectionTokens,
 } from "@/lib/db";
 import { getActingUser, canManageQuickBooksDocuments } from "@/lib/current-user";
+import { canEdit } from "@/lib/permissions";
 import { createEstimate, createInvoice, fetchDocumentById } from "@/lib/quickbooks";
 import type { QuickBooksEntityType, QuickBooksLineItem } from "@/lib/types";
 
@@ -42,6 +43,7 @@ async function resolveQBCustomerId(projectId: string): Promise<string | undefine
 export async function createQuickBooksDocumentAction(projectId: string, entityType: QuickBooksEntityType, formData: FormData) {
   const actingUser = await getActingUser();
   if (!canManageQuickBooksDocuments(actingUser)) throw new Error("You don't have permission to create QuickBooks documents.");
+  if (!(await canEdit("quickbooks"))) throw new Error("You don't have edit access to QuickBooks.");
 
   const lineItems = JSON.parse(String(formData.get("line_items") ?? "[]")) as QuickBooksLineItem[];
   const connection = await getQuickBooksConnection();
@@ -86,6 +88,7 @@ export async function createQuickBooksDocumentAction(projectId: string, entityTy
 export async function linkExistingQuickBooksDocumentAction(projectId: string, formData: FormData) {
   const actingUser = await getActingUser();
   if (!canManageQuickBooksDocuments(actingUser)) throw new Error("You don't have permission to link QuickBooks documents.");
+  if (!(await canEdit("quickbooks"))) throw new Error("You don't have edit access to QuickBooks.");
 
   const entityType = String(formData.get("entity_type") ?? "") as QuickBooksEntityType;
   const qbEntityId = String(formData.get("qb_entity_id") ?? "").trim();

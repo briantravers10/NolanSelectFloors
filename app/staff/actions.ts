@@ -4,10 +4,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createEmployee, createTimeOffEntry, deleteTimeOffEntry, updateEmployee } from "@/lib/db";
 import { canEditPayRates, canEditTimeOffAllowance, getActingUser } from "@/lib/current-user";
+import { canEdit } from "@/lib/permissions";
 import type { PayType, StaffCapability, TimeOffType } from "@/lib/types";
 import { TIME_OFF_TYPES } from "@/lib/types";
 
 export async function createStaffAction(formData: FormData) {
+  if (!(await canEdit("staff"))) return;
   const first_name = String(formData.get("first_name") ?? "").trim();
   const last_name = String(formData.get("last_name") ?? "").trim();
   if (!first_name || !last_name) return;
@@ -54,7 +56,7 @@ export async function createStaffAction(formData: FormData) {
  */
 export async function updateEmployeePayRateAction(employeeId: string, formData: FormData) {
   const actingUser = await getActingUser();
-  if (!canEditPayRates(actingUser)) return;
+  if (!canEditPayRates(actingUser) || !(await canEdit("staff"))) return;
 
   const pay_type = String(formData.get("pay_type") ?? "daily") as PayType;
   const daily_rate = Number(formData.get("daily_rate") ?? 0) || undefined;
@@ -74,6 +76,7 @@ export async function updateEmployeePayRateAction(employeeId: string, formData: 
 // ---------------------------------------------------------------------
 
 export async function addTimeOffAction(employeeId: string, formData: FormData) {
+  if (!(await canEdit("staff"))) return;
   const startDate = String(formData.get("start_date") ?? "");
   const endRaw = String(formData.get("end_date") ?? "");
   const endDate = endRaw || startDate; // a single day off leaves "end date" blank
@@ -105,7 +108,7 @@ export async function addTimeOffAction(employeeId: string, formData: FormData) {
  */
 export async function updateEmployeeTimeOffAllowanceAction(employeeId: string, formData: FormData) {
   const actingUser = await getActingUser();
-  if (!canEditTimeOffAllowance(actingUser)) return;
+  if (!canEditTimeOffAllowance(actingUser) || !(await canEdit("staff"))) return;
 
   const vacationRaw = String(formData.get("vacation_days_allowed") ?? "").trim();
   const sickRaw = String(formData.get("sick_days_allowed") ?? "").trim();
@@ -118,6 +121,7 @@ export async function updateEmployeeTimeOffAllowanceAction(employeeId: string, f
 }
 
 export async function deleteTimeOffAction(employeeId: string, entryId: string) {
+  if (!(await canEdit("staff"))) return;
   const actingUser = await getActingUser();
   await deleteTimeOffEntry(entryId, actingUser.fullName);
   revalidatePath(`/staff/${employeeId}`);

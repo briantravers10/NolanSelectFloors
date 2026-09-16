@@ -9,8 +9,10 @@ import {
   removePricingFormulaComponent,
 } from "@/lib/db";
 import type { MaterialRateCategory, WorkType } from "@/lib/types";
+import { canEdit } from "@/lib/permissions";
 
 export async function createMaterialRateItemAction(formData: FormData) {
+  if (!(await canEdit("pricing"))) return;
   const name = String(formData.get("name") ?? "").trim();
   const unit = String(formData.get("unit") ?? "sqft").trim() || "sqft";
   const unit_cost = Number(formData.get("unit_cost") ?? 0);
@@ -24,6 +26,7 @@ export async function createMaterialRateItemAction(formData: FormData) {
 }
 
 export async function createPricingFormulaAction(formData: FormData) {
+  if (!(await canEdit("pricing"))) return;
   const name = String(formData.get("name") ?? "").trim();
   const work_type = String(formData.get("work_type") ?? "") as WorkType;
   const laborRateRaw = String(formData.get("labor_rate_per_sqft") ?? "").trim();
@@ -42,6 +45,7 @@ export async function createPricingFormulaAction(formData: FormData) {
 }
 
 export async function addFormulaComponentAction(formulaId: string, formData: FormData) {
+  if (!(await canEdit("pricing"))) return;
   const material_rate_item_id = String(formData.get("material_rate_item_id") ?? "");
   const quantity_per_unit_area = Number(formData.get("quantity_per_unit_area") ?? 1);
   const notes = String(formData.get("notes") ?? "").trim() || undefined;
@@ -52,6 +56,7 @@ export async function addFormulaComponentAction(formulaId: string, formData: For
 }
 
 export async function removeFormulaComponentAction(formulaId: string, componentId: string) {
+  if (!(await canEdit("pricing"))) return;
   await removePricingFormulaComponent(componentId);
   revalidatePath(`/pricing/${formulaId}`);
   revalidatePath("/pricing");

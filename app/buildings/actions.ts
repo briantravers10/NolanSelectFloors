@@ -4,8 +4,10 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createBuildingRecord } from "@/lib/db";
 import type { BuildingRegion } from "@/lib/types";
+import { canEdit } from "@/lib/permissions";
 
 export async function createBuildingAction(formData: FormData) {
+  if (!(await canEdit("buildings"))) return;
   const name = String(formData.get("name") ?? "").trim();
   const client_company_id = String(formData.get("client_company_id") ?? "");
   const address = String(formData.get("address") ?? "").trim();

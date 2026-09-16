@@ -3,8 +3,13 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClientCompanyRecord } from "@/lib/db";
+import { canEdit } from "@/lib/permissions";
 
 export async function createClientAction(formData: FormData) {
+  // Server-action gate (build 11) — the real security boundary, since a
+  // view-only user could otherwise bypass a hidden "New Client" button.
+  // See README "Enforcement".
+  if (!(await canEdit("clients"))) return;
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   const client = await createClientCompanyRecord({

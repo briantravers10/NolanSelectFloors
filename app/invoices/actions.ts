@@ -5,8 +5,10 @@ import { revalidatePath } from "next/cache";
 import { createEmailRoutingRule, createInvoice, setEmailRoutingRuleActive, setInvoiceFileReference, updateInvoiceStatus } from "@/lib/db";
 import { uploadInvoiceFile } from "@/lib/storage";
 import type { EmailRoutingAction, EmailRoutingBy, InvoiceStatus } from "@/lib/types";
+import { canEdit } from "@/lib/permissions";
 
 export async function createInvoiceAction(formData: FormData) {
+  if (!(await canEdit("invoices"))) return;
   const supplier = String(formData.get("supplier") ?? "").trim();
   if (!supplier) return;
   const amountRaw = String(formData.get("amount") ?? "").trim();
@@ -44,11 +46,13 @@ export async function createInvoiceAction(formData: FormData) {
 }
 
 export async function setInvoiceStatusAction(id: string, status: InvoiceStatus) {
+  if (!(await canEdit("invoices"))) return;
   await updateInvoiceStatus(id, status);
   revalidatePath("/invoices");
 }
 
 export async function createEmailRoutingRuleAction(formData: FormData) {
+  if (!(await canEdit("invoices"))) return;
   const keyword = String(formData.get("keyword") ?? "").trim();
   if (!keyword) return;
   const action_type = String(formData.get("action_type") ?? "Flag For Review") as EmailRoutingAction;
@@ -59,6 +63,7 @@ export async function createEmailRoutingRuleAction(formData: FormData) {
 }
 
 export async function setEmailRoutingRuleActiveAction(id: string, active: boolean) {
+  if (!(await canEdit("invoices"))) return;
   await setEmailRoutingRuleActive(id, active);
   revalidatePath("/invoices/rules");
 }

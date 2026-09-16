@@ -15,8 +15,10 @@ import {
 import { getCurrentUser } from "@/lib/current-user";
 import { getLastWorkedWithClient, type LastWorkedWithResult } from "@/lib/last-worked";
 import type { JobRequestStatus } from "@/lib/types";
+import { canEdit } from "@/lib/permissions";
 
 export async function createJobRequestAction(formData: FormData) {
+  if (!(await canEdit("job_requests"))) return;
   const building_id = String(formData.get("building_id") ?? "");
   const contact_id = String(formData.get("contact_id") ?? "") || undefined;
   const unit_number = String(formData.get("unit_number") ?? "") || undefined;
@@ -55,6 +57,7 @@ export async function createJobRequestAction(formData: FormData) {
 }
 
 export async function createBidAction(jobRequestId: string) {
+  if (!(await canEdit("job_requests"))) return;
   const project = await createBidFromJobRequest(jobRequestId);
   revalidatePath("/job-requests");
   revalidatePath("/projects");
@@ -62,12 +65,14 @@ export async function createBidAction(jobRequestId: string) {
 }
 
 export async function setJobRequestStatusAction(id: string, status: JobRequestStatus) {
+  if (!(await canEdit("job_requests"))) return;
   await updateJobRequestStatus(id, status);
   revalidatePath(`/job-requests/${id}`);
   revalidatePath("/job-requests");
 }
 
 export async function convertToProjectAction(id: string) {
+  if (!(await canEdit("job_requests"))) return;
   const project = await convertJobRequestToProject(id);
   revalidatePath("/job-requests");
   revalidatePath("/projects");
@@ -77,6 +82,7 @@ export async function convertToProjectAction(id: string) {
 /** Saves a computed suggested price from the Estimate Calculator onto the
  * job request's `estimated_value` field. */
 export async function saveJobRequestEstimateAction(id: string, value: number) {
+  if (!(await canEdit("job_requests"))) return;
   await saveJobRequestEstimatedValue(id, value);
   revalidatePath(`/job-requests/${id}`);
 }
