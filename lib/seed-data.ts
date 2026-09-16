@@ -39,6 +39,11 @@ import type {
   ProjectNote,
   ProjectScheduleDay,
   ProjectWorkType,
+  QuickBooksConnection,
+  QuickBooksCustomerMapping,
+  QuickBooksDocument,
+  QuickBooksSyncLogEntry,
+  QuickBooksWebhookEvent,
   ScheduleAssignment,
   SchedulePickupItem,
   Task,
@@ -1065,6 +1070,24 @@ export function buildSeedData() {
   const companySetupAnswers: CompanySetupAnswer[] = [];
 
   // ---------------------------------------------------------------------
+  // QUICKBOOKS ONLINE INTEGRATION (build 10) — deliberately EMPTY. No
+  // credentials exist in this environment, so there is no real connection,
+  // no real linked customer, and no real Estimate/Invoice to seed. Per the
+  // client spec's own instruction: "never fake success" — a fabricated
+  // quickbooks_documents row would look exactly like a real synced
+  // QuickBooks record to anyone reading this data, which is worse than an
+  // honest empty state. The Settings -> Integrations -> QuickBooks page and
+  // the customer-matching UI are built to render correctly against this
+  // empty state (see app/company-setup/quickbooks/page.tsx) — "Connect
+  // QuickBooks to see live customer matches" rather than mock candidates.
+  // ---------------------------------------------------------------------
+  const quickbooksConnections: QuickBooksConnection[] = [];
+  const quickbooksCustomerMappings: QuickBooksCustomerMapping[] = [];
+  const quickbooksDocuments: QuickBooksDocument[] = [];
+  const quickbooksWebhookEvents: QuickBooksWebhookEvent[] = [];
+  const quickbooksSyncLog: QuickBooksSyncLogEntry[] = [];
+
+  // ---------------------------------------------------------------------
   // PRICING & ESTIMATING FORMULAS
   // ---------------------------------------------------------------------
   // Supplier names are shared with `materials` above and with the invoices
@@ -1175,6 +1198,11 @@ export function buildSeedData() {
     schedulePickupItems,
     actualLaborEntries,
     dailyScheduleConfirmations,
+    quickbooksConnections,
+    quickbooksCustomerMappings,
+    quickbooksDocuments,
+    quickbooksWebhookEvents,
+    quickbooksSyncLog,
     weekStart: isoDate(monday),
   };
 }

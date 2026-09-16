@@ -850,3 +850,142 @@ export interface AgendaEvent {
   created_at: string;
   updated_at: string;
 }
+
+// ---------------------------------------------------------------------
+// QUICKBOOKS ONLINE INTEGRATION (build 10, see
+// supabase/migrations/0011_quickbooks_integration.sql and
+// lib/quickbooks.ts). QuickBooks is accounting (customers, estimates,
+// invoices, payments); this app stays operational (jobs, schedule, crew,
+// labor, COI, materials). Every QB document maps to an internal
+// project/job via `quickbooks_documents` — a job can have MULTIPLE
+// estimates and invoices (one-to-many), never a single
+// estimate_number/invoice_number field on `projects`. Follows the exact
+// "architected but not live" pattern as lib/routing.ts and
+// lib/google-calendar.ts: every function here is safe to call with zero
+// credentials configured, never throws, never fakes success.
+// ---------------------------------------------------------------------
+
+export const QUICKBOOKS_ENVIRONMENTS = ["sandbox", "production"] as const;
+export type QuickBooksEnvironment = (typeof QUICKBOOKS_ENVIRONMENTS)[number];
+
+/** One row per company per QuickBooks realm (company file) that has ever
+ * been connected. `disconnected_at` set = not currently connected (kept,
+ * rather than deleted, as connection history). access_token/refresh_token
+ * are SERVER-SIDE ONLY — never read by a client component; see
+ * lib/quickbooks.ts and README "Security". */
+export interface QuickBooksConnection {
+  id: string;
+  company_id: string;
+  realm_id: string;
+  access_token: string;
+  refresh_token: string;
+  token_expires_at: string;
+  environment: QuickBooksEnvironment;
+  /** QuickBooks CompanyInfo.CompanyName, fetched right after connecting. */
+  company_name?: string;
+  connected_at: string;
+  connected_by?: string;
+  disconnected_at?: string | null;
+  last_sync_at?: string | null;
+  /** Set when a token refresh fails (revoked/expired auth) — surfaces the
+   * "QuickBooks Connection Needs Attention" / "Reconnect" state without
+   * ever throwing out of a page render. See lib/quickbooks.ts. */
+  needs_reconnect?: boolean;
+}
+
+/** management_companies (client_companies in this app's schema) <->
+ * QuickBooks Customer. Never created from a fuzzy match alone — always an
+ * explicit [Link] / [Create New QuickBooks Customer] action. */
+export interface QuickBooksCustomerMapping {
+  id: string;
+  company_id: string;
+  client_company_id: string;
+  qb_customer_id: string;
+  qb_customer_name: string;
+  linked_at: string;
+  linked_by?: string;
+}
+
+/** A candidate QuickBooks customer surfaced by fuzzy name matching against
+ * an internal client_company — "possible match" only, never auto-linked.
+ * See lib/quickbooks.ts findCustomerMatchCandidates(). */
+export interface QuickBooksCustomerCandidate {
+  qb_customer_id: string;
+  qb_customer_name: string;
+  /** 0–1 fuzzy similarity score, for sorting/display only. */
+  score: number;
+}
+
+// Modeled from the QuickBooks Online API's documented Estimate/Invoice
+// TxnStatus-style values (see README "QuickBooks Online Integration —
+// Research Findings" for exactly what was found/cited) — this app's own
+// enum, not a literal passthrough of QBO's internal fields.
+export const QB_ESTIMATE_STATUSES = ["Pending", "Accepted", "Closed", "Rejected"] as const;
+export type QBEstimateStatus = (typeof QB_ESTIMATE_STATUSES)[number];
+
+export const QB_INVOICE_STATUSES = ["Unsent", "Open", "Partially Paid", "Paid", "Overdue", "Voided"] as const;
+export type QBInvoiceStatus = (typeof QB_INVOICE_STATUSES)[number];
+
+export type QuickBooksEntityType = "Estimate" | "Invoice";
+export type QBDocumentStatus = QBEstimateStatus | QBInvoiceStatus;
+
+/** One line item on a "Prepare Estimate/Invoice" review screen, and on the
+ * QBO entity itself once created. */
+export interface QuickBooksLineItem {
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+}
+
+/**
+ * The one place every QB Estimate/Invoice maps to an internal project/job.
+ * A job can have MANY estimates and invoices — one-to-many via project_id,
+ * never a single field on `projects`. `amount_paid` is only meaningful for
+ * Invoice rows (see README for what the QBO Invoice API actually exposes
+ * for payment status/balance, and why this app tracks it at the
+ * invoice-status level rather than per-payment).
+ */
+export interface QuickBooksDocument {
+  id: string;
+  company_id: string;
+  project_id: string;
+  qb_realm_id: string;
+  entity_type: QuickBooksEntityType;
+  qb_entity_id: string;
+  document_number?: string;
+  status: QBDocumentStatus;
+  amount: number;
+  amount_paid?: number;
+  qb_customer_id: string;
+  created_at: string;
+  updated_at: string;
+  last_synced_at?: string;
+}
+
+/** Idempotency ledger for app/api/quickbooks/webhook — a redelivered
+ * event_id is recognized and skipped rather than double-processed. */
+export interface QuickBooksWebhookEvent {
+  id: string;
+  event_id: string;
+  received_at: string;
+  processed_at?: string | null;
+  payload_summary: string;
+}
+
+/** Every meaningful QuickBooks action, shown in an admin-only Sync Log
+ * view AND mirrored to the existing `activity_log` (see lib/quickbooks.ts /
+ * lib/db.ts) for consistency with the rest of the app's audit trail. */
+export interface QuickBooksSyncLogEntry {
+  id: string;
+  company_id: string;
+  created_at: string;
+  action: string;
+  project_id?: string;
+  entity_type?: QuickBooksEntityType;
+  qb_entity_id?: string;
+  document_number?: string;
+  success: boolean;
+  error_detail?: string;
+  initiated_by?: string;
+}
