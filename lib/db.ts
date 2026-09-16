@@ -50,6 +50,14 @@ import type {
   ProjectNote,
   ProjectScheduleDay,
   ProjectWorkType,
+  QBDocumentStatus,
+  QuickBooksConnection,
+  QuickBooksCustomerMapping,
+  QuickBooksDocument,
+  QuickBooksEntityType,
+  QuickBooksEnvironment,
+  QuickBooksSyncLogEntry,
+  QuickBooksWebhookEvent,
   RelatedRecordType,
   ScheduleAssignment,
   SchedulePickupItem,
@@ -2144,4 +2152,382 @@ export async function upsertGoogleAgendaEvent(input: {
     getStore().agendaEvents.push(record);
   }
   return record;
+}
+
+// ---------------------------------------------------------------------
+// QUICKBOOKS ONLINE INTEGRATION (build 10, see
+// supabase/migrations/0011_quickbooks_integration.sql, lib/quickbooks.ts
+// and README "QuickBooks Online Integration"). All the real Intuit API
+// traffic lives in lib/quickbooks.ts — this section is pure persistence
+// for connections/mappings/documents/webhook-idempotency/sync-log,
+// following the exact same Supabase-or-in-memory-store pattern as every
+// other table in this file.
+// ---------------------------------------------------------------------
+
+export async function getQuickBooksConnection(): Promise<QuickBooksConnection | undefined> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client
+      .from("quickbooks_connections")
+      .select("*")
+      .is("disconnected_at", null)
+      .order("connected_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!error && data) return data as QuickBooksConnection;
+    if (!error) return undefined;
+  }
+  return [...getStore().quickbooksConnections]
+    .filter((c) => !c.disconnected_at)
+    .sort((a, b) => (a.connected_at < b.connected_at ? 1 : -1))[0];
+}
+
+/** Persists a brand-new connection after a successful OAuth callback (see
+ * app/api/quickbooks/callback/route.ts). Any prior active connection row
+ * for this company is marked disconnected first, so there's only ever one
+ * active row at a time (matches the migration's partial unique index). */
+export async function createQuickBooksConnection(input: {
+  realm_id: string;
+  access_token: string;
+  refresh_token: string;
+  token_expires_at: string;
+  environment: QuickBooksEnvironment;
+  company_name?: string;
+  connected_by?: string;
+}): Promise<QuickBooksConnection> {
+  const existing = await getQuickBooksConnection();
+  if (existing) await disconnectQuickBooks(existing.id, input.connected_by);
+
+  const now = new Date().toISOString();
+  const record: QuickBooksConnection = {
+    id: `qbc-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    realm_id: input.realm_id,
+    access_token: input.access_token,
+    refresh_token: input.refresh_token,
+    token_expires_at: input.token_expires_at,
+    environment: input.environment,
+    company_name: input.company_name,
+    connected_at: now,
+    connected_by: input.connected_by,
+    disconnected_at: null,
+    last_sync_at: null,
+    needs_reconnect: false,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_connections").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().quickbooksConnections.push(record);
+  }
+  logActivity({ action: "QuickBooks connected", detail: `Realm ${input.realm_id} (${input.environment})${input.company_name ? ` — ${input.company_name}` : ""}`, actor_name: input.connected_by });
+  await logQuickBooksSyncEvent({ action: "Connected", success: true, initiated_by: input.connected_by });
+  return record;
+}
+
+/** Persists a rotated access/refresh token pair from lib/quickbooks.ts
+ * refreshAccessToken() — Intuit rotates the refresh token on every
+ * refresh, so BOTH must be re-saved, never just the access token. */
+export async function updateQuickBooksConnectionTokens(
+  id: string,
+  tokens: { accessToken: string; refreshToken: string; expiresAt: string }
+): Promise<void> {
+  const patch = { access_token: tokens.accessToken, refresh_token: tokens.refreshToken, token_expires_at: tokens.expiresAt, needs_reconnect: false };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_connections").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const conn = getStore().quickbooksConnections.find((c) => c.id === id);
+    if (conn) Object.assign(conn, patch);
+  }
+}
+
+/** Flags a connection as needing reconnection (refresh failed / Intuit
+ * revoked auth) WITHOUT throwing — every QuickBooks call site wraps this
+ * around a failed refresh so the rest of the app degrades gracefully
+ * rather than surfacing a raw error. */
+export async function markQuickBooksNeedsReconnect(id: string, reason: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_connections").update({ needs_reconnect: true }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const conn = getStore().quickbooksConnections.find((c) => c.id === id);
+    if (conn) conn.needs_reconnect = true;
+  }
+  await logQuickBooksSyncEvent({ action: "Connection needs reconnect", success: false, error_detail: reason });
+}
+
+export async function disconnectQuickBooks(id: string, actorName?: string): Promise<void> {
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_connections").update({ disconnected_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const conn = getStore().quickbooksConnections.find((c) => c.id === id);
+    if (conn) conn.disconnected_at = now;
+  }
+  logActivity({ action: "QuickBooks disconnected", actor_name: actorName });
+  await logQuickBooksSyncEvent({ action: "Disconnected", success: true, initiated_by: actorName });
+}
+
+export async function setQuickBooksCompanyName(id: string, companyName: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_connections").update({ company_name: companyName }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const conn = getStore().quickbooksConnections.find((c) => c.id === id);
+    if (conn) conn.company_name = companyName;
+  }
+}
+
+export async function setQuickBooksLastSync(id: string, at: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_connections").update({ last_sync_at: at }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const conn = getStore().quickbooksConnections.find((c) => c.id === id);
+    if (conn) conn.last_sync_at = at;
+  }
+}
+
+// --- Customer mappings ---------------------------------------------------
+
+export async function listQuickBooksCustomerMappings(): Promise<QuickBooksCustomerMapping[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("quickbooks_customer_mappings").select("*");
+    if (!error && data) return data as QuickBooksCustomerMapping[];
+  }
+  return getStore().quickbooksCustomerMappings;
+}
+
+export async function getQuickBooksCustomerMappingForClient(clientCompanyId: string): Promise<QuickBooksCustomerMapping | undefined> {
+  return (await listQuickBooksCustomerMappings()).find((m) => m.client_company_id === clientCompanyId);
+}
+
+/**
+ * Links an internal client_company to a QuickBooks customer — the ONLY
+ * write path for this table, always an explicit human action ([Link] or
+ * [Create New QuickBooks Customer] in the matching UI), never automatic
+ * from a fuzzy match. Enforces the same one-mapping-per-client-company and
+ * one-mapping-per-qb-customer rule the migration's unique indexes enforce
+ * at the database level, so the in-memory fallback behaves identically.
+ */
+export async function createQuickBooksCustomerMapping(input: {
+  client_company_id: string;
+  qb_customer_id: string;
+  qb_customer_name: string;
+  linked_by?: string;
+}): Promise<QuickBooksCustomerMapping> {
+  const existing = await listQuickBooksCustomerMappings();
+  if (existing.some((m) => m.client_company_id === input.client_company_id)) {
+    throw new Error("This management company is already linked to a QuickBooks customer.");
+  }
+  if (existing.some((m) => m.qb_customer_id === input.qb_customer_id)) {
+    throw new Error("This QuickBooks customer is already linked to a different management company.");
+  }
+  const record: QuickBooksCustomerMapping = {
+    id: `qbcm-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    client_company_id: input.client_company_id,
+    qb_customer_id: input.qb_customer_id,
+    qb_customer_name: input.qb_customer_name,
+    linked_at: new Date().toISOString(),
+    linked_by: input.linked_by,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_customer_mappings").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().quickbooksCustomerMappings.push(record);
+  }
+  logActivity({ action: "Linked QuickBooks customer", related_type: "client_company", related_id: input.client_company_id, actor_name: input.linked_by, detail: input.qb_customer_name });
+  await logQuickBooksSyncEvent({ action: "Customer linked", success: true, initiated_by: input.linked_by, document_number: input.qb_customer_name });
+  return record;
+}
+
+// --- Documents (Estimates & Invoices) ------------------------------------
+
+export async function listQuickBooksDocuments(): Promise<QuickBooksDocument[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("quickbooks_documents").select("*").order("created_at", { ascending: false });
+    if (!error && data) return data as QuickBooksDocument[];
+  }
+  return [...getStore().quickbooksDocuments].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+export async function listQuickBooksDocumentsForProject(projectId: string): Promise<QuickBooksDocument[]> {
+  return (await listQuickBooksDocuments()).filter((d) => d.project_id === projectId);
+}
+
+/**
+ * Maps a QuickBooks Estimate/Invoice to an internal project — used by both
+ * "Create Estimate/Invoice in QuickBooks" (after a successful QBO create)
+ * and "Link Existing QuickBooks Estimate/Invoice". DUPLICATE PROTECTION:
+ * checks for an existing mapping on the same (realm, entity_type,
+ * entity_id) BEFORE inserting — so a retried call after a timeout (or
+ * linking the same document twice) is rejected here rather than relying
+ * solely on the database's unique index, which the in-memory fallback
+ * doesn't have.
+ */
+export async function createQuickBooksDocument(input: {
+  project_id: string;
+  qb_realm_id: string;
+  entity_type: QuickBooksEntityType;
+  qb_entity_id: string;
+  document_number?: string;
+  status: QBDocumentStatus;
+  amount: number;
+  amount_paid?: number;
+  qb_customer_id: string;
+  actorName?: string;
+}): Promise<QuickBooksDocument> {
+  const existing = await listQuickBooksDocuments();
+  if (existing.some((d) => d.qb_realm_id === input.qb_realm_id && d.entity_type === input.entity_type && d.qb_entity_id === input.qb_entity_id)) {
+    throw new Error(`This ${input.entity_type} is already linked to a job — it can't be linked or created twice.`);
+  }
+  const now = new Date().toISOString();
+  const record: QuickBooksDocument = {
+    id: `qbd-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    project_id: input.project_id,
+    qb_realm_id: input.qb_realm_id,
+    entity_type: input.entity_type,
+    qb_entity_id: input.qb_entity_id,
+    document_number: input.document_number,
+    status: input.status,
+    amount: input.amount,
+    amount_paid: input.amount_paid,
+    qb_customer_id: input.qb_customer_id,
+    created_at: now,
+    updated_at: now,
+    last_synced_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_documents").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().quickbooksDocuments.push(record);
+  }
+  logActivity({
+    action: `QuickBooks ${input.entity_type} linked`,
+    related_type: "project",
+    related_id: input.project_id,
+    actor_name: input.actorName,
+    detail: `${input.document_number ?? input.qb_entity_id} — ${formatMoney(input.amount)}`,
+  });
+  await logQuickBooksSyncEvent({
+    action: `${input.entity_type} linked`,
+    project_id: input.project_id,
+    entity_type: input.entity_type,
+    qb_entity_id: input.qb_entity_id,
+    document_number: input.document_number,
+    success: true,
+    initiated_by: input.actorName,
+  });
+  return record;
+}
+
+export async function updateQuickBooksDocumentStatus(
+  id: string,
+  patch: { status: QBDocumentStatus; amount?: number; amount_paid?: number }
+): Promise<void> {
+  const now = new Date().toISOString();
+  const fullPatch = { ...patch, updated_at: now, last_synced_at: now };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_documents").update(fullPatch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const doc = getStore().quickbooksDocuments.find((d) => d.id === id);
+    if (doc) Object.assign(doc, fullPatch);
+  }
+}
+
+function formatMoney(n: number): string {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+// --- Webhook idempotency ---------------------------------------------------
+
+export async function hasProcessedQuickBooksWebhookEvent(eventId: string): Promise<boolean> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("quickbooks_webhook_events").select("id").eq("event_id", eventId).maybeSingle();
+    if (!error) return !!data;
+  }
+  return getStore().quickbooksWebhookEvents.some((e) => e.event_id === eventId);
+}
+
+/** Records that a webhook event has been received/processed — called
+ * BEFORE handling it, so a duplicate delivery (Intuit retries on non-2xx,
+ * and may occasionally redeliver regardless) is recognized and skipped by
+ * hasProcessedQuickBooksWebhookEvent() above rather than double-processed. */
+export async function recordQuickBooksWebhookEvent(input: { event_id: string; payload_summary: string }): Promise<QuickBooksWebhookEvent> {
+  const now = new Date().toISOString();
+  const record: QuickBooksWebhookEvent = {
+    id: `qbwe-${randomUUID()}`,
+    event_id: input.event_id,
+    received_at: now,
+    processed_at: now,
+    payload_summary: input.payload_summary,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_webhook_events").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().quickbooksWebhookEvents.push(record);
+  }
+  return record;
+}
+
+// --- Sync log ---------------------------------------------------------
+
+export async function listQuickBooksSyncLog(): Promise<QuickBooksSyncLogEntry[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("quickbooks_sync_log").select("*").order("created_at", { ascending: false });
+    if (!error && data) return data as QuickBooksSyncLogEntry[];
+  }
+  return [...getStore().quickbooksSyncLog].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+/** Every meaningful QuickBooks action (connected, disconnected, customer
+ * linked/created, estimate/invoice created/linked, sync run, webhook
+ * processed) — logged HERE (the admin-only Sync Log detail view) as well
+ * as to the existing `activity_log` at each call site above, per README
+ * "QuickBooks Online Integration — Sync Log". */
+export async function logQuickBooksSyncEvent(input: {
+  action: string;
+  project_id?: string;
+  entity_type?: QuickBooksEntityType;
+  qb_entity_id?: string;
+  document_number?: string;
+  success: boolean;
+  error_detail?: string;
+  initiated_by?: string;
+}): Promise<void> {
+  const record: QuickBooksSyncLogEntry = {
+    id: `qbsl-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    created_at: new Date().toISOString(),
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("quickbooks_sync_log").insert(record);
+    if (error) getStore().quickbooksSyncLog.unshift(record);
+  } else {
+    getStore().quickbooksSyncLog.unshift(record);
+  }
 }

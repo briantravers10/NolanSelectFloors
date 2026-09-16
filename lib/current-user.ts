@@ -118,3 +118,53 @@ export function canViewTimeOffAllowance(user: Pick<ActingUser, "accessRole">): b
 export function canEditTimeOffAllowance(user: Pick<ActingUser, "accessRole">): boolean {
   return canEditPayRates(user);
 }
+
+// ---------------------------------------------------------------------
+// QUICKBOOKS PERMISSIONS — reuses the exact same access_role concept as
+// pay-rate/labor-cost visibility above. See README "QuickBooks Online
+// Integration — Permissions" for the full write-up.
+//   owner_admin     — everything: view, create/link documents, sync, AND
+//                      manage the connection itself (connect/disconnect).
+//   office_staff    — view QuickBooks data, create/link estimates and
+//                      invoices, run Sync Now — but NOT manage the
+//                      connection (connect/disconnect/reconnect is
+//                      Owner/Admin only, since it touches stored
+//                      credentials).
+//   field_employee  — no access at all, consistent with pay rates being
+//                      hidden from this role.
+// ---------------------------------------------------------------------
+
+/** View linked QuickBooks documents, connection status, and the customer
+ * matching screen. */
+export function canViewQuickBooks(user: Pick<ActingUser, "accessRole">): boolean {
+  return user.accessRole === "owner_admin" || user.accessRole === "office_staff";
+}
+
+/** "Prepare Estimate/Invoice" -> "Create in QuickBooks", and "Link
+ * Existing QuickBooks Estimate/Invoice". */
+export function canManageQuickBooksDocuments(user: Pick<ActingUser, "accessRole">): boolean {
+  return canViewQuickBooks(user);
+}
+
+/** "Sync Now" and viewing/creating customer link mappings. */
+export function canSyncQuickBooks(user: Pick<ActingUser, "accessRole">): boolean {
+  return canViewQuickBooks(user);
+}
+
+/** Connect / Disconnect / Reconnect — touches stored credentials, so this
+ * is Owner/Admin only, stricter than plain view/create access. */
+export function canManageQuickBooksConnection(user: Pick<ActingUser, "accessRole">): boolean {
+  return user.accessRole === "owner_admin";
+}
+
+/** Job financials / profitability (the Financial Summary section, which
+ * combines gated labor cost with QuickBooks invoice amounts) — same tier
+ * as labor cost, since it exposes cost figures alongside price figures. */
+export function canViewJobFinancials(user: Pick<ActingUser, "accessRole">): boolean {
+  return canViewLaborCost(user);
+}
+
+/** The admin-only Sync Log view (raw QuickBooks action history). */
+export function canViewQuickBooksSyncLog(user: Pick<ActingUser, "accessRole">): boolean {
+  return user.accessRole === "owner_admin";
+}
