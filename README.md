@@ -583,6 +583,47 @@ this was an interface-only correction.
   View Schedule, Create / Edit Schedule, End of Day Review, Change
   History, Completed Jobs.
 
+### Items to Order / Collect (build 8)
+
+A lightweight, per-schedule-entry checklist for quick pickups a crew needs
+for one specific day's job — the client's own example: "collect 3 buckets
+of glue." This is **not** the existing, heavier Materials system
+(`materials`/`project_materials`, supplier/cost/delivery-date tracking for
+real material orders at the project level) — it's a fast "grab this"
+list, kept deliberately simple:
+
+- **Data model** (`supabase/migrations/0009_schedule_pickup_items.sql`):
+  one new table, `schedule_pickup_items` — `project_schedule_day_id` (FK
+  to `project_schedule_days`), a single free-text `description` (e.g. "3
+  buckets of glue" — the quantity, if any, is just typed into the text
+  rather than split into its own column), and a two-value `status` enum
+  (`Needed` / `Collected`, a checkbox-equivalent). No supplier/cost/date
+  fields — that's what the Materials system is for.
+- **Data layer** (`lib/db.ts`): `listSchedulePickupItems` /
+  `listSchedulePickupItemsForDay` / `createSchedulePickupItem` /
+  `toggleSchedulePickupItemStatus` / `deleteSchedulePickupItem`, each
+  audit-logged to `activity_log` (`related_type: "project"`) the same way
+  every other schedule field is. `lib/schedule.ts#buildScheduleJobRows`
+  attaches each row's items (`ScheduleJobRow.pickupItems`) so both
+  View Schedule and Create/Edit Schedule read from the same view model.
+- **Create/Edit Schedule** (`components/schedule/ScheduleEditForm.tsx`):
+  an "Items to Order / Collect" section — a text input + Add button, plus
+  the existing items with a "Mark Collected"/"Remove" action next to each.
+  Unlike the rest of the form, these save immediately (via
+  `addPickupItemAction`/`togglePickupItemStatusAction`/
+  `deletePickupItemAction` in `app/schedule/actions.ts`), not deferred to
+  "Save to Schedule" — the same "quick inline add" convention as
+  `AddTimeOffForm`. Adding the first item on a job/date that isn't on the
+  schedule yet reuses `getOrCreateProjectScheduleDay`, same as every other
+  per-field schedule action. A brand-new, not-yet-saved entry shows the
+  input disabled with a note to save the entry first, since there's no
+  `project_schedule_days` row to attach items to until then.
+- **View Schedule** (`components/schedule/ScheduleDayRowCard.tsx`): a
+  small, read-only "Items to Collect" list — only rendered when at least
+  one item exists — showing each description with a plain "✓ Collected" /
+  "— Needed" label, no checkboxes, consistent with the View/Edit
+  read-only split above.
+
 ## Labor Cost Tracking (build 6)
 
 Adds ACTUAL-hours labor cost tracking as an addition to the existing
@@ -853,6 +894,124 @@ Exactly like the existing double-booking warning, **this never blocks the
 assignment** — the office employee can still keep them on the crew if
 there's a legitimate reason (someone came back early, an emergency
 call-in, etc.).
+
+## Client Navigation, "Last Worked With" reminder, and Jobs by Building (build 8)
+
+### Management Company → Buildings → Point of Contact
+
+The Client → Building → Point of Contact hierarchy (management companies,
+buildings, contacts, `building_contacts`) already existed from build 1 —
+this pass only closed a small gap: the Client detail page's Buildings list
+now shows each building's primary point of contact (name + title) inline,
+so it's visible without an extra click into the building's own page. See
+`app/clients/[id]/page.tsx`.
+
+### "Last Worked With" reminder
+
+`lib/last-worked.ts#getLastWorkedWithClient(clientCompanyId, excludeProjectId?)`
+is a **pure derived calculation** over the existing `projects` +
+`buildings` tables — no new table. It finds the most recent PREVIOUS
+project tied to a management company (excluding the job currently being
+created, if it already has a project id) and returns a human-readable
+sentence like *"Last worked with Vanguard Property Group: 3 months, 2
+weeks ago"*, or *"No prior jobs on record for ABC Property Management."*
+when there's no history.
+
+**Date choice**: uses a project's `actual_end_date` when set (the most
+meaningful "we were last on site" date), falling back to `start_date`,
+then `created_at` — favoring "when work actually wrapped" over "when it
+was booked". **Format**: breaks the day gap into years/months/weeks/days
+and renders only the two largest non-zero units (e.g. "3 months, 2 weeks"
+rather than "3 months, 2 weeks, 0 days"), so it never shows all four units
+cluttered together.
+
+Shown in two places:
+- **New Job Request form** (`/job-requests/new`) — once a building (and so
+  its management company) is selected, a small inline reminder appears
+  under the picker. Implemented as a tiny client component
+  (`BuildingSelectWithReminder.tsx`) that calls a server action on change,
+  so the rest of the form's typed fields are never lost to a page reload.
+- **Job Request detail page** (`/job-requests/[id]`) — a banner at the top
+  of every job request shows the same reminder for its management company.
+
+### Jobs by Building (new Projects tab)
+
+`/projects?view=by-building` — a third tab alongside the existing List and
+Pipeline views (same `?view=` convention as Pipeline), reusing the exact
+same `projects` data, **not** a new "Jobs" concept or table. Groups every
+project by building, and within each building sorts by unit number:
+numeric prefix first (so "3B" sorts before "12A"), then any letter suffix,
+then chronologically by start date as a final tiebreak. See
+`app/projects/ByBuilding.tsx`.
+
+## Owner's Agenda & Future Google Calendar Sync (build 8)
+
+A lightweight **"My Agenda"** section (`/agenda`) for the owner's own
+meetings, site visits and personal reminders — **separate from the
+operational job Schedule** (`/schedule`, crew/job dispatch). Nothing in
+this feature reads from or writes to `schedule_assignments`; the two are
+independent calendars that happen to share an owner.
+
+### What's built now
+
+- **`agenda_events` table** (`supabase/migrations/0008_owner_agenda.sql`):
+  `title`, `event_date`, nullable `start_time`/`end_time`, nullable
+  `location`/`notes`, an optional `related_type`/`related_id` link (same
+  shape as `RelatedRecordType` used by tasks/communications/documents
+  elsewhere — e.g. a check-in tied to a management company), `source`
+  (`'Manual'` | `'Google Calendar'`), and a nullable `external_event_id`
+  placeholder for a future Google event id.
+- **`owner_user_id`** is a plain text column, not a foreign key — there is
+  no per-user `users` table beyond `office_users` yet (see
+  `lib/current-user.ts`'s dev "acting as" persona and the `OWNER_ACTING_ID`
+  sentinel `"owner"`). This mirrors the same identifier the rest of the app
+  already uses to stand in for the Owner/Admin role.
+- **`/agenda` UI**: a simple day list across the current week (today
+  highlighted), a "+ Add Event" form (title, date, start/end time,
+  location, notes, and an optional link to a management company), and a
+  "Connect Google Calendar" section.
+- **Seed data**: five realistic events across the current week — two site
+  visits, a management-company quarterly check-in, a vendor-portal renewal
+  call, and one clearly personal (non-job) reminder — so the page has
+  something real to show out of the box.
+
+### "Connect Google Calendar" — explains, never fakes
+
+Clicking "Connect Google Calendar" calls `lib/google-calendar.ts#syncAgendaWithGoogleCalendar()`,
+which **never attempts a real OAuth redirect and never fakes success**. It
+checks for `GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` /
+`GOOGLE_CALENDAR_REFRESH_TOKEN` (none of which are set in this
+environment) and returns an honest "not configured" result with an
+explanation of what's needed — the exact same "architected but not live"
+pattern as `lib/routing.ts` (real driving directions behind an env-var
+check, `null`/soft-fail otherwise) and the Email Assistant rules below.
+**No live Google Calendar API call is made anywhere in this codebase.**
+
+### What a future Google Calendar sync would need
+
+1. A **Google Cloud OAuth app** with the **Google Calendar API** enabled,
+   consented to by the owner's account (read/write scope, so both
+   directions of sync are possible).
+2. A stored **refresh token** per owner (`GOOGLE_CALENDAR_REFRESH_TOKEN`,
+   or a per-user column once real auth exists) so the sync can silently
+   get new access tokens without the owner re-authenticating each time.
+3. `syncAgendaWithGoogleCalendar(ownerUserId)` would exchange that refresh
+   token for an access token, call `events.list` on the owner's calendar,
+   and **upsert** each result into `agenda_events` keyed on
+   `external_event_id` (`lib/db.ts#upsertGoogleAgendaEvent` already exists
+   for this — unused today, ready once a real sync calls it) — so re-runs
+   never create duplicates (`agenda_events` also has a unique index on
+   `(owner_user_id, external_event_id)` enforcing this at the DB level).
+4. Manually-entered events could optionally push out to Google too
+   (`events.insert`/`events.update`), but that's a one-way (Google → app)
+   sync at minimum to start.
+5. A scheduled job or on-demand button (the existing "Connect Google
+   Calendar" button, once real) would trigger the sync — no push
+   webhook is required for a first pass.
+
+**Manual entry stays fully functional regardless** — the "+ Add Event"
+form is a permanent part of the workflow, not a placeholder until sync
+ships.
 
 ## Email Assistant & Invoice Routing (Architecture, Not Yet Live)
 
