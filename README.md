@@ -1650,61 +1650,137 @@ nav-hiding, route guards, and server-action gating live.
 
 ### Activating Real Login (`lib/auth.ts`)
 
-There is intentionally no real login yet, but the codebase is already
-shaped for it, mirroring the exact "architected but not live" pattern used
-for `lib/routing.ts`, `lib/google-calendar.ts`, and QuickBooks before it
-went live:
+**Status as of build 12: fully built and wired, not yet flipped on.** A
+real Supabase project (`fbciqsucmuxdggpjjxrg`) is connected, with all
+migrations applied and seed data loaded — `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are all
+confirmed present. Real Supabase Auth code paths exist and compile/build
+cleanly, and route protection was verified end-to-end against a local
+build (`curl` against `/dashboard` with `NSF_REAL_AUTH_ENABLED=true` set
+and no session cookie returns a 307 to `/login`; `/login` itself and
+`/api/*` are unaffected) — but a real sign-in has never been exercised
+against the live Supabase project, because this environment has no network
+access to `*.supabase.co`. See the manual test checklist at the end of
+this section for exactly what to do once deployed.
 
-- **`lib/auth.ts#getCurrentSession()`** is the one function real pages
-  would eventually call instead of `lib/current-user.ts`'s dev "acting as"
-  cookie mechanism. Today, `isRealAuthConfigured()` is always false (no
-  real Supabase project exists to test against), so it always falls back
-  to the existing dev mechanism, completely unchanged. Nothing in this
-  codebase calls it yet — this is the boundary the future work plugs into,
-  not a live code path.
-- **`/login`** already renders a real email + password form
-  (`app/login/page.tsx`). Submitting it today always shows an honest "Real
-  login isn't connected yet — using demo mode" message and hands off to
-  the existing "Acting as" selector in the TopBar — it never fakes a
-  successful sign-in, exactly like the QuickBooks/Google Calendar "Connect"
-  buttons before those were wired up.
-- **What changes once a real Supabase project with Auth is connected**:
-  1. Set `NSF_REAL_AUTH_ENABLED=true` (new env var, see below) once real
-     accounts exist — this flips `isRealAuthConfigured()` on.
-  2. **"Add Staff Account"** additionally creates a real Supabase Auth user
-     via the Admin API (`supabase.auth.admin.createUser`) with a temporary
-     password or invite email, and stores the returned user id on
-     `office_users.auth_user_id`.
-  3. **`/login`**'s form submits to a real `supabase.auth.signInWithPassword`
-     call instead of the honest-stub `loginAction`, and on success sets a
-     real Supabase session cookie.
-  4. **`getCurrentSession()`** reads that session (via `@supabase/ssr`'s
-     `createServerClient`), looks up the matching `office_users` row by
-     `auth_user_id`, and returns `null` — never a default Owner persona —
-     when nothing matches, unlike today's demo fallback.
-  5. The dev "acting as" selector (`ActingUserSelector.tsx`) can then be
-     hidden behind the same `isRealAuthConfigured()` check, though nothing
-     requires removing it immediately — it can keep working as a
-     Owner/Admin-only "view as" debugging tool if useful.
-  6. No schema changes are needed beyond what `0012_permissions_and_auth.sql`
-     already added — `office_users.email`/`auth_user_id` are already there.
-  7. Add Supabase RLS policies scoped to `auth.uid()` as defense-in-depth
-     on top of the app-level `section_permissions`/`access_role` checks
-     that already exist (same recommendation as the pre-existing "How auth
-     will be added later" note below).
+- **`lib/supabase/server.ts`** — `createSupabaseServerClient()`, a
+  `@supabase/ssr` `createServerClient` factory reading/writing the Next.js
+  cookie store, for Server Components / Server Actions / Route Handlers.
+  Returns `null` if the public URL/anon key env vars aren't set.
+- **`lib/supabase/middleware.ts`** — `updateSession()`, the standard
+  `@supabase/ssr` session-refresh pattern, called from the root **`proxy.ts`**
+  (this Next.js version renamed `middleware.ts` → `proxy.ts` — see
+  `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md`;
+  same behavior, new file/export names). Also enforces route protection:
+  when real auth is configured, any page other than `/login` (API routes
+  are left alone — they have their own auth/secret handling) redirects to
+  `/login` when there's no Supabase Auth session.
+- **`lib/supabase/admin.ts`** — `getSupabaseAdminClient()`, a
+  `SUPABASE_SERVICE_ROLE_KEY`-backed client marked `import "server-only"`
+  so any accidental client-side import is a build error, not a leaked
+  secret. Used only for `supabase.auth.admin.*` calls.
+- **`lib/auth.ts#getCurrentSession()`** is the one function real
+  pages/actions call instead of `lib/current-user.ts`'s dev "acting as"
+  cookie mechanism directly. When real auth isn't configured, it's
+  byte-for-byte the same demo fallback as before. When it is: reads the
+  Supabase session via `createSupabaseServerClient()`, looks up the
+  matching `office_users` row by `auth_user_id`
+  (`lib/db.ts#getOfficeUserByAuthId()`), and returns `null` — never a
+  default Owner persona — when there's no session or no matching account.
+- **`lib/current-user.ts#getActingUser()`** — the function ~30 call sites
+  across the app actually use — now routes through `getCurrentSession()`
+  when real auth is configured, and returns a fully-locked-out
+  `noMatchingAccountUser()` persona (not Owner, not a crash) when a real
+  session has no matching `office_users` row. When real auth isn't
+  configured, this is unchanged: it reads the dev "acting as" cookie
+  directly, same as always.
+- **`/login`** (`app/login/page.tsx` + `actions.ts`) — demo mode is
+  unchanged (honest "not connected yet" message, hands off to the dev
+  selector). With real auth configured, the same form calls
+  `supabase.auth.signInWithPassword()` server-side and redirects to
+  `/dashboard` on success, or back to `/login?mode=error` (a single
+  generic "Invalid email or password", never revealing whether the email
+  exists) on failure. A **Sign Out** button (`signOutAction`, calling
+  `supabase.auth.signOut()`) appears in the TopBar once a real session
+  exists.
+- **"Add Staff Account"** (`app/company-setup/staff-access/actions.ts`)
+  now additionally calls `supabase.auth.admin.createUser()` (with
+  `email_confirm: true` and a randomly generated temporary password —
+  `inviteUserByEmail()` was deliberately not used, since this app has no
+  real email-sending configured anywhere yet and an invite email would
+  never arrive) when real auth is configured and an email was given, and
+  stores the returned auth user id onto `office_users.auth_user_id`. The
+  temporary password is shown once in the UI, clearly labeled, for the
+  Owner/Admin to relay directly.
+- **Per-account "Real Login" section**
+  (`app/company-setup/staff-access/[id]/page.tsx`) — for a row that
+  already has an email but no real account yet (true for all three seeded
+  office_users, which predate real auth), a **"Create Real Login Account"**
+  button does the same `createUser()` call. For a row that already has one,
+  a **"Set New Password"** button calls
+  `supabase.auth.admin.updateUserById(uid, { password })` to reset a
+  locked-out staff member's password. Both show the resulting temporary
+  password once, the same way "Add Staff Account" does.
+- **The dev "acting as" selector** (`ActingUserSelector.tsx`, in
+  `components/TopBar.tsx`) is untouched when real auth isn't configured —
+  same unconditional rendering as always. Once real auth IS configured, it
+  hides for everyone except an `is_owner` user, for whom it stays visible
+  as a "preview as" debugging override, exactly as this section previously
+  said it would.
+- **Schema**: `0012_permissions_and_auth.sql`'s
+  `office_users.email`/`auth_user_id` were already sufficient for the
+  lookup itself. The one genuine gap found: `auth_user_id` had no index,
+  so every authenticated request's `getOfficeUserByAuthId()` lookup would
+  force a sequential scan — `0013_auth_user_id_index.sql` adds a partial
+  unique index on `office_users(auth_user_id) where auth_user_id is not
+  null`. **This migration has not been applied yet** — it needs to be run
+  against the live `fbciqsucmuxdggpjjxrg` project (via the Supabase MCP
+  tools or `supabase db push`) before flipping `NSF_REAL_AUTH_ENABLED=true`
+  in production.
+- Add Supabase RLS policies scoped to `auth.uid()` as defense-in-depth on
+  top of the app-level `section_permissions`/`access_role` checks that
+  already exist — not yet done (same recommendation as the pre-existing
+  "How auth will be added later" note below).
 
-No real Supabase Auth account or session is created anywhere in this
-build — there is no real Supabase project connected in this environment to
-create one against. Everything above is the honest stub + a correct
-abstraction boundary, not a partial implementation.
+#### Turning it on, and the exact first-login test
+
+1. Apply `supabase/migrations/0013_auth_user_id_index.sql` against the live
+   project (not yet applied as of this writing).
+2. Set `NSF_REAL_AUTH_ENABLED=true` in the Vercel project's environment
+   variables and redeploy (the three `NEXT_PUBLIC_SUPABASE_URL` /
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` vars should
+   already be set from connecting the project).
+3. **No real Supabase Auth account exists yet against the live project** —
+   nothing has created one from this sandboxed environment (no network
+   access to `*.supabase.co` here). So the very first real login has to be
+   created manually:
+   - As the seeded Owner (Sarah Bennett, `sbennett@nolanselectfloors.com`)
+     using the dev "acting as" selector (still visible pre-flip, or
+     visible post-flip if she's `is_owner`), go to Company Setup → Staff
+     Access → open her own row (or Emma Castillo's, or David Okoye's) →
+     "Real Login" → **Create Real Login Account**.
+   - Copy the one-time temporary password shown.
+   - Go to `/login`, sign in with that email + temporary password.
+   - Confirm: redirected to `/dashboard`, the TopBar shows a **Sign Out**
+     button, and the dev "acting as" selector is hidden (or shown only if
+     signed in as the `is_owner` account).
+   - Confirm section access is enforced correctly for that person's role
+     (e.g. David Okoye — view-only on Dashboard/Schedule/Projects/Tasks,
+     no access elsewhere) by trying a restricted page.
+   - Sign out, confirm landing back on `/login`, and confirm visiting
+     `/dashboard` directly without a session redirects to `/login`.
+   - From the Owner's staff-access page, try **Set New Password** on that
+     same account and confirm the new password signs in (and the old one
+     no longer does).
+   - Try **Add Staff Account** with a brand-new email end-to-end.
 
 ## Environment variables
 
 | Variable | Required? | Purpose |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Public anon key (read fallback) |
-| `SUPABASE_SERVICE_ROLE_KEY` | No | Server-side writes (preferred key) |
+| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL — **confirmed set** for the connected `fbciqsucmuxdggpjjxrg` project |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Public anon key — used for reads AND now for real Supabase Auth sessions (`lib/supabase/server.ts`, `lib/supabase/middleware.ts`) — **confirmed set** |
+| `SUPABASE_SERVICE_ROLE_KEY` | No | Server-side writes, and now the Supabase Admin API (`lib/supabase/admin.ts` — create/reset staff accounts) — **confirmed set** |
 | `SUPABASE_PHOTOS_BUCKET` | No | Storage bucket name for project photos (default `project-photos`) |
 | `ROUTING_PROVIDER` | No | `google` or `mapbox` — enables live driving routes on the Haul-Away Run page |
 | `GOOGLE_MAPS_API_KEY` | No | Required when `ROUTING_PROVIDER=google` — get one at console.cloud.google.com (enable "Directions API") |
@@ -1837,9 +1913,15 @@ shaped so each is a self-contained addition:
 - **Communications log** — the `communications` table and seed rows exist
   and are used on a couple of detail views, but there's no dedicated
   standalone communications page in this pass.
-- **No live Supabase project is connected** in this environment — the app
-  ships and builds entirely on the in-memory seed fallback, matching the
-  hard requirement that `npm run build` work with zero credentials.
+- **A live Supabase project (`fbciqsucmuxdggpjjxrg`) is connected** as of
+  build 12, with all migrations applied and seed data loaded — but this
+  sandboxed dev environment itself has no network access to
+  `*.supabase.co`, so real Supabase Auth sign-in has been verified by code
+  review and a local build/route-protection test, not a live smoke test
+  (see "Activating Real Login" → "Turning it on, and the exact first-login
+  test" for what to do once deployed). The app still builds and runs
+  entirely on the in-memory seed fallback with zero credentials, matching
+  the original hard requirement.
 - **No real SMS or Storage integration** — both are previewed/mocked as
   described above, per the spec's explicit instruction not to fabricate a
   working pipeline.
