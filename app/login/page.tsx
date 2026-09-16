@@ -4,17 +4,25 @@ import { isRealAuthConfigured } from "@/lib/auth";
 import { loginAction } from "./actions";
 
 /**
- * Real email+password login page (build 11) — built now, honest about not
- * being wired up yet, exactly mirroring the QuickBooks/Google Calendar
- * "architected but not live" pattern (see README "Activating Real Login").
- * Submitting never fakes a successful sign-in: with no real Supabase Auth
- * project connected (always true in this environment), it shows a clear
- * message and hands off to the existing dev "acting as" selector, which
- * remains how this demo operates until a real project exists.
+ * Real email+password login page (build 12 — Activating Real Login).
+ *
+ * DEMO MODE (real auth not configured — no Supabase project connected, or
+ * NSF_REAL_AUTH_ENABLED not set to "true"): unchanged from before —
+ * submitting never fakes a successful sign-in; shows the honest "not
+ * connected yet" message and hands off to the existing dev "acting as"
+ * selector, which remains how this demo operates.
+ *
+ * REAL AUTH configured: the same form now actually calls
+ * `supabase.auth.signInWithPassword()` via loginAction (see
+ * app/login/actions.ts) and redirects to /dashboard on success. `?mode=error`
+ * (set by loginAction on any failure) shows a single generic "Invalid email
+ * or password" message — this never reveals whether the email exists.
  */
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
   const { mode } = await searchParams;
-  const showDemoMessage = mode === "demo" && !isRealAuthConfigured();
+  const realAuthConfigured = isRealAuthConfigured();
+  const showDemoMessage = mode === "demo" && !realAuthConfigured;
+  const showLoginError = mode === "error" && realAuthConfigured;
 
   return (
     <div className="min-h-dvh flex items-center justify-center bg-slate-50 px-4">
@@ -41,6 +49,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </div>
         ) : (
           <form action={loginAction} className="space-y-3">
+            {showLoginError && <AlertPill tone="bad">Invalid email or password.</AlertPill>}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
               <input name="email" type="email" required autoComplete="email" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
