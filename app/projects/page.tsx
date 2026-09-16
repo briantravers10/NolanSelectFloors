@@ -5,21 +5,35 @@ import { formatCurrency } from "@/lib/calculations";
 import { PIPELINE_STAGES, PROJECT_STATUSES } from "@/lib/types";
 import { projectLaborCost } from "@/lib/calculations";
 import { Pipeline } from "./Pipeline";
+import { ByBuilding } from "./ByBuilding";
 
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string; view?: string; stage?: string }> }) {
   const { status, view, stage } = await searchParams;
   const showPipeline = view === "pipeline";
+  const showByBuilding = view === "by-building";
 
   return (
     <div>
-      <PageHeader title="Projects" subtitle={showPipeline ? "Drag-free kanban across the 6 primary lifecycle stages." : "Every project, in one list."} />
+      <PageHeader
+        title="Projects"
+        subtitle={
+          showPipeline
+            ? "Drag-free kanban across the 6 primary lifecycle stages."
+            : showByBuilding
+              ? "Every job, grouped by building and ordered by unit."
+              : "Every project, in one list."
+        }
+      />
 
       <div className="flex flex-wrap gap-2 mb-4 border-b border-slate-200 pb-3">
-        <Link href={`/projects${stage ? `?stage=${encodeURIComponent(stage)}` : ""}`} className={`text-sm font-medium rounded-lg px-3 py-1.5 ${!showPipeline ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+        <Link href={`/projects${stage ? `?stage=${encodeURIComponent(stage)}` : ""}`} className={`text-sm font-medium rounded-lg px-3 py-1.5 ${!showPipeline && !showByBuilding ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
           List
         </Link>
         <Link href={`/projects?view=pipeline${stage ? `&stage=${encodeURIComponent(stage)}` : ""}`} className={`text-sm font-medium rounded-lg px-3 py-1.5 ${showPipeline ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
           Pipeline
+        </Link>
+        <Link href={`/projects?view=by-building${stage ? `&stage=${encodeURIComponent(stage)}` : ""}`} className={`text-sm font-medium rounded-lg px-3 py-1.5 ${showByBuilding ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+          Jobs by Building
         </Link>
       </div>
 
@@ -27,7 +41,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           "Project In Process", etc. instead of scanning the whole list/board. */}
       <div className="flex flex-wrap gap-2 mb-5">
         <Link
-          href={showPipeline ? "/projects?view=pipeline" : "/projects"}
+          href={showPipeline ? "/projects?view=pipeline" : showByBuilding ? "/projects?view=by-building" : "/projects"}
           className={`text-xs font-medium rounded-full px-3 py-1 border ${!stage ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
         >
           All Stages
@@ -35,7 +49,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         {PIPELINE_STAGES.map((s) => (
           <Link
             key={s}
-            href={`/projects?${showPipeline ? "view=pipeline&" : ""}stage=${encodeURIComponent(s)}`}
+            href={`/projects?${showPipeline ? "view=pipeline&" : showByBuilding ? "view=by-building&" : ""}stage=${encodeURIComponent(s)}`}
             className={`text-xs font-medium rounded-full px-3 py-1 border ${stage === s ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
           >
             {s}
@@ -43,7 +57,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         ))}
       </div>
 
-      {showPipeline ? <Pipeline stageFilter={stage} /> : <ProjectsList status={status} stage={stage} />}
+      {showPipeline ? <Pipeline stageFilter={stage} /> : showByBuilding ? <ByBuilding stageFilter={stage} /> : <ProjectsList status={status} stage={stage} />}
     </div>
   );
 }
