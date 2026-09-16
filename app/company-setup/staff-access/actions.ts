@@ -76,23 +76,32 @@ export async function createStaffAccountAction(formData: FormData): Promise<Crea
     if (!email) {
       authAccountError = "No email was given, so no real login account was created — add one and use \"Set New Password\" on this account's page to create it.";
     } else {
-      const admin = getSupabaseAdminClient();
-      if (!admin) {
-        authAccountError = "Supabase Admin API isn't configured (missing SUPABASE_SERVICE_ROLE_KEY) — no real login account was created.";
-      } else {
-        const generated = generateTempPassword();
-        const { data, error } = await admin.auth.admin.createUser({
-          email,
-          password: generated,
-          email_confirm: true,
-          user_metadata: { office_user_id: created.id, full_name },
-        });
-        if (error || !data.user) {
-          authAccountError = error?.message ?? "Could not create the real login account.";
+      try {
+        const admin = getSupabaseAdminClient();
+        if (!admin) {
+          authAccountError = "Supabase Admin API isn't configured (missing SUPABASE_SERVICE_ROLE_KEY) — no real login account was created.";
         } else {
-          await updateOfficeUser(created.id, { auth_user_id: data.user.id }, actingUser.fullName);
-          tempPassword = generated;
+          const generated = generateTempPassword();
+          const { data, error } = await admin.auth.admin.createUser({
+            email,
+            password: generated,
+            email_confirm: true,
+            user_metadata: { office_user_id: created.id, full_name },
+          });
+          if (error || !data.user) {
+            authAccountError = error?.message ?? "Could not create the real login account.";
+          } else {
+            await updateOfficeUser(created.id, { auth_user_id: data.user.id }, actingUser.fullName);
+            tempPassword = generated;
+          }
         }
+      } catch (err) {
+        // A network-level failure talking to Supabase (as opposed to a
+        // clean {error} response from the Admin API above) would otherwise
+        // throw and crash this whole Server Action — the office_users
+        // persona this created is still valid and usable via the dev
+        // selector; only the real-account half failed.
+        authAccountError = err instanceof Error ? `Could not reach Supabase: ${err.message}` : "Could not reach Supabase to create the real login account.";
       }
     }
   }
@@ -173,21 +182,25 @@ export async function createRealAccountForExistingUserAction(officeUserId: strin
   if (staffMember.auth_user_id) return { error: "This account already has a real login — use Set New Password instead." };
   if (!staffMember.email) return { error: "This account has no email on file yet — add one first." };
 
-  const admin = getSupabaseAdminClient();
-  if (!admin) return { error: "Supabase Admin API isn't configured (missing SUPABASE_SERVICE_ROLE_KEY)." };
+  try {
+    const admin = getSupabaseAdminClient();
+    if (!admin) return { error: "Supabase Admin API isn't configured (missing SUPABASE_SERVICE_ROLE_KEY)." };
 
-  const newPassword = generateTempPassword();
-  const { data, error } = await admin.auth.admin.createUser({
-    email: staffMember.email,
-    password: newPassword,
-    email_confirm: true,
-    user_metadata: { office_user_id: staffMember.id, full_name: staffMember.full_name },
-  });
-  if (error || !data.user) return { error: error?.message ?? "Could not create the real login account." };
+    const newPassword = generateTempPassword();
+    const { data, error } = await admin.auth.admin.createUser({
+      email: staffMember.email,
+      password: newPassword,
+      email_confirm: true,
+      user_metadata: { office_user_id: staffMember.id, full_name: staffMember.full_name },
+    });
+    if (error || !data.user) return { error: error?.message ?? "Could not create the real login account." };
 
-  await updateOfficeUser(officeUserId, { auth_user_id: data.user.id }, actingUser.fullName);
-  revalidatePath(`/company-setup/staff-access/${officeUserId}`);
-  return { newPassword };
+    await updateOfficeUser(officeUserId, { auth_user_id: data.user.id }, actingUser.fullName);
+    revalidatePath(`/company-setup/staff-access/${officeUserId}`);
+    return { newPassword };
+  } catch (err) {
+    return { error: err instanceof Error ? `Could not reach Supabase: ${err.message}` : "Could not reach Supabase to create the real login account." };
+  }
 }
 
 /**
@@ -211,13 +224,17 @@ export async function setNewPasswordAction(officeUserId: string): Promise<SetNew
     return { error: "This account has no real login yet — it needs an email and a real login account created first (see \"Add Staff Account\")." };
   }
 
-  const admin = getSupabaseAdminClient();
-  if (!admin) return { error: "Supabase Admin API isn't configured (missing SUPABASE_SERVICE_ROLE_KEY)." };
+  try {
+    const admin = getSupabaseAdminClient();
+    if (!admin) return { error: "Supabase Admin API isn't configured (missing SUPABASE_SERVICE_ROLE_KEY)." };
 
-  const newPassword = generateTempPassword();
-  const { error } = await admin.auth.admin.updateUserById(staffMember.auth_user_id, { password: newPassword });
-  if (error) return { error: error.message };
+    const newPassword = generateTempPassword();
+    const { error } = await admin.auth.admin.updateUserById(staffMember.auth_user_id, { password: newPassword });
+    if (error) return { error: error.message };
 
-  revalidatePath(`/company-setup/staff-access/${officeUserId}`);
-  return { newPassword };
+    revalidatePath(`/company-setup/staff-access/${officeUserId}`);
+    return { newPassword };
+  } catch (err) {
+    return { error: err instanceof Error ? `Could not reach Supabase: ${err.message}` : "Could not reach Supabase to set a new password." };
+  }
 }
