@@ -120,7 +120,7 @@ export async function updateContact(id: string, input: Partial<Pick<Contact, "fi
 
 export async function createContact(input: Omit<Contact, "id" | "company_id" | "created_at">): Promise<Contact> {
   const record: Contact = {
-    id: `ct-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...input,
@@ -232,7 +232,12 @@ export async function createOfficeUser(
   actorName?: string
 ): Promise<OfficeUser> {
   const record: OfficeUser = {
-    id: `ou-${randomUUID()}`,
+    // A real UUID, not a prefixed string — office_users.id is a Postgres
+    // `uuid` column against a real Supabase project, which rejects
+    // anything else (the same class of issue the seed data's readable
+    // "ou-1"-style IDs hit, fixed there by remapping at seed time; this
+    // function runs live, so it must generate a valid UUID directly).
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     auth_user_id: null,
@@ -324,7 +329,7 @@ export async function setSectionPermission(
       existing.updated_at = now;
     } else {
       store.sectionPermissions.push({
-        id: `sp-${randomUUID()}`,
+        id: randomUUID(),
         company_id: getCurrentCompanyId(),
         office_user_id: officeUserId,
         section_key: sectionKey,
@@ -476,7 +481,7 @@ export async function createTimeOffEntry(input: {
   const now = new Date().toISOString();
   const employee = (await listEmployees()).find((e) => e.id === input.employee_id);
   const record: TimeOffEntry = {
-    id: `to-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     employee_id: input.employee_id,
     start_date: input.start_date,
@@ -671,7 +676,7 @@ export async function listWorkTypes(): Promise<WorkTypeRecord[]> {
 
 export async function createWorkType(name: string): Promise<WorkTypeRecord> {
   const record: WorkTypeRecord = {
-    id: `wt-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     name: name.trim(),
     active: true,
@@ -718,7 +723,7 @@ export async function getOrCreateProjectScheduleDay(projectId: string, date: str
   if (existing) return existing;
   const now = new Date().toISOString();
   const record: ProjectScheduleDay = {
-    id: `psd-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     project_id: projectId,
     schedule_date: date,
@@ -820,7 +825,7 @@ export async function createSchedulePickupItem(input: {
 }): Promise<SchedulePickupItem> {
   const now = new Date().toISOString();
   const record: SchedulePickupItem = {
-    id: `spi-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     project_schedule_day_id: input.project_schedule_day_id,
     description: input.description,
@@ -923,7 +928,7 @@ export async function createActualLaborEntry(input: {
   // entry's cost (see lib/labor-cost.ts) stays fixed forever.
   const employee = (await listEmployees()).find((e) => e.id === input.employee_id);
   const record: ActualLaborEntry = {
-    id: `al-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     employee_id: input.employee_id,
     project_id: input.project_id,
@@ -1023,7 +1028,7 @@ export async function confirmDay(workDate: string, actorName: string, notes?: st
     logActivity({ action: "Confirmed day", actor_name: actorName, detail: `Schedule confirmed for ${workDate}${notes ? ` — ${notes}` : ""}` });
     return existing;
   }
-  const record: DailyScheduleConfirmation = { id: `dsc-${randomUUID()}`, company_id: getCurrentCompanyId(), work_date: workDate, confirmed_by: actorName, confirmed_at: now, notes };
+  const record: DailyScheduleConfirmation = { id: randomUUID(), company_id: getCurrentCompanyId(), work_date: workDate, confirmed_by: actorName, confirmed_at: now, notes };
   store.dailyScheduleConfirmations.push(record);
   logActivity({ action: "Confirmed day", actor_name: actorName, detail: `Schedule confirmed for ${workDate}${notes ? ` — ${notes}` : ""}` });
   return record;
@@ -1082,7 +1087,7 @@ export async function createMaterialRateItem(
   input: Omit<MaterialRateItem, "id" | "company_id" | "created_at" | "active"> & { active?: boolean }
 ): Promise<MaterialRateItem> {
   const record: MaterialRateItem = {
-    id: `mri-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     active: input.active ?? true,
     created_at: new Date().toISOString(),
@@ -1103,7 +1108,7 @@ export async function createPricingFormula(
   input: Omit<PricingFormula, "id" | "company_id" | "created_at" | "active"> & { active?: boolean }
 ): Promise<PricingFormula> {
   const record: PricingFormula = {
-    id: `pf-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     active: input.active ?? true,
     created_at: new Date().toISOString(),
@@ -1127,7 +1132,7 @@ export async function addPricingFormulaComponent(input: {
   notes?: string;
 }): Promise<PricingFormulaComponent> {
   const record: PricingFormulaComponent = {
-    id: `pfc-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...input,
@@ -1210,7 +1215,7 @@ export async function createInvoice(
   }
 ): Promise<Invoice> {
   const record: Invoice = {
-    id: `inv-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     status: input.status ?? "Needed",
     source: input.source ?? "Manual Entry",
@@ -1264,7 +1269,7 @@ export async function createEmailRoutingRule(
   input: Omit<EmailRoutingRule, "id" | "company_id" | "created_at" | "active"> & { active?: boolean }
 ): Promise<EmailRoutingRule> {
   const record: EmailRoutingRule = {
-    id: `err-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     active: input.active ?? true,
     created_at: new Date().toISOString(),
@@ -1298,7 +1303,7 @@ export async function setEmailRoutingRuleActive(id: string, active: boolean): Pr
 
 function logActivity(entry: Omit<ActivityLogEntry, "id" | "company_id" | "created_at">) {
   const record: ActivityLogEntry = {
-    id: `act-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...entry,
@@ -1342,7 +1347,7 @@ export async function createJobRequest(input: {
   const client = sb();
   const now = new Date().toISOString();
   const record: JobRequest = {
-    id: `jr-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     building_id: input.building_id,
     contact_id: input.contact_id,
@@ -1397,7 +1402,7 @@ async function insertProjectFromJobRequest(
   const building = store.buildings.find((b) => b.id === jr.building_id);
   const now = new Date().toISOString();
   const project: Project = {
-    id: `p-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     building_id: jr.building_id,
     job_request_id: jr.id,
@@ -1690,7 +1695,7 @@ export async function createScheduleAssignment(input: {
   if (!employee) throw new Error("Employee not found");
   const rate_multiplier = input.time_and_half ? 1.5 : 1.0;
   const record: ScheduleAssignment = {
-    id: `sa-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     project_id: input.project_id,
     employee_id: input.employee_id,
@@ -1753,7 +1758,7 @@ export async function createProjectCrewRequirement(input: {
   quantity: number;
 }): Promise<ProjectCrewRequirement> {
   const record: ProjectCrewRequirement = {
-    id: `pcr-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     project_id: input.project_id,
     schedule_date: input.schedule_date ?? null,
@@ -1772,7 +1777,7 @@ export async function createProjectCrewRequirement(input: {
 
 export async function createProjectMaterial(input: Omit<ProjectMaterial, "id" | "company_id" | "created_at">): Promise<ProjectMaterial> {
   const record: ProjectMaterial = {
-    id: `pm-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...input,
@@ -1801,7 +1806,7 @@ export async function updateProjectMaterialStatus(id: string, status: ProjectMat
 export async function createTask(input: Omit<Task, "id" | "company_id" | "created_at" | "updated_at" | "status"> & { status?: TaskStatus }): Promise<Task> {
   const now = new Date().toISOString();
   const record: Task = {
-    id: `t-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     status: input.status ?? "To Do",
     created_at: now,
@@ -1836,7 +1841,7 @@ export async function updateTaskStatus(id: string, status: TaskStatus): Promise<
 export async function createLead(input: Omit<NewBusinessLead, "id" | "company_id" | "created_at" | "updated_at" | "status"> & { status?: NewBusinessLead["status"] }): Promise<NewBusinessLead> {
   const now = new Date().toISOString();
   const record: NewBusinessLead = {
-    id: `lead-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     status: input.status ?? "New",
     created_at: now,
@@ -1874,7 +1879,7 @@ export async function convertLeadToClient(leadId: string): Promise<ClientCompany
   if (!lead) throw new Error("Lead not found");
   const now = new Date().toISOString();
   const client_company: ClientCompany = {
-    id: `cc-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     name: lead.company_name,
     type: "Property Management",
@@ -1900,7 +1905,7 @@ export async function convertLeadToClient(leadId: string): Promise<ClientCompany
 
 export async function createProjectNote(input: { project_id: string; author_name?: string; body: string }): Promise<ProjectNote> {
   const record: ProjectNote = {
-    id: `pn-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     project_id: input.project_id,
     author_name: input.author_name,
@@ -1927,7 +1932,7 @@ export async function createEmployee(
 ): Promise<Employee> {
   const { capabilities, ...rest } = input;
   const record: Employee = {
-    id: `e-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...rest,
@@ -1937,13 +1942,13 @@ export async function createEmployee(
     const { error } = await client.from("employees").insert(record);
     if (error) throw error;
     if (capabilities && capabilities.length > 0) {
-      const rows = capabilities.map((capability) => ({ id: `es-${randomUUID()}`, employee_id: record.id, capability }));
+      const rows = capabilities.map((capability) => ({ id: randomUUID(), employee_id: record.id, capability }));
       await client.from("employee_skills").insert(rows);
     }
   } else {
     getStore().employees.push(record);
     for (const capability of capabilities ?? []) {
-      getStore().employeeSkills.push({ id: `es-${randomUUID()}`, employee_id: record.id, capability });
+      getStore().employeeSkills.push({ id: randomUUID(), employee_id: record.id, capability });
     }
   }
   logActivity({ action: "Added staff member", related_type: "employee", related_id: record.id, detail: `${record.first_name} ${record.last_name}` });
@@ -1952,7 +1957,7 @@ export async function createEmployee(
 
 export async function createClientCompanyRecord(input: Omit<ClientCompany, "id" | "company_id" | "created_at">): Promise<ClientCompany> {
   const record: ClientCompany = {
-    id: `cc-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...input,
@@ -1970,7 +1975,7 @@ export async function createClientCompanyRecord(input: Omit<ClientCompany, "id" 
 
 export async function createBuildingRecord(input: Omit<Building, "id" | "company_id" | "created_at">): Promise<Building> {
   const record: Building = {
-    id: `b-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...input,
@@ -2024,7 +2029,7 @@ export async function createPhotoRecord(input: {
   storage_unavailable?: boolean;
 }): Promise<PhotoRecord> {
   const record: PhotoRecord = {
-    id: `ph-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...input,
@@ -2088,7 +2093,7 @@ export async function createProjectDrawing(input: {
   }
 
   const record: ProjectDrawing = {
-    id: `pd-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     project_id: input.project_id,
     drawing_name: supersedes?.drawing_name ?? input.drawing_name,
@@ -2134,7 +2139,7 @@ export async function saveCompanySetupAnswer(section: string, questionKey: strin
       existing.updated_at = now;
     } else {
       store.companySetupAnswers.push({
-        id: `csa-${randomUUID()}`,
+        id: randomUUID(),
         company_id: getCurrentCompanyId(),
         section,
         question_key: questionKey,
@@ -2180,7 +2185,7 @@ export async function createAgendaEvent(input: {
 }): Promise<AgendaEvent> {
   const now = new Date().toISOString();
   const record: AgendaEvent = {
-    id: `ag-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     owner_user_id: input.owner_user_id,
     title: input.title,
@@ -2279,7 +2284,7 @@ export async function upsertGoogleAgendaEvent(input: {
     return { ...existing, ...input, updated_at: now };
   }
   const record: AgendaEvent = {
-    id: `ag-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     owner_user_id: input.owner_user_id,
     title: input.title,
@@ -2351,7 +2356,7 @@ export async function createQuickBooksConnection(input: {
 
   const now = new Date().toISOString();
   const record: QuickBooksConnection = {
-    id: `qbc-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     realm_id: input.realm_id,
     access_token: input.access_token,
@@ -2484,7 +2489,7 @@ export async function createQuickBooksCustomerMapping(input: {
     throw new Error("This QuickBooks customer is already linked to a different management company.");
   }
   const record: QuickBooksCustomerMapping = {
-    id: `qbcm-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     client_company_id: input.client_company_id,
     qb_customer_id: input.qb_customer_id,
@@ -2547,7 +2552,7 @@ export async function createQuickBooksDocument(input: {
   }
   const now = new Date().toISOString();
   const record: QuickBooksDocument = {
-    id: `qbd-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     project_id: input.project_id,
     qb_realm_id: input.qb_realm_id,
@@ -2626,7 +2631,7 @@ export async function hasProcessedQuickBooksWebhookEvent(eventId: string): Promi
 export async function recordQuickBooksWebhookEvent(input: { event_id: string; payload_summary: string }): Promise<QuickBooksWebhookEvent> {
   const now = new Date().toISOString();
   const record: QuickBooksWebhookEvent = {
-    id: `qbwe-${randomUUID()}`,
+    id: randomUUID(),
     event_id: input.event_id,
     received_at: now,
     processed_at: now,
@@ -2669,7 +2674,7 @@ export async function logQuickBooksSyncEvent(input: {
   initiated_by?: string;
 }): Promise<void> {
   const record: QuickBooksSyncLogEntry = {
-    id: `qbsl-${randomUUID()}`,
+    id: randomUUID(),
     company_id: getCurrentCompanyId(),
     created_at: new Date().toISOString(),
     ...input,
