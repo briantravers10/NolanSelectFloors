@@ -1,21 +1,28 @@
-// Real-auth readiness abstraction (build 11) — mirrors the exact
-// "architected but not live" pattern used elsewhere in this app
-// (lib/routing.ts, lib/google-calendar.ts, lib/quickbooks.ts before it went
-// live): the boundary is correct and clearly marked now, so activating it
-// later is a small, well-defined follow-up, not a rewrite. See README
-// "Activating Real Login" for exactly what changes once a real Supabase
-// project with Auth enabled is connected.
+// Real-auth readiness abstraction (build 12 — Activating Real Login).
+// Mirrors the exact "architected but not live" pattern used elsewhere in
+// this app (lib/routing.ts, lib/google-calendar.ts, lib/quickbooks.ts
+// before it went live) — but as of build 12, the real branch below is a
+// live code path, not a sketch, wired to real Supabase Auth via
+// lib/supabase/server.ts (@supabase/ssr). See README "Activating Real
+// Login" for exactly what this does and the manual test checklist for
+// verifying it once deployed (this sandboxed dev session has no network
+// access to *.supabase.co, so it could only be verified by code review —
+// see that section for what still needs a live smoke test).
 //
-// getCurrentSession() is the ONE thing every page/action should eventually
-// call instead of lib/current-user.ts's dev "acting as" cookie mechanism.
-// Today it always falls back to that dev mechanism, because
-// isRealAuthConfigured() is always false in this environment (no real
-// Supabase project exists to test against — see README). Nothing in this
-// codebase calls getCurrentSession() yet; lib/current-user.ts's
-// getActingUser()/getCurrentCompanyId() remain the live call sites
-// everywhere until the swap described below happens.
+// getCurrentSession() is the ONE function real pages/actions call instead
+// of lib/current-user.ts's dev "acting as" cookie mechanism. Note the
+// (intentional) circular import with lib/current-user.ts: when real auth
+// ISN'T configured, this delegates to current-user.ts's getActingUser()
+// (aliased below) for the demo fallback; when real auth IS configured,
+// current-user.ts's getActingUser() delegates the other way, to this
+// file's real-session branch. Each direction is only ever exercised on one
+// side of the `isRealAuthConfigured()` branch, so there's no runtime
+// recursion — see the comment on getActingUser() in current-user.ts.
+import { createSupabaseServerClient } from "./supabase/server";
 import { getSupabaseClient } from "./supabaseClient";
-import { getActingUser, getCurrentCompanyId, type ActingUser } from "./current-user";
+import { getOfficeUserByAuthId } from "./db";
+import { getActingUser as getDevActingUser, getCurrentCompanyId, type ActingUser } from "./current-user";
+import type { OfficeUser } from "./types";
 
 export interface Session {
   /** true when this session came from a real Supabase Auth user; false
@@ -40,32 +47,45 @@ export function isRealAuthConfigured(): boolean {
   return getSupabaseClient() !== null && process.env.NSF_REAL_AUTH_ENABLED === "true";
 }
 
+function officeUserToActingUser(u: OfficeUser): ActingUser {
+  return { id: u.id, fullName: u.full_name, role: u.role, accessRole: u.access_role };
+}
+
 /**
  * The one function every page/action would call for "who is logged in".
- * Falls back to the existing dev "acting as" cookie mechanism unchanged
- * when real auth isn't configured (current, live behavior everywhere in
- * this codebase today). When real auth IS configured, this would instead:
- *   1. Read the Supabase session cookie (via @supabase/ssr's
- *      createServerClient, using the request's cookies()).
- *   2. Look up the matching office_users row by auth_user_id.
- *   3. Return null (unauthenticated) instead of ever defaulting to the
- *      Owner persona, unlike the demo fallback below.
- * See README "Activating Real Login" for the exact steps — this function
- * is the single place that follow-up work touches.
+ * Falls back to the existing dev "acting as" cookie mechanism, completely
+ * unchanged, when real auth isn't configured — this is the exact same
+ * object shape/values current-user.ts's getActingUser() has always
+ * produced for the demo case (see README "Activating Real Login").
+ *
+ * When real auth IS configured:
+ *   1. Reads the Supabase session cookie via lib/supabase/server.ts's
+ *      createSupabaseServerClient() (@supabase/ssr's createServerClient).
+ *   2. Looks up the matching office_users row by auth_user_id
+ *      (lib/db.ts#getOfficeUserByAuthId()).
+ *   3. Returns null — never a default Owner persona, unlike the demo
+ *      fallback above — when there's no Supabase Auth session, or a
+ *      session exists but no office_users row matches it yet (a real
+ *      account created without a proper office_users mapping; shouldn't
+ *      normally happen since "Add Staff Account" always sets
+ *      auth_user_id, but this is the honest "no matching staff account"
+ *      state instead of silently defaulting to Owner or crashing).
  */
 export async function getCurrentSession(): Promise<Session | null> {
   if (!isRealAuthConfigured()) {
-    return { isRealAuth: false, companyId: getCurrentCompanyId(), user: await getActingUser() };
+    return { isRealAuth: false, companyId: getCurrentCompanyId(), user: await getDevActingUser() };
   }
-  // Real implementation goes here once a Supabase project with Auth
-  // enabled exists — intentionally unreachable today. Sketch:
-  //
-  //   const cookieStore = await cookies();
-  //   const supabase = createServerClient(url, anonKey, { cookies: cookieStore });
-  //   const { data: { user } } = await supabase.auth.getUser();
-  //   if (!user) return null;
-  //   const officeUser = (await listOfficeUsers()).find((u) => u.auth_user_id === user.id);
-  //   if (!officeUser) return null;
-  //   return { isRealAuth: true, companyId: officeUser.company_id, user: toActingUser(officeUser) };
-  return null;
+
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null; // env vars vanished between the isRealAuthConfigured() check and here — treat as unauthenticated.
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const officeUser = await getOfficeUserByAuthId(user.id);
+  if (!officeUser) return null; // real session, no matching staff account — see doc comment above.
+
+  return { isRealAuth: true, companyId: officeUser.company_id, user: officeUserToActingUser(officeUser) };
 }

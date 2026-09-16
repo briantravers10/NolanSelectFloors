@@ -196,6 +196,17 @@ export async function getOfficeUser(id: string): Promise<OfficeUser | undefined>
   return (await listOfficeUsers()).find((u) => u.id === id);
 }
 
+/**
+ * Looks up the office_users row matching a real Supabase Auth user id
+ * (build 12 — Activating Real Login). The one lookup lib/auth.ts's
+ * getCurrentSession() needs once a real session cookie resolves to a
+ * Supabase Auth user — see supabase/migrations/0012_permissions_and_auth.sql
+ * (auth_user_id) and 0013_auth_user_id_index.sql (the lookup index).
+ */
+export async function getOfficeUserByAuthId(authUserId: string): Promise<OfficeUser | undefined> {
+  return (await listOfficeUsers()).find((u) => u.auth_user_id === authUserId);
+}
+
 // ---------------------------------------------------------------------
 // STAFF ACCOUNTS (build 11) — office_users create/update + the new
 // section_permissions grid. See lib/permissions.ts and README "Permissions
@@ -228,7 +239,7 @@ export async function createOfficeUser(
 
 export async function updateOfficeUser(
   id: string,
-  patch: Partial<Pick<OfficeUser, "full_name" | "email" | "role" | "access_role" | "active" | "is_owner">>,
+  patch: Partial<Pick<OfficeUser, "full_name" | "email" | "role" | "access_role" | "active" | "is_owner" | "auth_user_id">>,
   actorName?: string
 ): Promise<void> {
   const before = await getOfficeUser(id);

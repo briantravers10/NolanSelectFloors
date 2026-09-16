@@ -2,6 +2,16 @@ import { cookies } from "next/headers";
 import { COMPANY_ID } from "./seed-data";
 import { getStore } from "./store";
 import { getSupabaseClient } from "./supabaseClient";
+// Circular import with lib/auth.ts, intentional — see the doc comment on
+// getActingUser() below. auth.ts's demo-mode branch calls this file's
+// getActingUser() (aliased there); this file's real-auth branch calls
+// auth.ts's isRealAuthConfigured()/getCurrentSession(). The two directions
+// are mutually exclusive on the isRealAuthConfigured() check itself, so
+// there's no runtime recursion — only a module-graph cycle, which
+// Next.js/webpack's live ES module bindings handle correctly as long as
+// (as here) the imported functions are only ever called inside another
+// function's body, never at module-evaluation time.
+import { isRealAuthConfigured, getCurrentSession } from "./auth";
 import type { AccessRole, OfficeUser } from "./types";
 
 // Note: this file intentionally does NOT import from lib/db.ts (which
@@ -75,12 +85,46 @@ export async function listActingUserOptions(): Promise<ActingUser[]> {
   return [...estimators, ownerActingUser()];
 }
 
+/** Sentinel ActingUser id for "a real Supabase Auth session exists, but no
+ * office_users row's auth_user_id matches it" — see lib/auth.ts
+ * getCurrentSession() and README "Activating Real Login". Deliberately
+ * matches no real office_users.id and isn't OWNER_ACTING_ID, so every
+ * permission check (lib/permissions.ts, canViewLaborCost/etc. below)
+ * naturally resolves this to zero access instead of a special case. */
+export const NO_MATCHING_ACCOUNT_ID = "no-matching-account";
+
+function noMatchingAccountUser(): ActingUser {
+  return { id: NO_MATCHING_ACCOUNT_ID, fullName: "No matching staff account", role: "estimator", accessRole: "field_employee" };
+}
+
 /**
- * Reads the dev "acting as" cookie (server components / server actions
- * only). Defaults to the owner/manager persona so reassign/release actions
- * are reachable out of the box in the demo.
+ * The one function almost every page/action in this app calls for "who is
+ * acting right now" (build 12 — Activating Real Login).
+ *
+ * When real auth isn't configured (`isRealAuthConfigured()` false — the
+ * case everywhere today with no env vars / NSF_REAL_AUTH_ENABLED set),
+ * this is 100% unchanged from before: it reads the dev "acting as" cookie
+ * directly (server components / server actions only) and defaults to the
+ * owner/manager persona so reassign/release actions are reachable out of
+ * the box in the demo.
+ *
+ * When real auth IS configured, this instead goes through
+ * lib/auth.ts#getCurrentSession() — which reads the real Supabase Auth
+ * session and resolves it to the matching office_users row — and returns
+ * a safe, fully-locked-out persona (noMatchingAccountUser(), NOT the
+ * Owner default above) if no session or no matching account exists,
+ * rather than ever silently granting Owner access. Note the circular
+ * import with lib/auth.ts: this function is exactly what auth.ts's demo
+ * fallback branch calls (see its comment) — the two directions are
+ * mutually exclusive on the isRealAuthConfigured() check, so there's no
+ * runtime recursion.
  */
 export async function getActingUser(): Promise<ActingUser> {
+  if (isRealAuthConfigured()) {
+    const session = await getCurrentSession();
+    return session ? session.user : noMatchingAccountUser();
+  }
+
   const jar = await cookies();
   const id = jar.get(ACTING_USER_COOKIE)?.value;
   if (!id || id === OWNER_ACTING_ID) return ownerActingUser();
