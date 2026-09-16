@@ -1291,6 +1291,196 @@ how much of the above ships — the manual "+ New Invoice" form and the
 `route_by = 'Manual/Case-by-Case'` rule option are permanent parts of the
 workflow, not just a placeholder until automation lands.
 
+## QuickBooks Online Integration (build 10)
+
+Connects the flooring dashboard (jobs, schedule, crew, labor, COI,
+materials, completed-job history) to QuickBooks Online (accounting:
+customers, estimates, invoices, payments) **without duplicating QuickBooks'
+own job**. Follows the exact "architected but not live" pattern already
+used by `lib/routing.ts` (real driving directions behind an env-var check)
+and `lib/google-calendar.ts` (a real OAuth-shaped sync function that's
+honestly inert with no credentials): every function in `lib/quickbooks.ts`
+checks its configuration first, never throws an unhandled error, and never
+fakes a success response. **No live Intuit OAuth handshake, sandbox API
+call, or webhook has been exercised in this build** — there are no
+credentials in this environment to do so with. Everything described below
+as "real" is written to work correctly the moment credentials are added; it
+just hasn't been (and can't be) executed here.
+
+### What's built
+
+- **Connection**: Settings → Company Setup → Integrations → QuickBooks
+  (`app/company-setup/quickbooks/page.tsx`). Shows Not Connected / Connect
+  QuickBooks (real Intuit OAuth 2.0 authorization-code redirect, see
+  `app/api/quickbooks/auth/route.ts`), or once connected: Company, Environment,
+  Connected, Last Sync, Sync Now, Disconnect. When `QUICKBOOKS_CLIENT_ID`/
+  `_CLIENT_SECRET`/`_REDIRECT_URI` aren't set, the Connect button shows a
+  clear "isn't configured yet" message instead of a broken redirect.
+- **OAuth 2.0 callback**: `app/api/quickbooks/callback/route.ts` verifies a
+  CSRF `state` cookie, exchanges the code for tokens
+  (`lib/quickbooks.ts#exchangeCodeForTokens`), and persists the connection
+  via `lib/db.ts`. Access/refresh tokens are stored **server-side only** —
+  never read by a client component — via the same Supabase-or-in-memory
+  data layer used everywhere else in this app; a real Supabase/Postgres
+  project already encrypts these at rest, so no separate custom encryption
+  layer was added on top (see `supabase/migrations/0011_quickbooks_integration.sql`).
+- **Token refresh**: `lib/quickbooks.ts#refreshAccessToken` — a real,
+  correct implementation of the refresh-token grant. Every API call in
+  `lib/quickbooks.ts` auto-refreshes an expired token once and persists the
+  rotated refresh token (Intuit rotates it on every refresh); a failed
+  refresh flags the connection `needs_reconnect`, surfaced on the
+  Integrations page as "QuickBooks Connection Needs Attention" / "Reconnect"
+  rather than a broken page.
+- **Customer mapping + matching UI**: `quickbooks_customer_mappings` links
+  a `client_companies` row to a QuickBooks Customer. The matching screen
+  shows fuzzy name-similarity "possible matches"
+  (`lib/quickbooks.ts#fuzzyNameSimilarity` / `findCustomerMatchCandidates`)
+  with **Link / Not the Same / Create New QuickBooks Customer** — never
+  auto-linked. With no live connection, the screen renders an honest
+  "Connect QuickBooks to see live customer matches" state rather than
+  fabricated candidates (see `lib/seed-data.ts`); the Link/Create actions
+  still call the real service layer, which returns a clear "not connected"
+  result.
+- **Job-centered documents**: `quickbooks_documents` maps every QB
+  Estimate/Invoice to an internal `project_id`, one-to-many (a job can have
+  multiple estimates and invoices — never a single
+  `estimate_number`/`invoice_number` field on `projects`).
+- **Prepare Estimate/Invoice**: `app/projects/[id]/quickbooks/prepare-estimate`
+  and `prepare-invoice` — an editable review screen (customer, job, line
+  items, total) that must be explicitly submitted before
+  `createEstimate`/`createInvoice` is ever called. **There is no "Send"
+  feature anywhere in this app** — creating/saving is the only action this
+  app performs against QuickBooks; sending a document to a customer is
+  exclusively done by a human inside QuickBooks itself. Job completion
+  shows a "Prepare QuickBooks Invoice" prompt rather than auto-creating an
+  invoice.
+- **Link Existing Document**: `app/projects/[id]/quickbooks/link` — looks
+  up a QB Estimate/Invoice by its internal ID and maps it to the job.
+  Duplicate-mapping protection: a unique index on
+  `(qb_realm_id, entity_type, qb_entity_id)`, backed by an application-level
+  pre-check in `lib/db.ts#createQuickBooksDocument` so a retried call after
+  a timeout can't silently create a second mapping.
+- **Display**: the Project page's QuickBooks card lists linked documents
+  (number, amount, status), each clickable via the best available deep
+  link (see "Deep links" below). View Schedule and Completed Job Summary
+  show the same documents **read-only**, inherited automatically via
+  `project_id` — no manual entry fields on Create/Edit Schedule, no
+  QuickBooks settings/editing controls on View Schedule
+  (`lib/schedule.ts` threads `qbDocuments` through `ScheduleJobRow` and
+  `CompletedJobSummary`; `components/quickbooks/QuickBooksDocumentList.tsx`
+  is the one shared renderer).
+- **Financial Summary**: added to the Project page and Completed Job
+  Summary (`lib/financials.ts#computeFinancialSummary`,
+  `components/quickbooks/FinancialSummaryCard.tsx`) — Estimated/Contract
+  Value, Invoiced, Paid, Outstanding (from QuickBooks), Labor Cost (from
+  the existing `lib/labor-cost.ts`), Other Tracked Costs, Total Tracked
+  Cost, Gross Job Profit, Gross Margin. **Labor cost and QuickBooks invoice
+  amounts are never computed from each other** — shown side by side,
+  gated by the same `canViewLaborCost`/`canViewJobFinancials` tier so pay
+  rates never leak onto a customer-facing estimate/invoice screen. When
+  QuickBooks isn't connected, Invoiced/Paid/Outstanding show an honest "Not
+  connected to QuickBooks" state instead of a misleading `$0`.
+- **Webhooks**: `app/api/quickbooks/webhook/route.ts` verifies the
+  `intuit-signature` header (HMAC-SHA256 keyed with
+  `QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN`) against the **raw** body before
+  doing anything else, rejecting unverified requests (401) or an
+  unconfigured verifier (503). Idempotent: `quickbooks_webhook_events`
+  records each event id before acting on it, so a redelivered notification
+  is recognized and skipped.
+- **Manual sync + Sync Log**: "Sync Now" (`app/company-setup/quickbooks/actions.ts#syncNowAction`)
+  refreshes every linked document's status/amount. Every meaningful action
+  (connected, disconnected, customer linked/created, estimate/invoice
+  created/linked, sync run, webhook processed) is logged to both
+  `quickbooks_sync_log` (admin-only view at
+  `/company-setup/quickbooks/sync-log`) and the existing `activity_log`.
+- **Permissions** (`lib/current-user.ts`, reusing the exact `access_role`
+  concept from Labor Cost Tracking): Owner/Admin — everything, including
+  connecting/disconnecting; Office Staff — view + create/link documents +
+  sync, but **not** manage the connection itself; Field/Employee — no
+  access, consistent with pay rates already being hidden from this role.
+
+### Research findings (verified via web search, September 2026)
+
+- **OAuth 2.0**: authorization URL `https://appcenter.intuit.com/connect/oauth2`,
+  token URL `https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer`.
+  Access tokens expire in ~1 hour; refresh tokens are valid ~100 days and
+  are **rotated on every refresh**. Sources: developer.intuit.com "Set up
+  OAuth 2.0" / "OAuth 2.0 Playground", help.developer.intuit.com "OAuth 2.0".
+- **API base URLs**: sandbox
+  `https://sandbox-quickbooks.api.intuit.com/v3/company/{realmId}`,
+  production `https://quickbooks.api.intuit.com/v3/company/{realmId}`.
+  Customer/Estimate/Invoice all support `POST /{entity}` (create),
+  `GET /{entity}/{id}` (read), `GET /query?query=...` (SQL-like query).
+  Sources: developer.intuit.com "Develop" docs, help.developer.intuit.com
+  "Where do I find out base URL?".
+- **Webhooks**: signed with an `intuit-signature` header — HMAC-SHA256 of
+  the raw body, keyed with the app's Webhooks "Verifier Token" from the
+  Intuit Developer portal, base64-encoded.
+  **Important**: Intuit has been retiring the legacy `eventNotifications`
+  envelope in favor of the CNCF CloudEvents v1.0 format, with a cutover
+  deadline of **July 31, 2026** — already past as of this build (today:
+  September 2026). The signature mechanism is unaffected; only the
+  envelope shape changed. `lib/quickbooks.ts#parseWebhookPayload` handles
+  the CloudEvents shape as primary, with a defensive fallback parse of the
+  legacy shape. Sources: help.developer.intuit.com "QuickBooks Webhooks";
+  the Intuit Developer blog post on this migration (blogs.intuit.com,
+  Nov 2025) could not be fetched directly in this environment — network
+  egress to that domain is blocked — so its details were corroborated via
+  independent secondary sources instead (Maesn "QuickBooks Webhooks to
+  CloudEvents Migration Guide"; the `intuit/SampleApp-Webhooks-Java-Cloudevents`
+  reference sample on GitHub).
+- **Deep links**: QuickBooks Online does not publish a versioned,
+  guaranteed "open this transaction by ID" API for third-party apps, but a
+  long-standing web app URL pattern is documented in practice across
+  Intuit community/help posts and integration vendors:
+  `https://qbo.intuit.com/app/invoice?txnId={txnId}` and the equivalent
+  `.../app/estimate?txnId={txnId}`, where `{txnId}` is the QBO entity's own
+  `Id` (exactly what this app stores as `qb_entity_id` — never fabricated
+  from the human-readable document number). This is the safest real link
+  available (`lib/quickbooks.ts#buildQuickBooksDeepLink`); the document
+  **number** is always shown alongside it regardless, since this format
+  isn't part of Intuit's versioned API surface and could change.
+- **Invoice payment status**: the QBO Invoice entity exposes `Balance`
+  (amount still owed) and `TotalAmt`, not a first-class status enum — this
+  app derives Paid/Partially Paid/Open from those two figures
+  (`lib/quickbooks.ts#mapQBInvoiceStatus`), and tracks a Partially Paid
+  invoice's `amount_paid` on the mapping row itself (Paid counts the full
+  amount automatically) rather than modeling per-payment records, per the
+  client's own simplification request.
+
+### Going live — exact steps
+
+1. **Create the Intuit Developer app**: sign in at
+   [developer.intuit.com](https://developer.intuit.com) with the business's
+   Intuit account, go to **Dashboard → Create an app → QuickBooks Online
+   and Payments**, and give it a name.
+2. **Get credentials**: in the app's **Keys & OAuth** tab, copy the
+   **Sandbox** Client ID/Secret first (to test safely) — Production
+   credentials appear on the same tab once the app passes Intuit's review.
+3. **Register the Redirect URI**: still on **Keys & OAuth**, add this
+   exact URL under Redirect URIs (matching this app's real deployed
+   domain): `https://<your-vercel-domain>/api/quickbooks/callback`.
+4. **Register the webhook**: in the app's **Webhooks** tab, set the target
+   URL to `https://<your-vercel-domain>/api/quickbooks/webhook`, subscribe
+   to the `Estimate` and `Invoice` entities, and copy the **Verifier
+   Token** shown there.
+5. **Set the environment variables** in the Vercel project's Settings →
+   Environment Variables:
+   - `QUICKBOOKS_CLIENT_ID` — from step 2
+   - `QUICKBOOKS_CLIENT_SECRET` — from step 2
+   - `QUICKBOOKS_REDIRECT_URI` — exactly the URL registered in step 3
+   - `QUICKBOOKS_ENVIRONMENT` — `sandbox` to start (see step 6)
+   - `QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN` — from step 4
+6. **Start in Sandbox**: leave `QUICKBOOKS_ENVIRONMENT=sandbox` and use the
+   Sandbox Client ID/Secret first. Connect to a free Sandbox company
+   (developer.intuit.com → **Sandboxes**) from Settings → Integrations →
+   QuickBooks, create a test estimate/invoice, and confirm Sync Now and
+   the webhook both behave as expected — **before** switching to
+   Production credentials and `QUICKBOOKS_ENVIRONMENT=production`.
+7. **Realm ID**: never set as an env var — it's returned by Intuit on the
+   OAuth callback (`realmId` query param) for whichever company the user
+   authorized, and stored per-connection in `quickbooks_connections`.
+
 ## Environment variables
 
 | Variable | Required? | Purpose |
@@ -1302,6 +1492,11 @@ workflow, not just a placeholder until automation lands.
 | `ROUTING_PROVIDER` | No | `google` or `mapbox` — enables live driving routes on the Haul-Away Run page |
 | `GOOGLE_MAPS_API_KEY` | No | Required when `ROUTING_PROVIDER=google` — get one at console.cloud.google.com (enable "Directions API") |
 | `MAPBOX_ACCESS_TOKEN` | No | Required when `ROUTING_PROVIDER=mapbox` — get one at account.mapbox.com/access-tokens |
+| `QUICKBOOKS_CLIENT_ID` | No | Intuit Developer app's Client ID — see "QuickBooks Online Integration" below |
+| `QUICKBOOKS_CLIENT_SECRET` | No | Intuit Developer app's Client Secret — server-side only, never sent to the browser |
+| `QUICKBOOKS_REDIRECT_URI` | No | Must exactly match a Redirect URI registered on the Intuit app |
+| `QUICKBOOKS_ENVIRONMENT` | No | `sandbox` (default) or `production` |
+| `QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN` | No | From the Intuit app's Webhooks subscription page — verifies `intuit-signature` |
 
 None of these are required to run, build, or deploy the app.
 
