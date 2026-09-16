@@ -30,6 +30,8 @@ import type {
   NewBusinessLead,
   OfficeUser,
   PhotoRecord,
+  SectionKey,
+  SectionPermission,
   PricingFormula,
   PricingFormulaComponent,
   Project,
@@ -94,10 +96,50 @@ export function buildSeedData() {
   // access_role (build 6) is the labor-cost/pay-rate visibility permission
   // tier — separate from `role` (estimator/manager) above, which only
   // governs bid claiming. See lib/types.ts ACCESS_ROLES / README.
+  // is_owner / auth_user_id added in 0012_permissions_and_auth.sql (build
+  // 11) — see lib/permissions.ts and README "Permissions & Staff Access".
+  // Sarah is the section-level Owner/Admin ("my friend" in the client's own
+  // words): unrestricted access to every section, not subject to the
+  // sectionPermissions grid below. auth_user_id stays null for everyone —
+  // there is no real Supabase Auth project connected yet (see lib/auth.ts).
   const officeUsers: OfficeUser[] = [
-    { id: "ou-1", company_id: COMPANY_ID, full_name: "Sarah Bennett", email: "sbennett@nolanselectfloors.com", role: "estimator", access_role: "owner_admin", active: true, created_at: "2021-01-11T00:00:00.000Z" },
-    { id: "ou-2", company_id: COMPANY_ID, full_name: "Emma Castillo", email: "ecastillo@nolanselectfloors.com", role: "estimator", access_role: "office_staff", active: true, created_at: "2021-06-04T00:00:00.000Z" },
-    { id: "ou-3", company_id: COMPANY_ID, full_name: "David Okoye", email: "dokoye@nolanselectfloors.com", role: "estimator", access_role: "field_employee", active: true, created_at: "2022-03-21T00:00:00.000Z" },
+    { id: "ou-1", company_id: COMPANY_ID, full_name: "Sarah Bennett", email: "sbennett@nolanselectfloors.com", role: "estimator", access_role: "owner_admin", active: true, created_at: "2021-01-11T00:00:00.000Z", auth_user_id: null, is_owner: true },
+    { id: "ou-2", company_id: COMPANY_ID, full_name: "Emma Castillo", email: "ecastillo@nolanselectfloors.com", role: "estimator", access_role: "office_staff", active: true, created_at: "2021-06-04T00:00:00.000Z", auth_user_id: null, is_owner: false },
+    { id: "ou-3", company_id: COMPANY_ID, full_name: "David Okoye", email: "dokoye@nolanselectfloors.com", role: "estimator", access_role: "field_employee", active: true, created_at: "2022-03-21T00:00:00.000Z", auth_user_id: null, is_owner: false },
+  ];
+
+  // ---------------------------------------------------------------------
+  // SECTION_PERMISSIONS (build 11) — per-nav-section View/None/Edit grants.
+  // No row for a (user, section) pair = 'none' (secure by default). Mirrors
+  // the seed in supabase/migrations/0012_permissions_and_auth.sql exactly,
+  // so demo mode and a connected Supabase project show the same scenario.
+  // ---------------------------------------------------------------------
+  const sectionPermUpdatedAt = "2026-01-05T00:00:00.000Z";
+  let sectionPermSeq = 0;
+  const sectionPermission = (officeUserId: string, sectionKey: SectionKey, accessLevel: SectionPermission["access_level"]): SectionPermission => ({
+    id: `sp-${++sectionPermSeq}`,
+    company_id: COMPANY_ID,
+    office_user_id: officeUserId,
+    section_key: sectionKey,
+    access_level: accessLevel,
+    updated_by: "Sarah Bennett",
+    updated_at: sectionPermUpdatedAt,
+  });
+  const sectionPermissions: SectionPermission[] = [
+    // Emma Castillo — office estimator: edit access to most operational
+    // sections, view-only on Company Setup / QuickBooks (connection
+    // management itself stays Owner/Admin-only via the existing
+    // access_role gate — see lib/current-user.ts canManageQuickBooksConnection).
+    ...(["dashboard", "clients", "buildings", "job_requests", "projects", "schedule", "staff", "materials", "pricing", "invoices", "tasks", "new_business", "reports"] as SectionKey[]).map(
+      (key) => sectionPermission("ou-2", key, "edit")
+    ),
+    sectionPermission("ou-2", "company_setup", "view"),
+    sectionPermission("ou-2", "quickbooks", "view"),
+    // David Okoye — the "project manager only needs to see certain things"
+    // persona the client described: view-only, and only on a subset
+    // (Dashboard, Schedule, Projects, Tasks). Everything else defaults to
+    // 'none' — no row.
+    ...(["dashboard", "schedule", "projects", "tasks"] as SectionKey[]).map((key) => sectionPermission("ou-3", key, "view")),
   ];
 
   // ---------------------------------------------------------------------
@@ -1203,6 +1245,7 @@ export function buildSeedData() {
     quickbooksDocuments,
     quickbooksWebhookEvents,
     quickbooksSyncLog,
+    sectionPermissions,
     weekStart: isoDate(monday),
   };
 }

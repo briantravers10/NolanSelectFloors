@@ -62,6 +62,9 @@ import type {
   ScheduleAssignment,
   SchedulePickupItem,
   SchedulePickupStatus,
+  SectionAccessLevel,
+  SectionKey,
+  SectionPermission,
   StaffCapability,
   Task,
   TaskStatus,
@@ -191,6 +194,130 @@ export async function listOfficeUsers(): Promise<OfficeUser[]> {
 
 export async function getOfficeUser(id: string): Promise<OfficeUser | undefined> {
   return (await listOfficeUsers()).find((u) => u.id === id);
+}
+
+// ---------------------------------------------------------------------
+// STAFF ACCOUNTS (build 11) — office_users create/update + the new
+// section_permissions grid. See lib/permissions.ts and README "Permissions
+// & Staff Access". Owner/Admin-only from the caller side (app/company-setup
+// /staff-access/actions.ts checks this before calling in).
+// ---------------------------------------------------------------------
+
+export async function createOfficeUser(
+  input: Omit<OfficeUser, "id" | "company_id" | "created_at" | "auth_user_id" | "is_owner">,
+  actorName?: string
+): Promise<OfficeUser> {
+  const record: OfficeUser = {
+    id: `ou-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    created_at: new Date().toISOString(),
+    auth_user_id: null,
+    is_owner: false,
+    ...input,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("office_users").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().officeUsers.push(record);
+  }
+  logActivity({ action: "Added staff account", related_type: "office_user", related_id: record.id, actor_name: actorName, detail: `${record.full_name}${record.email ? ` <${record.email}>` : ""} — ${record.access_role}` });
+  return record;
+}
+
+export async function updateOfficeUser(
+  id: string,
+  patch: Partial<Pick<OfficeUser, "full_name" | "email" | "role" | "access_role" | "active" | "is_owner">>,
+  actorName?: string
+): Promise<void> {
+  const before = await getOfficeUser(id);
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("office_users").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const user = getStore().officeUsers.find((u) => u.id === id);
+    if (user) Object.assign(user, patch);
+  }
+  logActivity({
+    action: "Updated staff account",
+    related_type: "office_user",
+    related_id: id,
+    actor_name: actorName,
+    detail: `${before?.full_name ?? id}: ${JSON.stringify(patch)}`,
+  });
+}
+
+export async function listSectionPermissions(officeUserId?: string): Promise<SectionPermission[]> {
+  const client = sb();
+  if (client) {
+    let query = client.from("section_permissions").select("*");
+    if (officeUserId) query = query.eq("office_user_id", officeUserId);
+    const { data, error } = await query;
+    if (!error && data) return data as SectionPermission[];
+  }
+  const all = getStore().sectionPermissions;
+  return officeUserId ? all.filter((p) => p.office_user_id === officeUserId) : [...all];
+}
+
+/**
+ * Sets (creates or updates) one office_user's access level for one
+ * section. Audit-logged with the old and new value via the existing
+ * activity_log pattern (see README "Permissions & Staff Access" ->
+ * "Audit logging").
+ */
+export async function setSectionPermission(
+  officeUserId: string,
+  sectionKey: SectionKey,
+  accessLevel: SectionAccessLevel,
+  actorName?: string
+): Promise<void> {
+  const existing = (await listSectionPermissions(officeUserId)).find((p) => p.section_key === sectionKey);
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client
+      .from("section_permissions")
+      .upsert(
+        {
+          id: existing?.id ?? randomUUID(),
+          company_id: getCurrentCompanyId(),
+          office_user_id: officeUserId,
+          section_key: sectionKey,
+          access_level: accessLevel,
+          updated_by: actorName,
+          updated_at: now,
+        },
+        { onConflict: "office_user_id,section_key" }
+      );
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    if (existing) {
+      existing.access_level = accessLevel;
+      existing.updated_by = actorName;
+      existing.updated_at = now;
+    } else {
+      store.sectionPermissions.push({
+        id: `sp-${randomUUID()}`,
+        company_id: getCurrentCompanyId(),
+        office_user_id: officeUserId,
+        section_key: sectionKey,
+        access_level: accessLevel,
+        updated_by: actorName,
+        updated_at: now,
+      });
+    }
+  }
+  const officeUser = await getOfficeUser(officeUserId);
+  logActivity({
+    action: "Changed section permission",
+    related_type: "section_permission",
+    related_id: officeUserId,
+    actor_name: actorName,
+    detail: `${officeUser?.full_name ?? officeUserId} — ${sectionKey}: ${existing?.access_level ?? "none"} → ${accessLevel}`,
+  });
 }
 
 export async function listProjectWorkTypes(): Promise<ProjectWorkType[]> {

@@ -77,6 +77,68 @@ export type OfficeUserRole = (typeof OFFICE_USER_ROLES)[number];
 export const ACCESS_ROLES = ["owner_admin", "office_staff", "field_employee"] as const;
 export type AccessRole = (typeof ACCESS_ROLES)[number];
 
+// ---------------------------------------------------------------------
+// PER-SECTION PERMISSIONS (build 11) — see lib/permissions.ts and README
+// "Permissions & Staff Access". This is the NEW fine-grained layer the
+// client asked for ("some project managers only need to be able to see
+// and/or edit certain things"), additive on top of (not a replacement
+// for) the ACCESS_ROLES tier above — see README for exactly how the two
+// relate. One SectionKey per real nav destination in
+// components/nav-items.ts, plus `quickbooks` (a sub-route of Company
+// Setup with its own existing access_role gate — see lib/current-user.ts
+// canViewQuickBooks — that section_permissions now ALSO covers at the
+// nav/route level).
+// ---------------------------------------------------------------------
+export const SECTION_KEYS = [
+  "dashboard",
+  "clients",
+  "buildings",
+  "job_requests",
+  "projects",
+  "schedule",
+  "staff",
+  "materials",
+  "pricing",
+  "invoices",
+  "tasks",
+  "new_business",
+  "reports",
+  "company_setup",
+  "quickbooks",
+] as const;
+export type SectionKey = (typeof SECTION_KEYS)[number];
+
+export const SECTION_LABELS: Record<SectionKey, string> = {
+  dashboard: "Dashboard",
+  clients: "Clients",
+  buildings: "Buildings",
+  job_requests: "Job Requests",
+  projects: "Projects",
+  schedule: "Schedule",
+  staff: "Staff",
+  materials: "Materials",
+  pricing: "Pricing",
+  invoices: "Invoices",
+  tasks: "Tasks",
+  new_business: "New Business",
+  reports: "Reports",
+  company_setup: "Company Setup",
+  quickbooks: "QuickBooks",
+};
+
+export const SECTION_ACCESS_LEVELS = ["none", "view", "edit"] as const;
+export type SectionAccessLevel = (typeof SECTION_ACCESS_LEVELS)[number];
+
+export interface SectionPermission {
+  id: string;
+  company_id: string;
+  office_user_id: string;
+  section_key: SectionKey;
+  access_level: SectionAccessLevel;
+  updated_by?: string;
+  updated_at: string;
+}
+
 export const WORK_TYPES = [
   "Hardwood Installation",
   "Floor Sanding",
@@ -150,7 +212,9 @@ export type RelatedRecordType =
   | "job_request"
   | "project"
   | "employee"
-  | "lead";
+  | "lead"
+  | "office_user"
+  | "section_permission";
 
 export interface Company {
   id: string;
@@ -320,6 +384,18 @@ export interface OfficeUser {
   access_role: AccessRole;
   active: boolean;
   created_at: string;
+  // --- build 11: real-auth readiness + Owner flag, see
+  // supabase/migrations/0012_permissions_and_auth.sql and README
+  // "Permissions & Staff Access" ---
+  // Null until a real Supabase Auth user exists for this person (demo
+  // mode — see lib/auth.ts). Will hold that Supabase Auth user's id once
+  // "Add Staff Account" creates a real account.
+  auth_user_id?: string | null;
+  // Owner/Admin gets unrestricted access to every section always, per the
+  // client's own description of how his friend's access works — NOT
+  // subject to the section_permissions grid. Only another is_owner user
+  // (or the hardcoded owner/manager acting-user sentinel) can grant this.
+  is_owner: boolean;
 }
 
 export interface ProjectWorkType {
