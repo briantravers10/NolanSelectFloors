@@ -4,9 +4,16 @@ import { QUESTIONNAIRE } from "@/lib/questionnaire";
 import { Card, PageHeader, Button } from "@/components/ui";
 import { saveQuestionnaireAction } from "./actions";
 import { addWorkTypeAction, renameWorkTypeAction, toggleWorkTypeActiveAction } from "@/app/schedule/actions";
+import { isOwnerActingUser, requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
+import { getActingUser } from "@/lib/current-user";
 
 export default async function CompanySetupPage() {
-  const [answers, workTypes] = await Promise.all([listCompanySetupAnswers(), listWorkTypes()]);
+  const access = await requireSectionAccess("company_setup");
+  if (access === "none") return <AccessDenied section="Company Setup" />;
+
+  const [answers, workTypes, actingUser] = await Promise.all([listCompanySetupAnswers(), listWorkTypes(), getActingUser()]);
+  const isOwner = await isOwnerActingUser(actingUser);
   const answerMap = new Map(answers.map((a) => [`${a.section}__${a.question_key}`, a.answer]));
 
   return (
@@ -23,6 +30,18 @@ export default async function CompanySetupPage() {
           <Button variant="secondary">QuickBooks →</Button>
         </Link>
       </Card>
+
+      {isOwner && (
+        <Card className="p-4 mb-6">
+          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Staff Access</h2>
+          <p className="text-xs text-slate-500 mb-3">
+            Owner/Admin only. Give each staff member their own login persona and control what they can see and edit, section by section.
+          </p>
+          <Link href="/company-setup/staff-access">
+            <Button variant="secondary">Staff Access →</Button>
+          </Link>
+        </Card>
+      )}
 
       <Card className="p-4 mb-6">
         <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Work Types</h2>

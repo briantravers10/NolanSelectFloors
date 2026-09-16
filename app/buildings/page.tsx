@@ -5,8 +5,13 @@ import { Icon } from "@/components/Icon";
 import { BUILDING_REGIONS } from "@/lib/types";
 import { isActiveProjectStage } from "@/lib/calculations";
 import { BuildingMapLoader, type MapPin } from "@/components/BuildingMapLoader";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 export default async function BuildingsPage({ searchParams }: { searchParams: Promise<{ region?: string; view?: string }> }) {
+  const access = await requireSectionAccess("buildings");
+  if (access === "none") return <AccessDenied section="Buildings" />;
+
   const { region, view } = await searchParams;
   const showMap = view === "map";
   const [buildings, clients, projects] = await Promise.all([listBuildings(), listClientCompanies(), listProjects()]);

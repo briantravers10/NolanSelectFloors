@@ -3,8 +3,13 @@ import { listMaterialRateItems, listPricingFormulaComponents, listPricingFormula
 import { Card, EmptyState, LinkButton, PageHeader, StatusBadge } from "@/components/ui";
 import { formatCurrencyPrecise } from "@/lib/calculations";
 import { WORK_TYPES } from "@/lib/types";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 export default async function PricingPage() {
+  const access = await requireSectionAccess("pricing");
+  if (access === "none") return <AccessDenied section="Pricing" />;
+
   const [formulas, components, materialRateItems] = await Promise.all([
     listPricingFormulas(),
     listPricingFormulaComponents(),

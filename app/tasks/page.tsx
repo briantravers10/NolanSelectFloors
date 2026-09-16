@@ -4,6 +4,8 @@ import { todayIso } from "@/lib/dates";
 import { addTaskAction, setTaskStatusAction } from "./actions";
 import { TASK_STATUSES } from "@/lib/types";
 import Link from "next/link";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 const RELATED_HREF: Record<string, (id: string) => string> = {
   project: (id) => `/projects/${id}`,
@@ -15,6 +17,9 @@ const RELATED_HREF: Record<string, (id: string) => string> = {
 };
 
 export default async function TasksPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
+  const access = await requireSectionAccess("tasks");
+  if (access === "none") return <AccessDenied section="Tasks" />;
+
   const { status } = await searchParams;
   const [tasks, projects, jobRequests, buildings, clients, employees] = await Promise.all([
     listTasks(),

@@ -6,6 +6,8 @@ import { JOB_REQUEST_STATUSES, type JobRequestStatus } from "@/lib/types";
 import { formatDateLong } from "@/lib/dates";
 import { daysBetween, todayIso } from "@/lib/dates";
 import { BidDashboard } from "./BidDashboard";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 const OPEN_STATUSES: JobRequestStatus[] = JOB_REQUEST_STATUSES.filter((s) => s !== "Converted to Project" && s !== "Declined" && s !== "Cancelled");
 // A job request open this long without resolution is flagged as overdue —
@@ -14,6 +16,9 @@ const OPEN_STATUSES: JobRequestStatus[] = JOB_REQUEST_STATUSES.filter((s) => s !
 const OVERDUE_DAYS = 5;
 
 export default async function JobRequestsPage({ searchParams }: { searchParams: Promise<{ status?: string; view?: string }> }) {
+  const access = await requireSectionAccess("job_requests");
+  if (access === "none") return <AccessDenied section="Job Requests" />;
+
   const { status, view } = await searchParams;
   const showBidDashboard = view === "bids";
 

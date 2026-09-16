@@ -11,6 +11,8 @@ import type { QuickBooksCustomerCandidate } from "@/lib/types";
 import { Card, PageHeader, Button, EmptyState, AlertPill } from "@/components/ui";
 import { CustomerMatchRow } from "@/components/quickbooks/CustomerMatchRow";
 import { disconnectQuickBooksAction, syncNowAction } from "./actions";
+import { getSectionAccessFor } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 const ERROR_MESSAGES: Record<string, string> = {
   not_configured: "QuickBooks isn't configured yet — QUICKBOOKS_CLIENT_ID, QUICKBOOKS_CLIENT_SECRET and QUICKBOOKS_REDIRECT_URI need to be set (see README).",
@@ -23,11 +25,16 @@ export default async function QuickBooksIntegrationPage({ searchParams }: { sear
   const { error, connected } = await searchParams;
   const actingUser = await getActingUser();
 
-  if (!canViewQuickBooks(actingUser)) {
+  // Two gates apply here (see README "Permissions & Staff Access" for how
+  // they relate): the pre-existing access_role tier (canViewQuickBooks —
+  // unchanged, still governs connection management specifically) AND the
+  // new per-section grant (build 11). Either one denying is a denial.
+  const sectionAccess = await getSectionAccessFor(actingUser, "quickbooks");
+  if (!canViewQuickBooks(actingUser) || sectionAccess === "none") {
     return (
       <div>
         <PageHeader title="QuickBooks" subtitle="Settings → Integrations" />
-        <EmptyState message="You don't have permission to view QuickBooks integration settings." />
+        <AccessDenied section="QuickBooks" />
       </div>
     );
   }

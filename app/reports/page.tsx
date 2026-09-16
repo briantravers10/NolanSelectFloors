@@ -11,11 +11,16 @@ import {
 import { Card, PageHeader } from "@/components/ui";
 import { computeProjectCosting, formatCurrency, formatPercent, isActiveProjectStage, summarizeWeek } from "@/lib/calculations";
 import { addDays, isoDate, startOfWeek } from "@/lib/dates";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 const TABS = ["labor", "projects", "clients"] as const;
 type Tab = (typeof TABS)[number];
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const access = await requireSectionAccess("reports");
+  if (access === "none") return <AccessDenied section="Reports" />;
+
   const { tab: tabParam } = await searchParams;
   const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "labor";
 

@@ -6,8 +6,13 @@ import { canViewLaborCost, canViewTimeOffAllowance, getActingUser } from "@/lib/
 import { payRateLabel } from "@/lib/labor-cost";
 import { computeTimeOffUsageByEmployee, getTimeOffForDate } from "@/lib/time-off";
 import { todayIso } from "@/lib/dates";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 export default async function StaffPage() {
+  const access = await requireSectionAccess("staff");
+  if (access === "none") return <AccessDenied section="Staff" />;
+
   const [employees, skills, actingUser, timeOffEntries] = await Promise.all([
     listEmployees(),
     listEmployeeSkills(),

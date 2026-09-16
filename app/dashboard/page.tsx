@@ -4,8 +4,13 @@ import { formatCurrency } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
 import { Card, PageHeader, Stat, StatusBadge, AlertPill, EmptyState } from "@/components/ui";
 import { Icon } from "@/components/Icon";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 export default async function DashboardPage() {
+  const access = await requireSectionAccess("dashboard");
+  if (access === "none") return <AccessDenied section="the Dashboard" />;
+
   const data = await getDashboardData();
 
   return (

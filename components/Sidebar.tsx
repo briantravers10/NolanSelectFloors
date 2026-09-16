@@ -4,9 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "./nav-items";
 import { Icon } from "./Icon";
+import type { SectionAccessLevel, SectionKey } from "@/lib/types";
 
-export function Sidebar() {
+/**
+ * `access` (build 11) is the current acting user's section access map —
+ * see lib/permissions.ts getAllSectionAccess() and README "Enforcement".
+ * A nav item whose sectionKey resolves to 'none' is hidden entirely, per
+ * the client's ask that staff not even see sections they can't use.
+ */
+export function Sidebar({ access }: { access: Record<SectionKey, SectionAccessLevel> }) {
   const pathname = usePathname();
+  const items = NAV_ITEMS.filter((item) => !item.sectionKey || access[item.sectionKey] !== "none");
   return (
     <aside className="hidden md:flex md:w-60 md:flex-col md:shrink-0 bg-slate-900 text-slate-200 h-dvh sticky top-0">
       <div className="px-5 py-5 border-b border-slate-800">
@@ -16,7 +24,7 @@ export function Sidebar() {
         </Link>
       </div>
       <nav className="flex-1 overflow-y-auto py-3">
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link

@@ -3,8 +3,13 @@ import { Card, PageHeader, StatusBadge, Button, PhoneLink, EmailLink, EmptyState
 import { formatCurrency } from "@/lib/calculations";
 import { LEAD_STATUSES } from "@/lib/types";
 import { addLeadAction, convertLeadAction, setLeadStatusAction } from "./actions";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 export default async function NewBusinessPage() {
+  const access = await requireSectionAccess("new_business");
+  if (access === "none") return <AccessDenied section="New Business" />;
+
   const leads = await listLeads();
 
   return (

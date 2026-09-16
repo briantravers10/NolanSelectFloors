@@ -3,8 +3,13 @@ import { listBuildings, listClientCompanies, listContacts, listProjects } from "
 import { Card, PageHeader, PhoneLink, EmailLink, LinkButton } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 import { isActiveProjectStage } from "@/lib/calculations";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 export default async function ClientsPage() {
+  const access = await requireSectionAccess("clients");
+  if (access === "none") return <AccessDenied section="Clients" />;
+
   const [clients, buildings, contacts, projects] = await Promise.all([
     listClientCompanies(),
     listBuildings(),

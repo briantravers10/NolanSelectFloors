@@ -7,7 +7,13 @@ import { projectLaborCost } from "@/lib/calculations";
 import { Pipeline } from "./Pipeline";
 import { ByBuilding } from "./ByBuilding";
 
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
+
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ view?: string; stage?: string }> }) {
+  const access = await requireSectionAccess("projects");
+  if (access === "none") return <AccessDenied section="Projects" />;
+
   const { view, stage } = await searchParams;
   const showPipeline = view === "pipeline";
   const showByBuilding = view === "by-building";

@@ -20,10 +20,15 @@ import { DailyList } from "@/components/schedule/DailyList";
 import { WeeklyView } from "@/components/schedule/WeeklyView";
 import { MonthlyView } from "@/components/schedule/MonthlyView";
 import { SendScheduleButton } from "@/components/schedule/SendScheduleButton";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 type View = "day" | "week" | "month";
 
 export default async function SchedulePage({ searchParams }: { searchParams: Promise<{ date?: string; view?: string }> }) {
+  const access = await requireSectionAccess("schedule");
+  if (access === "none") return <AccessDenied section="Schedule" />;
+
   const { date: dateParam, view: viewParam } = await searchParams;
   const view: View = viewParam === "week" || viewParam === "month" ? viewParam : "day";
   const anchor = dateParam ? new Date(dateParam + "T00:00:00") : new Date();

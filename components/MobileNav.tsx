@@ -5,10 +5,17 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { MOBILE_NAV_ITEMS, NAV_ITEMS } from "./nav-items";
 import { Icon } from "./Icon";
+import type { SectionAccessLevel, SectionKey } from "@/lib/types";
 
-export function MobileNav() {
+/** `access` (build 11) — see components/Sidebar.tsx for the write-up. */
+export function MobileNav({ access }: { access: Record<SectionKey, SectionAccessLevel> }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreItems = NAV_ITEMS.filter((item) => !item.sectionKey || access[item.sectionKey] !== "none");
+  const bottomItems = MOBILE_NAV_ITEMS.filter((item) => {
+    const navItem = NAV_ITEMS.find((n) => n.href === item.href);
+    return item.href === "/more" || !navItem?.sectionKey || access[navItem.sectionKey] !== "none";
+  });
 
   return (
     <>
@@ -25,7 +32,7 @@ export function MobileNav() {
               </button>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {NAV_ITEMS.map((item) => (
+              {moreItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -44,7 +51,7 @@ export function MobileNav() {
         className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 flex"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        {MOBILE_NAV_ITEMS.map((item) => {
+        {bottomItems.map((item) => {
           const isMore = item.href === "/more";
           const active = !isMore && (pathname === item.href || pathname.startsWith(item.href + "/"));
           if (isMore) {

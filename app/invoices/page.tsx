@@ -4,12 +4,17 @@ import { Card, EmptyState, LinkButton, PageHeader, StatusBadge } from "@/compone
 import { Icon } from "@/components/Icon";
 import { formatCurrencyPrecise } from "@/lib/calculations";
 import { INVOICE_STATUSES } from "@/lib/types";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 export default async function InvoicesPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; supplier?: string; group?: string }>;
 }) {
+  const access = await requireSectionAccess("invoices");
+  if (access === "none") return <AccessDenied section="Invoices" />;
+
   const { status, supplier, group } = await searchParams;
   const [invoices, projects, buildings] = await Promise.all([listInvoices(), listProjects(), listBuildings()]);
   const projectById = new Map(projects.map((p) => [p.id, p]));

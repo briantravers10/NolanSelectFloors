@@ -4,8 +4,13 @@ import { Card, PageHeader, StatusBadge, EmptyState } from "@/components/ui";
 import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
 import { addDays, isoDate, todayIso } from "@/lib/dates";
 import { MATERIAL_STATUSES } from "@/lib/types";
+import { requireSectionAccess } from "@/lib/permissions";
+import { AccessDenied } from "@/components/AccessDenied";
 
 export default async function MaterialsPage() {
+  const access = await requireSectionAccess("materials");
+  if (access === "none") return <AccessDenied section="Materials" />;
+
   const [projectMaterials, projects, buildings] = await Promise.all([listProjectMaterials(), listProjects(), listBuildings()]);
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
