@@ -52,6 +52,8 @@ import type {
   StaffCapability,
   Task,
   TaskStatus,
+  TimeOffEntry,
+  TimeOffType,
   WorkTypeRecord,
 } from "./types";
 
@@ -241,6 +243,23 @@ export async function updateEmployee(
       detail: `${before.first_name} ${before.last_name}: ${before.pay_type} $${oldRate ?? 0} → ${newPayType} $${newRate ?? 0}, effective ${new Date().toISOString().slice(0, 10)}`,
     });
   }
+
+  // Vacation & Sick Day Tracker (build 7) — annual allowance change,
+  // audited the same way as a pay-rate change above (see README).
+  const allowanceChanged =
+    (patch.vacation_days_allowed !== undefined && patch.vacation_days_allowed !== before.vacation_days_allowed) ||
+    (patch.sick_days_allowed !== undefined && patch.sick_days_allowed !== before.sick_days_allowed);
+  if (allowanceChanged) {
+    const newVacation = patch.vacation_days_allowed ?? before.vacation_days_allowed;
+    const newSick = patch.sick_days_allowed ?? before.sick_days_allowed;
+    logActivity({
+      action: "Changed time-off allowance",
+      related_type: "employee",
+      related_id: id,
+      actor_name: actorName,
+      detail: `${before.first_name} ${before.last_name}: vacation ${before.vacation_days_allowed ?? "—"} → ${newVacation ?? "—"} days/yr, sick ${before.sick_days_allowed ?? "—"} → ${newSick ?? "—"} days/yr`,
+    });
+  }
 }
 
 export async function listEmployeeSkills(): Promise<EmployeeSkill[]> {
@@ -259,6 +278,105 @@ export async function listEmployeeAvailability(): Promise<EmployeeAvailability[]
     if (!error && data) return data as EmployeeAvailability[];
   }
   return getStore().employeeAvailability;
+}
+
+// ---------------------------------------------------------------------
+// VACATION & SICK DAY TRACKER (build 7) — see
+// supabase/migrations/0007_time_off.sql and README "Vacation & Sick Day
+// Tracker". A simple day-off log, audit-logged the same way as everything
+// else in this file (see logActivity() below). Not an accrual/balance
+// system — see README.
+// ---------------------------------------------------------------------
+
+export async function listTimeOffEntries(): Promise<TimeOffEntry[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("time_off_entries").select("*").order("start_date", { ascending: false });
+    if (!error && data) return data as TimeOffEntry[];
+  }
+  return [...getStore().timeOffEntries].sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
+}
+
+export async function listTimeOffForEmployee(employeeId: string): Promise<TimeOffEntry[]> {
+  return (await listTimeOffEntries()).filter((t) => t.employee_id === employeeId);
+}
+
+export async function createTimeOffEntry(input: {
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+  type: TimeOffType;
+  notes?: string;
+  actorName: string;
+}): Promise<TimeOffEntry> {
+  const now = new Date().toISOString();
+  const employee = (await listEmployees()).find((e) => e.id === input.employee_id);
+  const record: TimeOffEntry = {
+    id: `to-${randomUUID()}`,
+    company_id: getCurrentCompanyId(),
+    employee_id: input.employee_id,
+    start_date: input.start_date,
+    end_date: input.end_date,
+    type: input.type,
+    notes: input.notes,
+    created_by: input.actorName,
+    created_at: now,
+    updated_by: input.actorName,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("time_off_entries").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().timeOffEntries.push(record);
+  }
+  const range = record.start_date === record.end_date ? record.start_date : `${record.start_date} to ${record.end_date}`;
+  logActivity({
+    action: "Added time off",
+    related_type: "employee",
+    related_id: input.employee_id,
+    actor_name: input.actorName,
+    detail: `${employee ? `${employee.first_name} ${employee.last_name}` : input.employee_id} — ${input.type}, ${range}${input.notes ? ` (${input.notes})` : ""}`,
+  });
+  return record;
+}
+
+export async function updateTimeOffEntry(
+  id: string,
+  patch: { start_date?: string; end_date?: string; type?: TimeOffType; notes?: string },
+  actorName: string
+): Promise<void> {
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("time_off_entries").update({ ...patch, updated_by: actorName, updated_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const entry = getStore().timeOffEntries.find((t) => t.id === id);
+    if (entry) Object.assign(entry, patch, { updated_by: actorName, updated_at: now });
+  }
+  logActivity({ action: "Edited time off entry", related_type: "employee", related_id: id, actor_name: actorName, detail: JSON.stringify(patch) });
+}
+
+export async function deleteTimeOffEntry(id: string, actorName: string): Promise<void> {
+  const client = sb();
+  const existing = (await listTimeOffEntries()).find((t) => t.id === id);
+  if (client) {
+    const { error } = await client.from("time_off_entries").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    const idx = store.timeOffEntries.findIndex((t) => t.id === id);
+    if (idx >= 0) store.timeOffEntries.splice(idx, 1);
+  }
+  logActivity({
+    action: "Deleted time off entry",
+    related_type: "employee",
+    related_id: existing?.employee_id,
+    actor_name: actorName,
+    detail: existing ? `${existing.type}, ${existing.start_date} to ${existing.end_date}` : id,
+  });
 }
 
 export async function listCrewRequirements(): Promise<ProjectCrewRequirement[]> {

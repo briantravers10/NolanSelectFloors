@@ -106,3 +106,15 @@ export function canViewLaborCost(user: Pick<ActingUser, "accessRole">): boolean 
 export function canEditPayRates(user: Pick<ActingUser, "accessRole">): boolean {
   return user.accessRole === "owner_admin";
 }
+
+/** Annual vacation/sick allowance is sensitive-ish HR data — reuses the
+ * exact same access-role gate as pay rates above (see README "Vacation &
+ * Sick Day Tracker — Annual Allowance"). Named separately from
+ * canViewLaborCost/canEditPayRates so the two concerns can diverge later
+ * without a confusing shared name, even though they're identical today. */
+export function canViewTimeOffAllowance(user: Pick<ActingUser, "accessRole">): boolean {
+  return canViewLaborCost(user);
+}
+export function canEditTimeOffAllowance(user: Pick<ActingUser, "accessRole">): boolean {
+  return canEditPayRates(user);
+}
