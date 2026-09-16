@@ -18,6 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/tasks", label: "Tasks", icon: "check" },
   { href: "/new-business", label: "New Business", icon: "spark" },
   { href: "/reports", label: "Reports", icon: "chart" },
+  { href: "/agenda", label: "My Agenda", icon: "calendar" },
   { href: "/company-setup", label: "Company Setup", icon: "settings" },
 ];
 
