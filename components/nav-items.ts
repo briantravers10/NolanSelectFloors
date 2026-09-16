@@ -6,6 +6,12 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "grid" },
+  // Prominent top-level entry point into the SAME fast-entry New Job
+  // Request flow as "+ New Job Request" inside Job Requests (build 9, per
+  // the client's own words: "i need a section where it will be like new
+  // job in the menu bar on the left"). Not a separate creation flow — see
+  // README "New Job — Top-Level Nav Entry Point".
+  { href: "/job-requests/new", label: "New Job", icon: "plus" },
   { href: "/clients", label: "Clients", icon: "building-2" },
   { href: "/buildings", label: "Buildings", icon: "home" },
   { href: "/job-requests", label: "Job Requests", icon: "inbox" },

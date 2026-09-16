@@ -96,9 +96,11 @@ currently runs as a single company). Highlights:
   companies) → `contacts` → `buildings`, with a `building_contacts` join
   table so a contact's role can differ per building.
 - **Job pipeline**: `job_requests` (11-state status enum, from "New
-  Request" through "Converted to Project") convert into `projects`
-  (13-state status enum from "Approved" through "Paid"), each with
-  `project_work_types`.
+  Request" through "Converted to Project") convert into `projects`, each
+  with `project_work_types`. Projects originally also carried a 13-state
+  detailed `status` enum (Approved through Paid) alongside a 6-stage
+  `pipeline_stage`; both were collapsed into a single 5-value
+  `pipeline_stage` in build 9 — see "Project Pipeline Stage Simplification".
 - **Staff & scheduling**: `employees`, `employee_skills` (18-capability
   enum), `employee_availability` (day-by-day status), and the two tables
   that drive the whole scheduling model:
@@ -179,34 +181,40 @@ form with a live cost preview and inline conflict/availability warnings.
 
 ## Bid workflow / project pipeline (added on top of the base app)
 
-The base app already modeled one project row moving through a detailed
-13-state `status` (Approved → ... → Paid). This layer adds bid ownership
-and a primary 6-stage pipeline **on the same `projects` row** — nothing is
-duplicated per stage, and both status fields live side by side:
+> **Build 9 update:** the two overlapping status fields described below
+> (`status`, 13 states, and `pipeline_stage`, originally 6 stages) were
+> collapsed into one 5-value `pipeline_stage` — see "Project Pipeline Stage
+> Simplification" further down for the current model. The rest of this
+> section is kept for history/context on how bid ownership and claiming
+> work, which is unchanged.
 
-- `status` (existing, 13 states) — fine-grained sub-status, unchanged.
-- `pipeline_stage` (new) — the 6 primary stages requested:
-  **Project Bid → Bid Accepted → Scheduled → Sent to Crew → Project In
-  Process → Project Completed**. This is what the Bid Dashboard and the
-  Pipeline kanban view group by, and it's driven from the UI independently
-  of the detailed status (both a "Move to Pipeline Stage" control and a
-  "Move to Detailed Status" control exist on the project detail page).
-- `bid_status` (new) — Unclaimed / Claimed / In Progress / Ready for
-  Review / Completed/Sent / Accepted / Rejected — separate from both of
-  the above, because a bid can be "In Progress" while the project itself
-  is still in the "Project Bid" pipeline stage.
+The base app originally modeled one project row moving through a detailed
+13-state `status` (Approved → ... → Paid) alongside a separate 6-stage
+`pipeline_stage`. This layer added bid ownership **on the same `projects`
+row** — nothing is duplicated per stage:
+
+- `pipeline_stage` — now 5 simplified values (see "Project Pipeline Stage
+  Simplification"). This is what the Bid Dashboard and the Pipeline kanban
+  view group by.
+- `bid_status` — Unclaimed / Claimed / In Progress / Ready for
+  Review / Completed/Sent / Accepted / Rejected — separate from
+  `pipeline_stage`, because a bid can be "In Progress" while the project
+  itself is still at pipeline_stage "Bid Sent". **Untouched** by the build
+  9 simplification.
 
 A project's row is created once — either via **"Create Bid"** on an
-early-stage job request (starts unclaimed, at pipeline_stage "Project
-Bid") or via the existing **"Convert to Project"** on an already-approved
-job request (starts at "Bid Accepted", bid_status "Accepted", since the
+early-stage job request (starts unclaimed, at pipeline_stage "Bid Sent")
+or via the existing **"Convert to Project"** on an already-approved job
+request (starts at "Bid Accepted", bid_status "Accepted", since the
 approval already happened at the job-request stage). Every later change —
 claiming, reassigning, sending, accepting, scheduling, completing — is an
 `UPDATE` on that same row. See `supabase/migrations/0002_bid_workflow.sql`
-for the full column list, including the "set once, never overwritten"
-lifecycle timestamps (`bid_claimed_at`, `bid_completed_at`, `bid_sent_at`,
-`bid_accepted_at`, `scheduled_at`, `sent_to_crew_at`, `project_started_at`,
-`project_completed_at`) that make future turnaround reporting possible.
+for the full original column list, including the "set once, never
+overwritten" lifecycle timestamps (`bid_claimed_at`, `bid_completed_at`,
+`bid_sent_at`, `bid_accepted_at`, `scheduled_at`, `sent_to_crew_at`,
+`project_started_at`, `project_completed_at`) that make future turnaround
+reporting possible. `sent_to_crew_at` is no longer written to as of build
+9 (see below) but is kept, unused, rather than dropped.
 
 ### Dev "acting as" user selector (placeholder for real auth)
 
@@ -334,20 +342,212 @@ anyway"`).
        [account.mapbox.com/access-tokens](https://account.mapbox.com/access-tokens/)
        (the default public token works for the Directions API).
 
-## Photos & Progress (project detail page)
+## Project Pipeline Stage Simplification (build 9)
 
-The project detail page's **Photos & Progress** section extends the
-existing `photos` table (now with a `category` column — Before / Progress
-/ After / Floor Plan / Other — and a `storage_unavailable` flag) rather
-than adding a new one. Adding an entry always saves the caption/category/
-date; the image upload goes through `lib/storage.ts#uploadProjectPhoto()`,
-which attempts a real Supabase Storage upload when a project is
-configured and otherwise returns `{ unavailable: true }` — the UI then
-shows an inline **"Photo storage isn't configured yet — this entry was
-saved without an image"** notice instead of pretending the upload worked.
-To enable real uploads later: connect a Supabase project (see below),
-create a Storage bucket (defaults to `project-photos`, override with
-`SUPABASE_PHOTOS_BUCKET`), and no code changes are needed.
+The client's own words: "When a project is started, all i need is bid
+send, bid accepted, scheduled, in progress and then complete. I dont need
+any more info on the status of the job. Use the same colour scheme from
+earlier. The status options i have here is way too much info."
+
+### What changed
+
+The project detail page previously showed **two** status controls on the
+same `projects` row:
+
+1. A 6-value `pipeline_stage` dropdown (Project Bid, Bid Accepted,
+   Scheduled, Sent to Crew, Project In Process, Project Completed).
+2. A separate "Move to Detailed Status" control with 13 granular values
+   (Approved, Pre-Construction, Materials Required, Materials Ordered,
+   Materials Ready, Ready to Schedule, Scheduled, In Progress, Paused,
+   Punch List, Completed, Invoiced, Paid).
+
+Both are gone, replaced by **one** 5-value `pipeline_stage`:
+
+**Bid Sent → Bid Accepted → Scheduled → In Progress → Complete**
+
+Old → new mapping (applied to every existing row by
+`supabase/migrations/0010_simplify_project_status.sql`):
+
+| Old pipeline_stage   | New pipeline_stage |
+|----------------------|---------------------|
+| Project Bid          | Bid Sent            |
+| Bid Accepted         | Bid Accepted        |
+| Scheduled            | Scheduled           |
+| Sent to Crew         | In Progress         |
+| Project In Process   | In Progress         |
+| Project Completed    | Complete            |
+
+The old 13-value detailed `status` column is **not** kept-but-hidden — it
+is dropped by the same migration. See "Why the old `status` column was
+dropped, not hidden" below for the reasoning and exactly what had to be
+re-pointed first.
+
+### Color mapping
+
+Reusing this app's existing badge/color conventions
+(`components/ui.tsx#StatusBadge` / `BADGE_COLORS`) rather than inventing a
+new palette:
+
+| Stage        | Color                                    |
+|--------------|-------------------------------------------|
+| Bid Sent     | blue (`bg-sky-100 text-sky-700`)          |
+| Bid Accepted | indigo (`bg-indigo-100 text-indigo-700`)  |
+| Scheduled    | amber (`bg-amber-100 text-amber-700`)     |
+| In Progress  | orange (`bg-orange-100 text-orange-700`)  |
+| Complete     | green (`bg-emerald-100 text-emerald-700`) |
+
+`Scheduled` and `In Progress` are shared color keys also used elsewhere in
+the app (Task status, COI status, Bid status) — that's intentional, not a
+collision: the same word means roughly the same "where things stand" idea
+everywhere it appears, so sharing the color keeps the palette consistent
+app-wide instead of each feature inventing its own shade of amber/orange.
+
+### Why the old `status` column was dropped, not hidden
+
+The task allowed either dropping the column or keeping it hidden if
+something still depended on it. Before deciding, every read of
+`project.status` in the app was audited:
+
+- **Buildings, Clients, Materials, Reports, Haul-Away Run** — all five
+  used a hardcoded "active statuses" `Set`/array duplicated across each
+  file to split "active/upcoming" vs. "past/completed" projects. These
+  were all re-pointed to a single new helper,
+  `lib/calculations.ts#isActiveProjectStage()`, which is just
+  `pipeline_stage !== "Complete"` — simpler than the 10-value set it
+  replaced, and it removed five copies of near-identical logic in favor of
+  one function.
+- **Dashboard "Attention Required" / materials-required flagging** — this
+  was already keyed off `project_schedule_days.materials_status` (the
+  Schedule's rollup, build 5) and `project_materials.status` (the
+  Materials feature) directly, **never** off the project-level detailed
+  `status` — no change needed here at all.
+- **The Project detail page, Projects list/Pipeline/By-Building views** —
+  only ever *rendered* `status` as a badge; no logic depended on it.
+
+With every real dependency re-pointed to `pipeline_stage` and nothing else
+reading it, keeping the column around unused (even hidden from the UI)
+would just be dead schema for the next person to puzzle over — "is this
+safe to ignore, or does something secretly still read it?" Dropping it
+removes that question entirely, so the migration drops both the column and
+its backing `project_status` enum.
+
+### What was updated
+
+- `lib/types.ts` — `PIPELINE_STAGES`/`PipelineStage` narrowed to the 5
+  values; `ProjectStatus`/`PROJECT_STATUSES` and `Project.status` removed
+  entirely.
+- `app/projects/[id]/page.tsx` — the "Move to Detailed Status" block is
+  gone; the 5-stage pipeline dropdown is the only status control left.
+- `app/projects/Pipeline.tsx` — kanban now renders exactly 5 columns.
+- `app/projects/page.tsx` / `ByBuilding.tsx` — the old detailed-status
+  sub-nav/filter is gone; stage badges use `pipeline_stage`.
+- `lib/schedule.ts` — `mapJobStatusToPipelineStage`/
+  `mapPipelineStageToJobStatus` updated for the 5-stage model (see "Job
+  status ↔ pipeline_stage mapping" above).
+- `lib/db.ts` — `updateProjectStatus()` removed; `STAGE_TIMESTAMP_FIELD`
+  no longer stamps `sent_to_crew_at` (see above); `createBidFromJobRequest`
+  starts new bids at "Bid Sent"; `findOpenDuplicateBids` checks
+  `pipeline_stage === "Complete"`.
+- `lib/seed-data.ts` — every seeded project uses only the 5 new stage
+  values; the `status` field is gone from every seed row.
+- The Bid Dashboard (`app/job-requests/BidDashboard.tsx`) was checked and
+  needed **no changes** — it only ever grouped by `bid_status`, a
+  genuinely separate field this simplification doesn't touch.
+
+## New Job — Top-Level Nav Entry Point (build 9)
+
+The client's own words: "The job claimed etc, i need a section where it
+will be like new job in the menu bar on the left, this is where he will
+add all the info for the new job where the girls will claim the job for
+themselves and its assigned to them then."
+
+A new **"New Job"** item was added near the top of the left sidebar
+(`components/nav-items.ts`), linking directly to the existing fast-entry
+`/job-requests/new` page — the same New Job Request flow that has always
+fed the unclaimed-bid queue on the Bid Dashboard for estimators to claim
+(build 2). This is **not** a new or duplicate creation flow; it's a second,
+more discoverable entry point into the exact same form and the exact same
+`createJobRequestAction`, so the owner doesn't have to open "Job Requests"
+first to find "+ New Job Request". That original button inside the Job
+Requests section (`app/job-requests/page.tsx`) is untouched — both entry
+points coexist and land on the same page.
+
+## Photos & Drawings (project detail page, build 9)
+
+The client's own words: "I also need somewhere they can store photos with
+titles on them (optional) etc and then drawings also. Take a look at
+procore, and mimic what they have and thats what we'll use for how a
+project exists." Both live on the project detail page, right after each
+other, following the page's existing one-card-per-section convention.
+
+### Photos — Procore-style albums
+
+Extends the existing `photos` table (from an earlier build) rather than
+adding a new one — same soft-fail storage pattern, same table, two new
+things:
+
+- **`title` (new column, optional)** — a short label shown above the
+  (also optional) longer `caption`/note, exactly matching the client's
+  "titles on them (optional)" wording. Seed data deliberately includes
+  photos with a title, without one, and with only a caption, to
+  demonstrate it really is optional in every direction.
+- **Albums = the existing `category` column** (Before / Progress / After /
+  Floor Plan / Other). A separate `album` column was deliberately **not**
+  added — `category` already expresses exactly that grouping, and having
+  both would just be two names for the same concept with no way to keep
+  them in sync. The gallery now groups photos into these album sections
+  (each with a count) instead of one flat chronological list, closer to
+  Procore's album-grid presentation.
+
+Adding an entry always saves the title/caption/category/date; the image
+upload goes through `lib/storage.ts#uploadProjectPhoto()`, which attempts
+a real Supabase Storage upload when a project is configured and otherwise
+returns `{ unavailable: true }` — the UI then shows an inline **"Photo
+storage isn't configured yet — this entry was saved without an image"**
+notice instead of pretending the upload worked. To enable real uploads
+later: connect a Supabase project (see below), create a Storage bucket
+(defaults to `project-photos`, override with `SUPABASE_PHOTOS_BUCKET`),
+and no code changes are needed.
+
+### Drawings — Procore-style version history
+
+A new `project_drawings` table (`supabase/migrations/0010_simplify_project_status.sql`;
+see `lib/types.ts#ProjectDrawing`) models Procore's Drawings tool: each
+drawing has a `drawing_name` (e.g. "Lobby Floor Plan"), an optional
+`drawing_number` (e.g. "A-101"), a `version` starting at 1, and an
+`is_current_version` flag. Uploading a **new drawing** creates version 1,
+current. Uploading a **new version of an existing drawing** (picked from a
+"Upload new version of…" dropdown on the same form, matched by its row id)
+does two things in one write (`lib/db.ts#createProjectDrawing()`):
+
+1. Flips the previous current row's `is_current_version` to `false` — it
+   is **never deleted or overwritten**, so its file reference, notes, and
+   uploader/date stay exactly as they were.
+2. Inserts a brand-new row at `version + 1`, `is_current_version: true`,
+   inheriting the same `drawing_name`/`drawing_number`.
+
+The project page shows only the **current** version of each drawing
+prominently, with a collapsible **"Version History"** link that expands to
+show every superseded version (version number, date, uploader, notes) —
+seed data includes one drawing (Unit 4B Floor Plan, A-101) at v2 with a
+superseded v1 to demonstrate this. File uploads use the identical
+soft-fail pattern as Photos, via `lib/storage.ts#uploadProjectDrawing()`
+(bucket defaults to `project-drawings`, override with
+`SUPABASE_DRAWINGS_BUCKET`) — never a fabricated successful upload.
+
+### What's simplified for this demo
+
+This is a demo app without live file storage configured, so — per the
+task's own scope note — the effort went into the **data model and
+organization** (albums, titles, versioning, history), not into rendering
+real image/PDF thumbnails. A photo or drawing with no configured storage
+shows its metadata (title, caption, category/name, number, version,
+uploader, date) and an honest "storage not configured yet" notice instead
+of a broken image tag or a fabricated preview. Once a real Supabase
+Storage bucket is connected, the existing `storage_path`/`file_reference`
+values are real object paths ready to resolve to public/signed URLs — no
+schema change needed, just swapping the "stored at …" text for an
+`<img>`/`<iframe>` once that's wanted.
 
 ## New create forms (Staff, Clients, Buildings)
 
@@ -437,22 +637,29 @@ yet still renders sensibly.
 ### Job status ↔ pipeline_stage mapping
 
 `job_status` (`Scheduled` / `In Progress` / `Complete`) is a separate field
-from `schedule_color` and from the existing `pipeline_stage` — never
-conflated. Setting it from the Schedule always writes through to the real
+from `schedule_color` and from `pipeline_stage` — never conflated. Setting
+it from the Schedule always writes through to the real
 `projects.pipeline_stage` (via the existing `updateProjectPipelineStage()`,
-so the existing set-once lifecycle timestamps still stamp correctly) —
-never an isolated duplicate. The mapping (`lib/schedule.ts`
+so the set-once lifecycle timestamps still stamp correctly) — never an
+isolated duplicate. The mapping (`lib/schedule.ts`
 `mapJobStatusToPipelineStage` / `mapPipelineStageToJobStatus`):
 
-| job_status    | pipeline_stage                              |
-|---------------|----------------------------------------------|
-| Scheduled     | Project Bid, Bid Accepted, **Scheduled**      |
-| In Progress   | Sent to Crew, **Project In Process**          |
-| Complete      | **Project Completed**                         |
+| job_status    | pipeline_stage                            |
+|---------------|--------------------------------------------|
+| Scheduled     | Bid Sent, Bid Accepted, **Scheduled**       |
+| In Progress   | **In Progress**                             |
+| Complete      | **Complete**                                |
 
 (Bold = the stage `job_status` writes when set from the Schedule; the
 others are simply the stages that read back as that same `job_status`
 before the schedule ever touches it.)
+
+> **Build 9 update:** since `pipeline_stage` was simplified to 5 values
+> (see "Project Pipeline Stage Simplification" below) that are now nearly
+> 1:1 with `job_status`'s 3 states, this mapping got simpler too — "Bid
+> Sent"/"Bid Accepted" are just earlier pre-schedule states that still read
+> back as `job_status` "Scheduled", exactly as before; "Sent to Crew" no
+> longer exists as a separate row since it was merged into "In Progress".
 
 ### Work types: a new table, scoped to the Schedule
 
@@ -1270,3 +1477,18 @@ shaped so each is a self-contained addition:
   client-side fetch/modal. This keeps the whole flow working with zero
   client JS, consistent with how every other form in this app already
   works, at the cost of one extra page load when a duplicate is found.
+- **Drawings "supersede" picker is a dropdown of current drawings, not a
+  search/autocomplete** — with a handful of drawings per project this is
+  plenty; a project with dozens of drawings would eventually want to
+  filter/search that list, but nothing in the spec called for it yet.
+- **No real image/PDF rendering for Photos or Drawings** — per the task's
+  own framing ("this is a demo app without live file storage… focus on the
+  correct data model, UI, and organization"), both features show honest
+  metadata + a "storage not configured" notice rather than a broken
+  `<img>`/`<iframe>` or a faked preview. See "Photos & Drawings" above for
+  exactly what a real Supabase Storage connection would unlock with no
+  schema change.
+- **"New Job" nav item and the in-section "+ New Job Request" button are
+  two links to the one form, not two forms** — this was the explicit ask
+  (a more discoverable entry point, not a second flow); see "New Job —
+  Top-Level Nav Entry Point" above.
