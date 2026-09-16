@@ -278,6 +278,41 @@ export async function updateOfficeUser(
   });
 }
 
+// ---------------------------------------------------------------------
+// STAFF SETUP CODE — the shared code staff enter (with their email) at
+// /login → "Set up my password" to create their own password on first
+// login, so onboarding needs no invite email and no per-person password
+// relay. Stored on the companies row; demo mode keeps it in memory.
+// ---------------------------------------------------------------------
+
+let demoStaffSetupCode: string | null = "NOLAN2026";
+
+export async function getStaffSetupCode(): Promise<string | null> {
+  const client = sb();
+  if (client) {
+    const { data } = await client.from("companies").select("staff_setup_code").eq("id", getCurrentCompanyId()).maybeSingle();
+    return (data?.staff_setup_code as string | null | undefined) ?? null;
+  }
+  return demoStaffSetupCode;
+}
+
+export async function setStaffSetupCode(code: string | null, actorName?: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("companies").update({ staff_setup_code: code }).eq("id", getCurrentCompanyId());
+    if (error) throw error;
+  } else {
+    demoStaffSetupCode = code;
+  }
+  logActivity({ action: code ? "Changed the staff setup code" : "Cleared the staff setup code", actor_name: actorName });
+}
+
+/** Case-insensitive lookup by email — the username for real login. */
+export async function getOfficeUserByEmail(email: string): Promise<OfficeUser | undefined> {
+  const target = email.trim().toLowerCase();
+  return (await listOfficeUsers()).find((u) => (u.email ?? "").trim().toLowerCase() === target);
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** True for a canonical UUID string — every id column in the real schema is

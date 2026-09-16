@@ -223,6 +223,9 @@ export interface Company {
   email?: string;
   address?: string;
   logo_url?: string;
+  /** Shared code staff enter with their email to set their own password on
+   * first login (/login → "Set up my password"). Owner-managed. */
+  staff_setup_code?: string | null;
   created_at: string;
 }
 

@@ -1993,3 +1993,26 @@ shaped so each is a self-contained addition:
   two links to the one form, not two forms** — this was the explicit ask
   (a more discoverable entry point, not a second flow); see "New Job —
   Top-Level Nav Entry Point" above.
+
+## First-time password setup (self-serve, no invite email)
+
+Staff never receive an invite email and the owner never relays a temporary
+password. Instead:
+
+1. The Owner/Admin adds the person under **Company Setup → Staff Access**
+   (their email is their username) and sets one shared **staff setup code**
+   on that same page (stored in `companies.staff_setup_code`, migration
+   `0015_staff_setup_code.sql`).
+2. The person opens `/login` → **Set up your password**, enters their email,
+   the setup code, and a password of their choosing (`app/login/actions.ts`
+   → `setupPasswordAction`). That creates and links the real Supabase Auth
+   account and signs them straight in.
+3. Once any account has a password, real login is enforced for everyone
+   (the bootstrap window in `lib/supabase/middleware.ts` closes), so the
+   owner should set up their own account first.
+
+The code is what stops a stranger who merely knows a staff email from
+claiming the account; a wrong code and an unknown email produce the same
+generic message. **Set New Password** on a person's access page remains the
+reset path. There is no rate limiting on setup attempts yet — rotate the
+code from Staff Access if it ever leaks.

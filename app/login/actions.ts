@@ -3,6 +3,8 @@
 import { redirect } from "next/navigation";
 import { isRealAuthConfigured } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getOfficeUserByEmail, getStaffSetupCode, updateOfficeUser } from "@/lib/db";
 
 /**
  * Real Supabase Auth sign-in (build 12 — Activating Real Login).
@@ -64,4 +66,68 @@ export async function signOutAction() {
     await supabase.auth.signOut();
   }
   redirect("/login");
+}
+
+/**
+ * First-time self-serve password setup (/login?mode=setup). A staff member
+ * whose Owner/Admin has already added them (an office_users row with their
+ * email, no real account yet) enters that email, the shared staff setup
+ * code (Company Setup → Staff Access), and a password of their choosing.
+ * On success the real Supabase Auth account is created with that password
+ * and linked, then they're signed straight in.
+ *
+ * No invite email and no per-person password relay are needed — the code
+ * is what stops a stranger who merely knows a staff email from claiming
+ * the account. Every failure reason maps to a short ?err= code that
+ * page.tsx turns into a plain-language message; "invalid" deliberately
+ * covers both a wrong code and an unknown email so neither is confirmable.
+ *
+ * NOTE: redirect() works by throwing, so it must never sit inside the
+ * try/catch around the Admin API call below or it would be swallowed.
+ */
+export async function setupPasswordAction(formData: FormData) {
+  if (!isRealAuthConfigured()) {
+    redirect("/login?mode=demo");
+  }
+
+  const email = String(formData.get("email") ?? "").trim();
+  const code = String(formData.get("code") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+
+  if (!email || !code || !password) redirect("/login?mode=setup&err=invalid");
+  if (password.length < 8) redirect("/login?mode=setup&err=weak");
+  if (password !== confirm) redirect("/login?mode=setup&err=mismatch");
+
+  const expected = await getStaffSetupCode();
+  const staff = await getOfficeUserByEmail(email);
+  const codeOk = typeof expected === "string" && expected !== "" && code.toLowerCase() === expected.toLowerCase();
+  if (!codeOk || !staff || !staff.active || !staff.email) redirect("/login?mode=setup&err=invalid");
+  if (staff.auth_user_id) redirect("/login?mode=setup&err=exists");
+
+  let createdAuthId: string | null = null;
+  try {
+    const admin = getSupabaseAdminClient();
+    if (admin) {
+      const { data, error } = await admin.auth.admin.createUser({
+        email: staff.email,
+        password,
+        email_confirm: true,
+        user_metadata: { office_user_id: staff.id, full_name: staff.full_name },
+      });
+      if (!error && data.user) createdAuthId = data.user.id;
+    }
+  } catch {
+    createdAuthId = null;
+  }
+  if (!createdAuthId) redirect("/login?mode=setup&err=server");
+
+  await updateOfficeUser(staff.id, { auth_user_id: createdAuthId }, staff.full_name);
+
+  // Sign them straight in; if that somehow fails the account still exists,
+  // so fall back to the normal sign-in form with a success note.
+  const supabase = await createSupabaseServerClient();
+  const signIn = supabase ? await supabase.auth.signInWithPassword({ email: staff.email, password }) : null;
+  if (!signIn || signIn.error) redirect("/login?mode=ready");
+  redirect("/dashboard");
 }

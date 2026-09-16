@@ -3,7 +3,7 @@
 import { randomBytes } from "crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createOfficeUser, getOfficeUser, setSectionPermission, updateOfficeUser } from "@/lib/db";
+import { createOfficeUser, getOfficeUser, getStaffSetupCode, setSectionPermission, setStaffSetupCode, updateOfficeUser } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { isOwnerActingUser } from "@/lib/permissions";
 import { isRealAuthConfigured } from "@/lib/auth";
@@ -29,14 +29,12 @@ function generateTempPassword(): string {
 
 export interface CreateStaffAccountResult {
   officeUserId: string;
-  /** Set only when a real Supabase Auth account was created for this
-   * person — i.e. real auth is configured AND an email was provided. */
-  tempPassword?: string;
-  /** Set when real auth is configured, an email was given, but the
-   * Supabase Admin API call itself failed (e.g. duplicate auth email) —
-   * the office_users persona still exists and can be used with the dev
-   * selector / edited to fix the email and retried. */
-  authAccountError?: string;
+  fullName: string;
+  email?: string;
+  /** The shared staff setup code to pass along (real auth configured) — the
+   * new person sets their own password at /login with it. Undefined when
+   * no code has been set yet, so the UI can say so. */
+  setupCode?: string;
 }
 
 export async function createStaffAccountAction(formData: FormData): Promise<CreateStaffAccountResult | void> {
@@ -62,60 +60,29 @@ export async function createStaffAccountAction(formData: FormData): Promise<Crea
     }
   }
 
-  // Real account creation (build 12): when real auth is configured, also
-  // create a real Supabase Auth user via the Admin API and link it onto
-  // this office_users row's auth_user_id. Uses createUser() with a
-  // generated temporary password + email_confirm:true rather than
-  // inviteUserByEmail() — this app has no real email-sending configured
-  // yet (no Resend/SMTP integration anywhere else in the codebase), so an
-  // invite email would never arrive; the temp password is instead
-  // returned once here for the Owner/Admin to relay directly.
-  let tempPassword: string | undefined;
-  let authAccountError: string | undefined;
-  if (isRealAuthConfigured()) {
-    if (!email) {
-      authAccountError = "No email was given, so no real login account was created — add one and use \"Set New Password\" on this account's page to create it.";
-    } else {
-      try {
-        const admin = getSupabaseAdminClient();
-        if (!admin) {
-          authAccountError = "Supabase Admin API isn't configured (missing SUPABASE_SERVICE_ROLE_KEY) — no real login account was created.";
-        } else {
-          const generated = generateTempPassword();
-          const { data, error } = await admin.auth.admin.createUser({
-            email,
-            password: generated,
-            email_confirm: true,
-            user_metadata: { office_user_id: created.id, full_name },
-          });
-          if (error || !data.user) {
-            authAccountError = error?.message ?? "Could not create the real login account.";
-          } else {
-            await updateOfficeUser(created.id, { auth_user_id: data.user.id }, actingUser.fullName);
-            tempPassword = generated;
-          }
-        }
-      } catch (err) {
-        // A network-level failure talking to Supabase (as opposed to a
-        // clean {error} response from the Admin API above) would otherwise
-        // throw and crash this whole Server Action — the office_users
-        // persona this created is still valid and usable via the dev
-        // selector; only the real-account half failed.
-        authAccountError = err instanceof Error ? `Could not reach Supabase: ${err.message}` : "Could not reach Supabase to create the real login account.";
-      }
-    }
-  }
-
   revalidatePath("/company-setup/staff-access");
 
   // Demo mode (unchanged from before build 12): redirect straight to the
-  // new account's edit page, exactly as always. Real auth configured: skip
-  // the redirect so the temporary password (or account-creation error) can
-  // actually be shown once — see AddStaffAccountForm.tsx.
+  // new account's edit page, exactly as always. Real auth configured: the
+  // person creates their OWN password at /login → "Set up your password"
+  // using the shared staff setup code — no invite email, no temp password
+  // to relay — so return what the Owner/Admin needs to tell them (see
+  // AddStaffAccountForm.tsx). "Set New Password" on the account's page
+  // remains available for resets.
   if (!isRealAuthConfigured()) {
     redirect(`/company-setup/staff-access/${created.id}`);
   }
-  return { officeUserId: created.id, tempPassword, authAccountError };
+  return { officeUserId: created.id, fullName: full_name, email, setupCode: (await getStaffSetupCode()) ?? undefined };
+}
+
+/** Owner/Admin sets (or clears) the shared staff setup code — see
+ * lib/db.ts setStaffSetupCode and app/login/actions.ts setupPasswordAction. */
+export async function setStaffSetupCodeAction(formData: FormData) {
+  const actingUser = await getActingUser();
+  if (!(await isOwnerActingUser(actingUser))) return;
+  const code = String(formData.get("code") ?? "").trim();
+  await setStaffSetupCode(code || null, actingUser.fullName);
+  revalidatePath("/company-setup/staff-access");
 }
 
 export async function updateSectionPermissionAction(officeUserId: string, sectionKey: SectionKey, formData: FormData) {
