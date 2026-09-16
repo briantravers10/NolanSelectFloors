@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ScheduleJobRow } from "@/lib/schedule";
 import { PhoneLink, EmailLink } from "@/components/ui";
+import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
 import {
   COI_CLASSES,
   COI_DISPLAY_LABELS,
@@ -114,6 +115,16 @@ export function ScheduleDayRowCard({ row }: { row: ScheduleJobRow }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* QUICKBOOKS — read-only, inherited automatically via project_id.
+          No settings/editing controls here; per the client's explicit
+          instruction, only shown when there's something linked. */}
+      {row.qbDocuments.length > 0 && (
+        <div>
+          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">QuickBooks</div>
+          <QuickBooksDocumentList documents={row.qbDocuments} compact />
         </div>
       )}
     </div>

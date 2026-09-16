@@ -7,6 +7,7 @@ import {
   listEmployees,
   listProjectScheduleDays,
   listProjects,
+  listQuickBooksDocuments,
   listScheduleAssignments,
   listSchedulePickupItems,
   listWorkTypes,
@@ -29,7 +30,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   const today = todayIso();
   const activeDate = dateParam ?? today;
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems] = await Promise.all([
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, qbDocuments] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -40,9 +41,10 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     listProjectScheduleDays(),
     listWorkTypes(),
     listSchedulePickupItems(),
+    listQuickBooksDocuments(),
   ]);
 
-  const rowInputs = { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems };
+  const rowInputs = { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, qbDocuments };
 
   const monday = startOfWeek(anchor);
   const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));

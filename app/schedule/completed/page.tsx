@@ -1,20 +1,25 @@
 import {
   getCompletionNotes,
+  getQuickBooksConnection,
   listActualLaborEntries,
   listBuildingContacts,
   listBuildings,
   listClientCompanies,
   listContacts,
   listEmployees,
+  listProjectMaterials,
   listProjectNotes,
   listProjectScheduleDays,
   listProjects,
+  listQuickBooksDocuments,
   listScheduleAssignments,
   listWorkTypes,
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { compileCompletedJobSummary } from "@/lib/schedule";
-import { canViewLaborCost, getActingUser } from "@/lib/current-user";
+import { canViewJobFinancials, canViewLaborCost, getActingUser } from "@/lib/current-user";
+import { computeFinancialSummary } from "@/lib/financials";
+import { isQuickBooksConnected } from "@/lib/quickbooks";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { CompletedJobCard } from "@/components/schedule/CompletedJobCard";
 
@@ -24,7 +29,7 @@ export default async function CompletedJobsPage({
   searchParams: Promise<{ q?: string; employee?: string; workType?: string; date?: string }>;
 }) {
   const { q, employee, workType, date } = await searchParams;
-  const [projects, buildings, clients, contacts, buildingContacts, assignments, scheduleDays, actualLaborEntries, employees, projectNotes, workTypes, actingUser] =
+  const [projects, buildings, clients, contacts, buildingContacts, assignments, scheduleDays, actualLaborEntries, employees, projectNotes, workTypes, actingUser, qbDocumentsAll, projectMaterials, qbConnection] =
     await Promise.all([
       listProjects(),
       listBuildings(),
@@ -38,8 +43,13 @@ export default async function CompletedJobsPage({
       listProjectNotes(),
       listWorkTypes(),
       getActingUser(),
+      listQuickBooksDocuments(),
+      listProjectMaterials(),
+      getQuickBooksConnection(),
     ]);
   const canViewCost = canViewLaborCost(actingUser);
+  const canViewFinancials = canViewJobFinancials(actingUser);
+  const qbConnected = isQuickBooksConnected(qbConnection);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -63,7 +73,7 @@ export default async function CompletedJobsPage({
       const contact = pointOfContact(project.building_id);
       const notes = projectNotes.filter((n) => n.project_id === project.id && n.author_name !== "Completion Notes").map((n) => n.body);
       const completionNotes = await getCompletionNotes(project.id);
-      return compileCompletedJobSummary(project, {
+      const summary = compileCompletedJobSummary(project, {
         building,
         client,
         contact,
@@ -73,7 +83,10 @@ export default async function CompletedJobsPage({
         employees,
         notes,
         completionNotes,
+        qbDocuments: qbDocumentsAll,
       });
+      const financials = computeFinancialSummary(project, assignments, projectMaterials, summary.qbDocuments, qbConnected);
+      return { ...summary, financials };
     })
   );
 
@@ -127,7 +140,9 @@ export default async function CompletedJobsPage({
         <EmptyState message="No completed jobs match these filters." />
       ) : (
         <div className="space-y-2">
-          {filtered.map((s) => <CompletedJobCard key={s.project.id} summary={s} canViewLaborCost={canViewCost} />)}
+          {filtered.map((s) => (
+            <CompletedJobCard key={s.project.id} summary={s} financials={s.financials} canViewLaborCost={canViewCost} canViewFinancials={canViewFinancials} />
+          ))}
         </div>
       )}
     </div>

@@ -2,12 +2,25 @@
 
 import { useState } from "react";
 import type { CompletedJobSummary } from "@/lib/schedule";
+import type { FinancialSummary } from "@/lib/financials";
 import { Button, PhoneLink, StatusBadge } from "@/components/ui";
 import { formatCurrency } from "@/lib/calculations";
 import { formatDateShort } from "@/lib/dates";
 import { saveCompletionNotesAction } from "@/app/schedule/actions";
+import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
+import { FinancialSummaryCard } from "@/components/quickbooks/FinancialSummaryCard";
 
-export function CompletedJobCard({ summary, canViewLaborCost }: { summary: CompletedJobSummary; canViewLaborCost: boolean }) {
+export function CompletedJobCard({
+  summary,
+  financials,
+  canViewLaborCost,
+  canViewFinancials,
+}: {
+  summary: CompletedJobSummary;
+  financials: FinancialSummary;
+  canViewLaborCost: boolean;
+  canViewFinancials: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const { project, building, client, contactName, contactPhone } = summary;
 
@@ -75,6 +88,13 @@ export function CompletedJobCard({ summary, canViewLaborCost }: { summary: Compl
               </div>
             )}
           </div>
+
+          <div>
+            <div className="text-[11px] font-medium text-slate-500 uppercase mb-1">QuickBooks</div>
+            <QuickBooksDocumentList documents={summary.qbDocuments} />
+          </div>
+
+          {canViewFinancials && <FinancialSummaryCard summary={financials} canViewLaborCost={canViewLaborCost} />}
 
           {summary.notes.length > 0 && (
             <div>

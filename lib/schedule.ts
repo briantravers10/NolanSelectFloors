@@ -14,6 +14,7 @@ import type {
   PipelineStage,
   Project,
   ProjectScheduleDay,
+  QuickBooksDocument,
   ScheduleAssignment,
   ScheduleColor,
   ScheduleJobStatus,
@@ -207,6 +208,12 @@ export interface ScheduleJobRow {
   // "Items to Order / Collect" (build 8) — empty when the job/day has no
   // project_schedule_days row yet, or none were added.
   pickupItems: SchedulePickupItem[];
+  // QUICKBOOKS (build 10) — read-only, inherited automatically via
+  // project_id, per the client's explicit "no manual entry fields on
+  // Create/Edit Schedule, no QuickBooks settings/editing controls on View
+  // Schedule" instruction. Empty when nothing's linked, or when
+  // qbDocuments wasn't passed in (older call sites).
+  qbDocuments: QuickBooksDocument[];
 }
 
 export interface ScheduleRowInputs {
@@ -222,6 +229,8 @@ export interface ScheduleRowInputs {
   // Optional — omitted callers (e.g. older call sites) simply render no
   // pickup items rather than needing every page updated at once.
   pickupItems?: SchedulePickupItem[];
+  // Optional, same convention as pickupItems above.
+  qbDocuments?: QuickBooksDocument[];
 }
 
 function pointOfContact(
@@ -244,7 +253,7 @@ function pointOfContact(
  * project_schedule_days row OR a schedule_assignments row for the date
  * shows up — a job can be on the schedule with crew not yet assigned. */
 export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): ScheduleJobRow[] {
-  const { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems = [] } = input;
+  const { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems = [], qbDocuments = [] } = input;
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -302,6 +311,7 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       scheduleDayId: scheduleDay?.id,
       earliestCallTime,
       pickupItems: scheduleDay ? pickupItems.filter((i) => i.project_schedule_day_id === scheduleDay.id) : [],
+      qbDocuments: qbDocuments.filter((d) => d.project_id === projectId),
     });
   }
 
@@ -379,6 +389,9 @@ export interface CompletedJobSummary {
   materialsStatus?: string;
   notes: string[];
   completionNotes?: string;
+  // QUICKBOOKS (build 10) — read-only, inherited via project_id, no manual
+  // re-entry. See lib/quickbooks.ts / README.
+  qbDocuments: QuickBooksDocument[];
 }
 
 /**
@@ -402,6 +415,7 @@ export function compileCompletedJobSummary(
     employees: Employee[];
     notes: string[];
     completionNotes?: string;
+    qbDocuments?: QuickBooksDocument[];
   }
 ): CompletedJobSummary {
   const projectAssignments = opts.assignments.filter((a) => a.project_id === project.id);
@@ -471,5 +485,6 @@ export function compileCompletedJobSummary(
     materialsStatus: lastDay?.materials_status,
     notes: opts.notes,
     completionNotes: opts.completionNotes,
+    qbDocuments: (opts.qbDocuments ?? []).filter((d) => d.project_id === project.id),
   };
 }

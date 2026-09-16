@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listCompanySetupAnswers, listWorkTypes } from "@/lib/db";
 import { QUESTIONNAIRE } from "@/lib/questionnaire";
 import { Card, PageHeader, Button } from "@/components/ui";
@@ -14,6 +15,14 @@ export default async function CompanySetupPage() {
         title="Company Setup"
         subtitle="A one-time discovery questionnaire. Answers are saved and used to tailor the platform to how your office actually runs today."
       />
+
+      <Card className="p-4 mb-6">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Integrations</h2>
+        <p className="text-xs text-slate-500 mb-3">Connect QuickBooks Online to bring customer, estimate, invoice and payment data onto each job.</p>
+        <Link href="/company-setup/quickbooks">
+          <Button variant="secondary">QuickBooks →</Button>
+        </Link>
+      </Card>
 
       <Card className="p-4 mb-6">
         <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Work Types</h2>

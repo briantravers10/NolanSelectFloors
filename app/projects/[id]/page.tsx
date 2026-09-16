@@ -18,11 +18,16 @@ import {
   listScheduleAssignments,
   listTasks,
 } from "@/lib/db";
-import { canViewLaborCost, getActingUser } from "@/lib/current-user";
+import { canManageQuickBooksDocuments, canViewJobFinancials, canViewLaborCost, canViewQuickBooks, getActingUser } from "@/lib/current-user";
 import { jobLaborSummary } from "@/lib/labor-cost";
 import { Card, PageHeader, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { BidOwnership } from "@/components/BidOwnership";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
+import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
+import { FinancialSummaryCard } from "@/components/quickbooks/FinancialSummaryCard";
+import { computeFinancialSummary } from "@/lib/financials";
+import { isQuickBooksConnected } from "@/lib/quickbooks";
+import { getQuickBooksConnection, listQuickBooksDocumentsForProject } from "@/lib/db";
 import {
   compareCrewForProjectDate,
   computeProjectCosting,
@@ -68,6 +73,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     formulaComponents,
     materialRateItems,
     actualLaborEntries,
+    qbDocuments,
+    qbConnection,
   ] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -88,6 +95,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listPricingFormulaComponents(),
     listMaterialRateItems(),
     listActualLaborEntries(),
+    listQuickBooksDocumentsForProject(id),
+    getQuickBooksConnection(),
   ]);
 
   const project = projects.find((p) => p.id === id);
@@ -123,6 +132,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const costing = computeProjectCosting(project, assignments, materials, id);
   const canViewCost = canViewLaborCost(actingUser);
   const laborSummary = jobLaborSummary(id, actualLaborEntries, employees);
+  const canQBView = canViewQuickBooks(actingUser);
+  const canQBManage = canManageQuickBooksDocuments(actingUser);
+  const canFinancials = canViewJobFinancials(actingUser);
+  const qbConnected = isQuickBooksConnected(qbConnection);
+  const financialSummary = computeFinancialSummary(project, assignments, materials, qbDocuments, qbConnected);
 
   return (
     <div>
@@ -301,6 +315,35 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                     </tr>
                   </tfoot>
                 </table>
+              )}
+            </Card>
+          )}
+
+          {canQBView && (
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">QuickBooks</h2>
+                {!qbConnected && <span className="text-xs text-slate-400">Not connected</span>}
+              </div>
+              <QuickBooksDocumentList documents={qbDocuments} />
+              {canQBManage && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <Link href={`/projects/${project.id}/quickbooks/prepare-estimate`}>
+                    <Button variant="secondary">Prepare Estimate</Button>
+                  </Link>
+                  <Link href={`/projects/${project.id}/quickbooks/prepare-invoice`}>
+                    <Button variant="secondary">Prepare Invoice</Button>
+                  </Link>
+                  <Link href={`/projects/${project.id}/quickbooks/link`}>
+                    <Button variant="secondary">Link Existing Document</Button>
+                  </Link>
+                </div>
+              )}
+              {project.pipeline_stage === "Complete" && qbDocuments.filter((d) => d.entity_type === "Invoice").length === 0 && canQBManage && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+                  This job is complete with no invoice prepared yet.{" "}
+                  <Link href={`/projects/${project.id}/quickbooks/prepare-invoice`} className="underline font-medium">Prepare QuickBooks Invoice →</Link>
+                </p>
               )}
             </Card>
           )}
@@ -555,6 +598,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </Link>
           )}
         </Card>
+
+        {canFinancials && <FinancialSummaryCard summary={financialSummary} canViewLaborCost={canViewCost} />}
 
         <Card className="p-4 space-y-3 lg:col-span-3">
           <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Estimate Calculator</h2>
