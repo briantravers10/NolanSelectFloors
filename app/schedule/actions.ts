@@ -347,7 +347,18 @@ export async function createQuickJobAction(formData: FormData) {
   if (building && !client) client = clients.find((c) => c.id === building!.client_company_id);
   if (!building) {
     if (!client) {
-      if (!clientName) redirect(`/schedule/edit?date=${schedule_date}&qj=need-company`);
+      if (!clientName) {
+        const keep = new URLSearchParams({
+          date: schedule_date,
+          qj: "need-company",
+          qj_building: buildingName,
+          qj_unit: String(formData.get("unit_number") ?? ""),
+          qj_contact: contactName,
+          qj_phone: contactPhone,
+          qj_desc: description,
+        });
+        redirect(`/schedule/edit?${keep.toString()}`);
+      }
       client = await createClientCompanyRecord({ name: clientName, type: "Property Management", active: true });
     }
     const latRaw = String(formData.get("latitude") ?? "");
@@ -402,8 +413,12 @@ export async function createQuickJobAction(formData: FormData) {
     start_date: schedule_date,
     actorName: actingUser.fullName,
   });
+  // Put it on the day straight away (Blue — starting today) so it shows in
+  // the list immediately and loads into the form as an existing entry.
+  const day = await getOrCreateProjectScheduleDay(project.id, schedule_date, actingUser.fullName);
+  if (day.schedule_color !== "Blue") await updateProjectScheduleDay(day.id, { schedule_color: "Blue", notes: description }, actingUser.fullName);
   revalidatePath("/projects");
-  revalidatePath("/schedule");
+  revalidateSchedule(project.id);
   redirect(`/schedule/edit?project=${project.id}&date=${schedule_date}`);
 }
 

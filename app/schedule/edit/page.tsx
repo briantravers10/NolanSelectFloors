@@ -33,9 +33,9 @@ import { QuickJobForm } from "@/components/schedule/QuickJobForm";
 export default async function ScheduleEditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; date?: string; qj?: string }>;
+  searchParams: Promise<{ project?: string; date?: string; qj?: string; qj_building?: string; qj_unit?: string; qj_contact?: string; qj_phone?: string; qj_desc?: string }>;
 }) {
-  const { project: projectParam, date: dateParam, qj } = await searchParams;
+  const { project: projectParam, date: dateParam, qj, qj_building, qj_unit, qj_contact, qj_phone, qj_desc } = await searchParams;
   const date = dateParam ?? todayIso();
 
   const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems] = await Promise.all([
@@ -122,7 +122,14 @@ export default async function ScheduleEditPage({
           {dayLabel(date)}, {formatDateShort(date)}
         </div>
         <div className="ml-auto flex-1 sm:flex-none min-w-[280px] flex justify-end">
-          <QuickJobForm date={date} buildings={quickBuildings} clients={quickClients} contacts={quickContacts} error={qj} />
+          <QuickJobForm
+            date={date}
+            buildings={quickBuildings}
+            clients={quickClients}
+            contacts={quickContacts}
+            error={qj}
+            prefill={qj ? { building: qj_building, unit: qj_unit, contact: qj_contact, phone: qj_phone, desc: qj_desc } : undefined}
+          />
         </div>
       </Card>
 

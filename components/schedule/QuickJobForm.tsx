@@ -20,15 +20,17 @@ export function QuickJobForm({
   clients,
   contacts,
   error,
+  prefill,
 }: {
   date: string;
   buildings: { name: string; clientName?: string }[];
   clients: { name: string }[];
   contacts: { name: string; clientName?: string }[];
   error?: string;
+  prefill?: { building?: string; unit?: string; contact?: string; phone?: string; desc?: string };
 }) {
   const [open, setOpen] = useState(Boolean(error));
-  const [buildingName, setBuildingName] = useState("");
+  const [buildingName, setBuildingName] = useState(prefill?.building ?? "");
   const [addr, setAddr] = useState({ address: "", city: "", state: "NY", zip: "", region: "Other", latitude: "", longitude: "" });
   const known = buildings.find((b) => b.name.toLowerCase() === buildingName.trim().toLowerCase());
 
@@ -44,7 +46,9 @@ export function QuickJobForm({
     <form action={createQuickJobAction} className="rounded-xl border border-sky-200 bg-sky-50 p-3 w-full space-y-2">
       <input type="hidden" name="schedule_date" value={date} />
       {error === "need-company" && (
-        <p className="text-xs text-rose-700 font-medium">That building isn&apos;t on file yet — add the management company so it can be created.</p>
+        <p className="text-xs text-rose-700 font-medium">
+          &quot;{prefill?.building}&quot; isn&apos;t on file yet — type the management company it belongs to (or pick one) and hit Create &amp; Schedule again.
+        </p>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-[2fr_2fr_1fr] gap-2">
         <div>
@@ -67,12 +71,18 @@ export function QuickJobForm({
         </div>
         <div>
           <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
-            Management Company {known?.clientName && <span className="normal-case text-slate-400">— {known.clientName}</span>}
+            Management Company{" "}
+            {known?.clientName ? (
+              <span className="normal-case text-slate-400">— {known.clientName}</span>
+            ) : buildingName.trim() ? (
+              <span className="normal-case text-rose-600">— needed for a new building</span>
+            ) : null}
           </label>
           <input
             name="client_name"
             list="qj-clients"
             autoComplete="off"
+            required={!known && buildingName.trim().length > 0}
             placeholder={known ? "Already on file" : "Pick one or type a new company"}
             className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm"
           />
@@ -84,7 +94,7 @@ export function QuickJobForm({
         </div>
         <div>
           <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">Unit</label>
-          <input name="unit_number" placeholder="e.g. 4B" className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" />
+          <input name="unit_number" placeholder="e.g. 4B" defaultValue={prefill?.unit ?? ""} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" />
         </div>
       </div>
 
@@ -122,6 +132,7 @@ export function QuickJobForm({
             name="contact_name"
             list="qj-contacts"
             autoComplete="off"
+            defaultValue={prefill?.contact ?? ""}
             placeholder="Pick one or type a name"
             className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm"
           />
@@ -133,11 +144,11 @@ export function QuickJobForm({
         </div>
         <div>
           <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">Contact Phone</label>
-          <PhoneInput name="contact_phone" className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" />
+          <PhoneInput name="contact_phone" defaultValue={prefill?.phone ?? ""} className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" />
         </div>
         <div>
           <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">What&apos;s the job?</label>
-          <input name="description" required placeholder="e.g. Sand & refinish living room" className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" />
+          <input name="description" required defaultValue={prefill?.desc ?? ""} placeholder="e.g. Sand & refinish living room" className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" />
         </div>
       </div>
 
