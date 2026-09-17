@@ -33,9 +33,9 @@ import { QuickJobForm } from "@/components/schedule/QuickJobForm";
 export default async function ScheduleEditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; date?: string }>;
+  searchParams: Promise<{ project?: string; date?: string; qj?: string }>;
 }) {
-  const { project: projectParam, date: dateParam } = await searchParams;
+  const { project: projectParam, date: dateParam, qj } = await searchParams;
   const date = dateParam ?? todayIso();
 
   const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems] = await Promise.all([
@@ -66,21 +66,25 @@ export default async function ScheduleEditPage({
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
-  const buildingOptions = buildings
+  const quickBuildings = buildings
     .filter((b) => b.active)
-    .map((b) => {
-      const client = clientById.get(b.client_company_id);
-      return { id: b.id, label: `${b.name}${client ? ` · ${client.name}` : ""}` };
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .map((b) => ({ name: b.name, clientName: clientById.get(b.client_company_id)?.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const quickClients = clients.map((c) => ({ name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const quickContacts = contacts
+    .map((c) => ({ name: `${c.first_name} ${c.last_name}`.trim(), clientName: c.client_company_id ? clientById.get(c.client_company_id)?.name : undefined }))
+    .filter((c) => c.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes });
 
   const selectedProjectId = projectParam && projects.some((p) => p.id === projectParam) ? projectParam : undefined;
-  const selectedDay = selectedProjectId ? scheduleDays.find((d) => d.project_id === selectedProjectId && d.schedule_date === date) : undefined;
-  const selectedCrew = selectedProjectId
-    ? assignments.filter((a) => a.project_id === selectedProjectId && a.schedule_date === date).map((a) => a.employee_id)
-    : [];
+  // Prefill from the row as shown for this date — which, for a job carried
+  // over from an earlier day, is that day's entry and crew — so editing a
+  // continued job doesn't start from a blank form.
+  const selectedRow = selectedProjectId ? rowsForDate.find((r) => r.projectId === selectedProjectId) : undefined;
+  const selectedDay = selectedRow?.scheduleDayId ? scheduleDays.find((d) => d.id === selectedRow.scheduleDayId) : undefined;
+  const selectedCrew = selectedRow ? selectedRow.crew.map((c) => c.employeeId) : [];
   const selectedPickupItems = selectedDay ? pickupItems.filter((i) => i.project_schedule_day_id === selectedDay.id) : [];
 
   const assignedIds = new Set(assignments.filter((a) => a.schedule_date === date).map((a) => a.employee_id));
@@ -118,7 +122,7 @@ export default async function ScheduleEditPage({
           {dayLabel(date)}, {formatDateShort(date)}
         </div>
         <div className="ml-auto flex-1 sm:flex-none min-w-[280px] flex justify-end">
-          <QuickJobForm date={date} buildingOptions={buildingOptions} />
+          <QuickJobForm date={date} buildings={quickBuildings} clients={quickClients} contacts={quickContacts} error={qj} />
         </div>
       </Card>
 

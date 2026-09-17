@@ -206,6 +206,11 @@ export interface ScheduleJobRow {
   notes?: string;
   scheduleDayId?: string;
   earliestCallTime?: string | null;
+  // Set when this row has no entry of its own for `date` and is being
+  // shown because the job is still open — carried over from the last day
+  // it was actually put on the schedule. A job stays on every following
+  // day until it's marked Completed.
+  carriedFrom?: string;
   // "Items to Order / Collect" (build 8) — empty when the job/day has no
   // project_schedule_days row yet, or none were added.
   pickupItems: SchedulePickupItem[];
@@ -261,18 +266,58 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
   const employeeById = new Map(employees.map((e) => [e.id, e]));
   const workTypeById = new Map(workTypes.map((w) => [w.id, w]));
 
-  const dayAssignments = assignments.filter((a) => a.schedule_date === date);
-  const dayScheduleDays = scheduleDays.filter((d) => d.schedule_date === date);
-  const projectIds = new Set([...dayAssignments.map((a) => a.project_id), ...dayScheduleDays.map((d) => d.project_id)]);
+  // Every project that has ever been put on the schedule on or before
+  // `date`. Ones with a real entry for this exact date render from it;
+  // the rest are carried forward from their most recent entry, unless the
+  // job has been marked Completed (then it drops off the next day).
+  const daysByProject = new Map<string, ProjectScheduleDay[]>();
+  for (const d of scheduleDays) {
+    if (d.schedule_date > date) continue;
+    const list = daysByProject.get(d.project_id) ?? [];
+    list.push(d);
+    daysByProject.set(d.project_id, list);
+  }
+  const assignmentsByProject = new Map<string, ScheduleAssignment[]>();
+  for (const a of assignments) {
+    if (a.schedule_date > date) continue;
+    const list = assignmentsByProject.get(a.project_id) ?? [];
+    list.push(a);
+    assignmentsByProject.set(a.project_id, list);
+  }
+  const projectIds = new Set([...daysByProject.keys(), ...assignmentsByProject.keys()]);
 
   const rows: ScheduleJobRow[] = [];
   for (const projectId of projectIds) {
     const project = projectById.get(projectId);
     if (!project) continue;
+
+    const projectDays = (daysByProject.get(projectId) ?? []).sort((a, b) => a.schedule_date.localeCompare(b.schedule_date));
+    const projectAssignments = assignmentsByProject.get(projectId) ?? [];
+    let scheduleDay = projectDays.find((d) => d.schedule_date === date);
+    let crew = projectAssignments.filter((a) => a.schedule_date === date);
+    let carriedFrom: string | undefined;
+    let scheduleColor: ScheduleColor | undefined = scheduleDay?.schedule_color;
+
+    if (!scheduleDay && crew.length === 0) {
+      // Carry forward from the latest earlier entry (day row or crew).
+      const lastDay = projectDays.filter((d) => d.schedule_date < date).at(-1);
+      const lastCrewDate = projectAssignments.reduce<string | null>((max, a) => (a.schedule_date < date && (!max || a.schedule_date > max) ? a.schedule_date : max), null);
+      const anchorDate = [lastDay?.schedule_date, lastCrewDate].filter((x): x is string => Boolean(x)).sort().at(-1);
+      if (!anchorDate) continue;
+      if (project.pipeline_stage === "Complete") continue;
+      if (lastDay && lastDay.schedule_date === anchorDate && lastDay.job_status === "Complete") continue;
+      if (lastDay?.job_status === "Complete") continue;
+      carriedFrom = anchorDate;
+      scheduleDay = lastDay;
+      crew = projectAssignments.filter((a) => a.schedule_date === anchorDate);
+      // "Blue — starting today" only applies to the first day; after that
+      // it's a continuation.
+      scheduleColor = scheduleDay?.schedule_color === "Blue" ? "Gray" : scheduleDay?.schedule_color;
+    }
+
     const building = buildingById.get(project.building_id);
     const client = building ? clientById.get(building.client_company_id) : undefined;
     const contact = pointOfContact(project.building_id, buildings, buildingContacts, contacts);
-    const crew = dayAssignments.filter((a) => a.project_id === projectId);
     const crewNames = crew.map((a) => {
       const e = employeeById.get(a.employee_id);
       return e ? employeeDisplayName(e) : "Unknown";
@@ -281,7 +326,6 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       const e = employeeById.get(a.employee_id);
       return { assignmentId: a.id, employeeId: a.employee_id, name: e ? employeeDisplayName(e) : "Unknown" };
     });
-    const scheduleDay = dayScheduleDays.find((d) => d.project_id === projectId);
     const earliestCallTime = crew.length > 0 ? crew.reduce<string | null>((min, a) => {
       if (!a.call_time) return min;
       if (min === null) return a.call_time;
@@ -306,11 +350,12 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       coiStatus: scheduleDay?.coi_status ?? "Not Sent",
       materialsStatus: scheduleDay?.materials_status ?? "Not Ordered",
       jobStatus: scheduleDay?.job_status ?? mapPipelineStageToJobStatus(project.pipeline_stage),
-      scheduleColor: scheduleDay?.schedule_color ?? "Pink",
+      scheduleColor: scheduleColor ?? "Pink",
       workTypeName: scheduleDay?.work_type_id ? workTypeById.get(scheduleDay.work_type_id)?.name : undefined,
       notes: scheduleDay?.notes || project.description,
       scheduleDayId: scheduleDay?.id,
       earliestCallTime,
+      carriedFrom,
       pickupItems: scheduleDay ? pickupItems.filter((i) => i.project_schedule_day_id === scheduleDay.id) : [],
       qbDocuments: qbDocuments.filter((d) => d.project_id === projectId),
     });

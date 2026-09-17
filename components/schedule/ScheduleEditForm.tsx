@@ -95,7 +95,9 @@ export function ScheduleEditForm({
                 {SCHEDULE_COLOR_FORM_LABELS[c]}
               </option>
             ))}
+            <option value="Complete">✅ Completed — job done, take it off the schedule</option>
           </select>
+          <p className="text-xs text-slate-500 mt-1">A job stays on the schedule every day until it&apos;s marked Completed here.</p>
         </div>
 
         <div>

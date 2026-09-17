@@ -1870,7 +1870,7 @@ export async function createScheduleAssignment(input: {
   actorName?: string;
 }): Promise<ScheduleAssignment> {
   const store = getStore();
-  const employee = store.employees.find((e) => e.id === input.employee_id);
+  const employee = (await listEmployees()).find((e) => e.id === input.employee_id);
   if (!employee) throw new Error("Employee not found");
   const rate_multiplier = input.time_and_half ? 1.5 : 1.0;
   const record: ScheduleAssignment = {
@@ -2054,7 +2054,7 @@ export async function updateLeadStatus(id: string, status: NewBusinessLead["stat
 
 export async function convertLeadToClient(leadId: string): Promise<ClientCompany> {
   const store = getStore();
-  const lead = store.newBusinessLeads.find((l) => l.id === leadId);
+  const lead = (await listLeads()).find((l) => l.id === leadId);
   if (!lead) throw new Error("Lead not found");
   const now = new Date().toISOString();
   const client_company: ClientCompany = {

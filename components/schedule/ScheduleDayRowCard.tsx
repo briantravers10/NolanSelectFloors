@@ -32,6 +32,11 @@ export function ScheduleDayRowCard({ row }: { row: ScheduleJobRow }) {
             {row.unitNumber ? ` — Unit ${row.unitNumber}` : ""}
           </div>
           <div className="text-sm text-slate-700 mt-0.5">{row.address}</div>
+          {row.carriedFrom && (
+            <div className="text-xs text-slate-600 mt-1">
+              Still open — carried over from {row.carriedFrom}. Set Schedule Type to Completed to take it off the schedule.
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3 shrink-0 text-sm">
           <Link href={`/projects/${row.projectId}`} className="text-sky-700 hover:underline font-medium">

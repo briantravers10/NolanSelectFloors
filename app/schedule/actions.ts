@@ -5,6 +5,16 @@ import { redirect } from "next/navigation";
 import {
   confirmDay,
   createActualLaborEntry,
+  createBuildingContact,
+  createBuildingRecord,
+  createClientCompanyRecord,
+  createContact,
+  listBuildingContacts,
+  listBuildings,
+  listClientCompanies,
+  listContacts,
+  updateBuilding,
+  updateContact,
   createScheduleAssignment,
   createQuickProject,
   createSchedulePickupItem,
@@ -22,7 +32,8 @@ import {
 } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
-import type { CoiStatus, ScheduleColor, ScheduleJobStatus, ScheduleMaterialsStatus, StaffCapability } from "@/lib/types";
+import type { BuildingRegion, CoiStatus, ScheduleColor, ScheduleJobStatus, ScheduleMaterialsStatus, StaffCapability } from "@/lib/types";
+import { BUILDING_REGIONS } from "@/lib/types";
 
 function revalidateSchedule(projectId?: string) {
   revalidatePath("/schedule");
@@ -185,10 +196,18 @@ export async function saveScheduleEntryAction(formData: FormData) {
   const work_type_id = String(formData.get("work_type_id") ?? "");
   const notes = String(formData.get("notes") ?? "");
 
-  if (schedule_color && schedule_color !== day.schedule_color) await setScheduleColorAction(project_id, schedule_date, formData);
+  const markComplete = schedule_color === "Complete";
+  if (!markComplete && schedule_color && schedule_color !== day.schedule_color) await setScheduleColorAction(project_id, schedule_date, formData);
   if (coi_status && coi_status !== day.coi_status) await setCoiStatusAction(project_id, schedule_date, formData);
   if (materials_status && materials_status !== day.materials_status) await setMaterialsStatusAction(project_id, schedule_date, formData);
-  if (job_status && job_status !== day.job_status) await setJobStatusAction(project_id, schedule_date, formData);
+  if (markComplete) {
+    // "Completed" from the Schedule Type dropdown: writes job_status
+    // (and through it the project's pipeline stage) so the job drops off
+    // the schedule from the next day onward.
+    const done = new FormData();
+    done.set("job_status", "Complete");
+    if (day.job_status !== "Complete") await setJobStatusAction(project_id, schedule_date, done);
+  } else if (job_status && job_status !== day.job_status) await setJobStatusAction(project_id, schedule_date, formData);
   if (work_type_id !== (day.work_type_id ?? "")) await setWorkTypeAction(project_id, schedule_date, formData);
   if (notes !== (day.notes ?? "")) await setScheduleNotesAction(project_id, schedule_date, formData);
 
@@ -306,11 +325,75 @@ export async function toggleWorkTypeActiveAction(id: string, active: boolean) {
  */
 export async function createQuickJobAction(formData: FormData) {
   if (!(await canEdit("schedule"))) return;
-  const building_id = String(formData.get("building_id") ?? "");
   const schedule_date = String(formData.get("schedule_date") ?? "");
   const description = String(formData.get("description") ?? "").trim();
-  if (!building_id || !schedule_date || !description) return;
+  const buildingName = String(formData.get("building_name") ?? "").trim();
+  const clientName = String(formData.get("client_name") ?? "").trim();
+  const contactName = String(formData.get("contact_name") ?? "").trim();
+  const contactPhone = String(formData.get("contact_phone") ?? "").trim();
+  if (!schedule_date || !description || !buildingName) return;
+
+  const norm = (x: string) => x.trim().toLowerCase();
+  const [buildings, clients, contacts, links] = await Promise.all([listBuildings(), listClientCompanies(), listContacts(), listBuildingContacts()]);
+
+  // Management company: pick the existing one by name, or create it.
+  let client = clientName ? clients.find((c) => norm(c.name) === norm(clientName)) : undefined;
+
+  // Building: existing by name (preferring one under the named company),
+  // otherwise created under the company — which then must be known.
+  const nameMatches = buildings.filter((b) => norm(b.name) === norm(buildingName) || norm(b.address) === norm(buildingName));
+  let building = client ? nameMatches.find((b) => b.client_company_id === client!.id) ?? nameMatches[0] : nameMatches[0];
+  if (building && !client) client = clients.find((c) => c.id === building!.client_company_id);
+  if (!building) {
+    if (!client) {
+      if (!clientName) redirect(`/schedule/edit?date=${schedule_date}&qj=need-company`);
+      client = await createClientCompanyRecord({ name: clientName, type: "Property Management", active: true });
+    }
+    const latRaw = String(formData.get("latitude") ?? "");
+    const lngRaw = String(formData.get("longitude") ?? "");
+    const regionRaw = String(formData.get("region") ?? "");
+    building = await createBuildingRecord({
+      client_company_id: client.id,
+      name: buildingName,
+      address: String(formData.get("address") ?? "").trim() || buildingName,
+      city: String(formData.get("city") ?? "").trim(),
+      state: String(formData.get("state") ?? "").trim() || "NY",
+      zip: String(formData.get("zip") ?? "").trim(),
+      region: (BUILDING_REGIONS as readonly string[]).includes(regionRaw) ? (regionRaw as BuildingRegion) : "Other",
+      latitude: latRaw ? Number(latRaw) : null,
+      longitude: lngRaw ? Number(lngRaw) : null,
+      active: true,
+    });
+  }
+
+  // Point of contact: existing contact on this company by name, or a new
+  // one; linked to the building (as its POC if it has none yet).
+  if (contactName && client) {
+    const clientId = client.id;
+    let contact = contacts.find((c) => c.client_company_id === clientId && norm(`${c.first_name} ${c.last_name}`) === norm(contactName));
+    if (!contact) {
+      const parts = contactName.split(/\s+/);
+      contact = await createContact({
+        client_company_id: clientId,
+        first_name: parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0],
+        last_name: parts.length > 1 ? parts[parts.length - 1] : "",
+        phone: contactPhone || undefined,
+      });
+    } else if (contactPhone && !contact.phone) {
+      await updateContact(contact.id, { phone: contactPhone });
+    }
+    const buildingLinks = links.filter((l) => l.building_id === building!.id);
+    if (!buildingLinks.some((l) => l.contact_id === contact!.id)) {
+      const isPrimary = !buildingLinks.some((l) => l.is_primary);
+      await createBuildingContact({ building_id: building.id, contact_id: contact.id, role: "Other", is_primary: isPrimary });
+      if (!building.primary_contact_id) await updateBuilding(building.id, { primary_contact_id: contact.id });
+    }
+  }
+
+  const building_id = building.id;
   const actingUser = await getActingUser();
+  revalidatePath("/clients");
+  revalidatePath("/buildings");
   const project = await createQuickProject({
     building_id,
     unit_number: String(formData.get("unit_number") ?? "").trim() || undefined,
