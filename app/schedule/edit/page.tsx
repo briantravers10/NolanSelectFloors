@@ -15,6 +15,7 @@ import {
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { buildScheduleJobRows } from "@/lib/schedule";
 import { dayLabel, formatDateShort, todayIso } from "@/lib/dates";
+import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { ScheduleEditForm } from "@/components/schedule/ScheduleEditForm";
 import { SCHEDULE_COLOR_DOT } from "@/components/schedule/badges";
@@ -75,6 +76,19 @@ export default async function ScheduleEditPage({
     : [];
   const selectedPickupItems = selectedDay ? pickupItems.filter((i) => i.project_schedule_day_id === selectedDay.id) : [];
 
+  // Everyone active who isn't on ANY job this date — the "who's still free"
+  // list the office looks at while building the day. Anyone with logged
+  // time off that day is shown, but flagged, so they aren't assigned by
+  // mistake (same warn-don't-block convention as the crew picker).
+  const assignedIds = new Set(assignments.filter((a) => a.schedule_date === date).map((a) => a.employee_id));
+  const notOnSchedule = activeEmployees
+    .filter((e) => !assignedIds.has(e.id))
+    .map((e) => {
+      const off = isEmployeeOffOn(timeOffEntries, e.id, date);
+      return { id: e.id, name: `${e.first_name} ${e.last_name}`, offLabel: off ? timeOffWarningLabel(off.type) : null };
+    })
+    .sort((a, b) => (a.offLabel ? 1 : 0) - (b.offLabel ? 1 : 0) || a.name.localeCompare(b.name));
+
   return (
     <div>
       <PageHeader
@@ -117,6 +131,25 @@ export default async function ScheduleEditPage({
                 </Link>
               ))}
             </div>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Not on the schedule</h2>
+          <p className="text-[11px] text-slate-500 mb-2">
+            {dayLabel(date)}, {formatDateShort(date)} — {notOnSchedule.length} of {activeEmployees.length} not assigned to any job.
+          </p>
+          {notOnSchedule.length === 0 ? (
+            <EmptyState message="Everyone is on a job this day." />
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {notOnSchedule.map((e) => (
+                <li key={e.id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                  <span className={e.offLabel ? "text-slate-400" : "text-slate-800"}>{e.name}</span>
+                  {e.offLabel && <span className="text-amber-700 font-semibold text-xs">{e.offLabel}</span>}
+                </li>
+              ))}
+            </ul>
           )}
         </Card>
 
