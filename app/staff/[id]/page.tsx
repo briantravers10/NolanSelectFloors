@@ -24,7 +24,8 @@ function taxStatusLabel(status?: string) {
   return status === "W-4" ? "W-4 Employee" : status === "1099" ? "1099 Contractor" : "Not set";
 }
 import { AddTimeOffForm } from "@/components/staff/AddTimeOffForm";
-import { addTimeOffAction, deleteTimeOffAction, updateEmployeeNicknameAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
+import { DeleteStaffButton } from "@/components/staff/DeleteStaffButton";
+import { addTimeOffAction, deleteTimeOffAction, deleteStaffAction, setEmployeeActiveAction, updateEmployeeNicknameAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -273,9 +274,26 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
             ))}
           </div>
           <div className="mt-4 pt-4 border-t border-slate-200 text-sm">
-            <div className="flex justify-between mb-1"><span className="text-slate-500">Status</span><span>{employee.active ? "Active" : "Inactive"}</span></div>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-slate-500">Status</span>
+              <span className="flex items-center gap-2">
+                {employee.active ? "Active" : "Inactive"}
+                {canEditStaff && (
+                  <form action={setEmployeeActiveAction.bind(null, employee.id, !employee.active)}>
+                    <button type="submit" className="text-xs text-sky-600 hover:text-sky-800 underline">
+                      {employee.active ? "Mark Inactive" : "Mark Active"}
+                    </button>
+                  </form>
+                )}
+              </span>
+            </div>
             <div className="flex justify-between"><span className="text-slate-500">Driver</span><span>{employee.is_driver ? "Yes" : "No"}</span></div>
           </div>
+          {canEditStaff && (
+            <div className="mt-4 pt-4 border-t border-slate-200">
+              <DeleteStaffButton action={deleteStaffAction.bind(null, employee.id)} name={`${employee.first_name} ${employee.last_name}`} />
+            </div>
+          )}
           <div className="mt-4 pt-4 border-t border-slate-200">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Nickname</h2>
             {canEditStaff ? (

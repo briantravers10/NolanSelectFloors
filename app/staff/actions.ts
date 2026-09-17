@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createEmployee, createTimeOffEntry, deleteTimeOffEntry, updateEmployee } from "@/lib/db";
+import { createEmployee, createTimeOffEntry, deleteEmployee, deleteTimeOffEntry, updateEmployee } from "@/lib/db";
 import { canEditPayRates, canEditTimeOffAllowance, getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
 import type { PayType, StaffCapability, TaxStatus, TimeOffType } from "@/lib/types";
@@ -52,6 +52,27 @@ export async function createStaffAction(formData: FormData) {
   });
   revalidatePath("/staff");
   redirect(`/staff/${employee.id}`);
+}
+
+/** Active ↔ Inactive. Inactive people drop off the crew picker and the
+ * "not on the schedule" list but keep all their job history. */
+export async function setEmployeeActiveAction(employeeId: string, active: boolean) {
+  if (!(await canEdit("staff"))) return;
+  const actingUser = await getActingUser();
+  await updateEmployee(employeeId, { active }, actingUser.fullName);
+  revalidatePath(`/staff/${employeeId}`);
+  revalidatePath("/staff");
+  revalidatePath("/schedule");
+}
+
+/** Permanent delete — the confirm step lives in the client button. */
+export async function deleteStaffAction(employeeId: string) {
+  if (!(await canEdit("staff"))) return;
+  const actingUser = await getActingUser();
+  await deleteEmployee(employeeId, actingUser.fullName);
+  revalidatePath("/staff");
+  revalidatePath("/schedule");
+  redirect("/staff");
 }
 
 /** Sets/clears the nickname shown in brackets on the schedule. */

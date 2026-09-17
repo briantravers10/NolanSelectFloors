@@ -596,6 +596,39 @@ export async function deleteTimeOffEntry(id: string, actorName: string): Promise
   });
 }
 
+/**
+ * Permanently removes an employee. In Supabase the FKs cascade (skills,
+ * availability, schedule assignments, actual-hours entries, time off) and
+ * tasks assigned to them are unassigned. The in-memory store mirrors that.
+ * For someone who has left but has job history worth keeping, prefer
+ * marking them Inactive (updateEmployee { active: false }) instead.
+ */
+export async function deleteEmployee(id: string, actorName: string): Promise<void> {
+  const existing = (await listEmployees()).find((e) => e.id === id);
+  if (!existing) return;
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("employees").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    store.employees = store.employees.filter((e) => e.id !== id);
+    store.employeeSkills = store.employeeSkills.filter((s) => s.employee_id !== id);
+    store.employeeAvailability = store.employeeAvailability.filter((a) => a.employee_id !== id);
+    store.scheduleAssignments = store.scheduleAssignments.filter((a) => a.employee_id !== id);
+    store.actualLaborEntries = store.actualLaborEntries.filter((a) => a.employee_id !== id);
+    store.timeOffEntries = store.timeOffEntries.filter((t) => t.employee_id !== id);
+    for (const t of store.tasks) if (t.assigned_to === id) t.assigned_to = undefined;
+  }
+  logActivity({
+    action: "Deleted staff member",
+    related_type: "employee",
+    related_id: id,
+    actor_name: actorName,
+    detail: `${existing.first_name} ${existing.last_name}`,
+  });
+}
+
 export async function listCrewRequirements(): Promise<ProjectCrewRequirement[]> {
   const client = sb();
   if (client) {
