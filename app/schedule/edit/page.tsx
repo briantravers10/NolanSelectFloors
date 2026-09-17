@@ -88,7 +88,10 @@ export default async function ScheduleEditPage({
   const selectedCrew = selectedRow ? selectedRow.crew.map((c) => c.employeeId) : [];
   const selectedPickupItems = selectedDay ? pickupItems.filter((i) => i.project_schedule_day_id === selectedDay.id) : [];
 
-  const assignedIds = new Set(assignments.filter((a) => a.schedule_date === date).map((a) => a.employee_id));
+  // Who's busy = everyone on any row shown for this date, including crew
+  // carried over with a job from an earlier day (not just rows saved on
+  // this exact date).
+  const assignedIds = new Set(rowsForDate.flatMap((r) => r.crew.map((c) => c.employeeId)));
   const notOnSchedule = activeEmployees
     .filter((e) => !assignedIds.has(e.id))
     .map((e) => {
@@ -176,6 +179,7 @@ export default async function ScheduleEditPage({
             selectedCrewEmployeeIds={selectedCrew}
             timeOffEntries={timeOffEntries.map((t) => ({ employee_id: t.employee_id, start_date: t.start_date, end_date: t.end_date, type: t.type }))}
             pickupItems={selectedPickupItems}
+            selectedUnitNumber={selectedRow?.unitNumber}
           />
         </div>
       </div>

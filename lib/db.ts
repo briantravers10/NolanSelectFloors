@@ -1712,6 +1712,26 @@ function stampOnce(project: Project, field: keyof Project, iso: string) {
   if (!project[field]) (project as unknown as Record<string, unknown>)[field] = iso;
 }
 
+/** Edits a project's unit number (and refreshes the auto name if it was
+ * the default "Building — Unit X" form). Logged for the audit trail. */
+export async function updateProjectUnitNumber(id: string, unitNumber: string | undefined, actorName: string): Promise<void> {
+  const project = (await listProjects()).find((p) => p.id === id);
+  if (!project) throw new Error("Project not found");
+  const building = (await listBuildings()).find((b) => b.id === project.building_id);
+  const now = new Date().toISOString();
+  const wasDefaultName = !building || project.name === `${building.name}${project.unit_number ? " — Unit " + project.unit_number : ""}`;
+  const patch: Partial<Project> = { unit_number: unitNumber ?? undefined, updated_at: now };
+  if (wasDefaultName && building) patch.name = `${building.name}${unitNumber ? " — Unit " + unitNumber : ""}`;
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("projects").update({ ...patch, unit_number: unitNumber ?? null }).eq("id", id);
+    if (error) throw error;
+  } else {
+    Object.assign(project, patch);
+  }
+  logActivity({ action: "Unit number changed", related_type: "project", related_id: id, actor_name: actorName, detail: `${project.unit_number ?? "—"} → ${unitNumber ?? "—"}` });
+}
+
 export async function updateProjectPipelineStage(id: string, stage: PipelineStage): Promise<void> {
   const client = sb();
   const now = new Date().toISOString();

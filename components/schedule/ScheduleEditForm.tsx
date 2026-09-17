@@ -26,6 +26,7 @@ export function ScheduleEditForm({
   selectedCrewEmployeeIds,
   timeOffEntries,
   pickupItems,
+  selectedUnitNumber,
 }: {
   date: string;
   jobOptions: { id: string; label: string }[];
@@ -35,6 +36,7 @@ export function ScheduleEditForm({
   selectedCrewEmployeeIds: string[];
   timeOffEntries: CrewTimeOffEntry[];
   pickupItems: SchedulePickupItem[];
+  selectedUnitNumber?: string;
 }) {
   const isEditing = Boolean(selectedProjectId);
   // Lifted so the Crew picker's "⚠ On Vacation" / "⚠ Out Sick" warning
@@ -80,6 +82,18 @@ export function ScheduleEditForm({
             ))}
           </select>
         </div>
+
+        {isEditing && (
+          <div>
+            <label className="block text-sm font-semibold text-slate-800 mb-1.5">Unit / Apt</label>
+            <input
+              name="unit_number"
+              defaultValue={selectedUnitNumber ?? ""}
+              placeholder="e.g. 4B — leave blank for whole building / common area"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
+            />
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-semibold text-slate-800 mb-1.5">Schedule Type</label>
