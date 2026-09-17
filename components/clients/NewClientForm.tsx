@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button } from "@/components/ui";
 import { BUILDING_REGIONS, CONTACT_ROLES } from "@/lib/types";
 import { createClientAction, updateClientAction } from "@/app/clients/actions";
@@ -22,6 +23,8 @@ export interface ClientFormBuilding {
   state: string;
   zip: string;
   region: string;
+  latitude?: number | null;
+  longitude?: number | null;
   contacts: ClientFormContact[];
 }
 export interface ClientFormInitial {
@@ -141,38 +144,7 @@ export function NewClientForm({ clientId, initial }: { clientId?: string; initia
                 Remove building
               </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">Building Name</label>
-                <input name={`b[${bi}].name`} placeholder="e.g. 220 East 72nd" defaultValue={bd.name} className="input bg-white" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">Street Address</label>
-                <input name={`b[${bi}].address`} defaultValue={bd.address} className="input bg-white" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">City</label>
-                <input name={`b[${bi}].city`} defaultValue={bd.city} className="input bg-white" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">State</label>
-                <input name={`b[${bi}].state`} defaultValue={bd.state} className="input bg-white" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">Zip</label>
-                <input name={`b[${bi}].zip`} defaultValue={bd.zip} className="input bg-white" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">Area</label>
-                <select name={`b[${bi}].region`} defaultValue={bd.region} className="input bg-white">
-                  {BUILDING_REGIONS.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            <BuildingAddressFields bi={bi} initial={bd} />
 
             <div className="pt-1">
               <div className="flex items-center justify-between mb-1.5">
@@ -244,5 +216,66 @@ export function NewClientForm({ clientId, initial }: { clientId?: string; initia
 
       <Button type="submit">{clientId ? "Save Changes" : "Create Client"}</Button>
     </form>
+  );
+}
+
+/**
+ * Name + address block for one building. Address fields are controlled so
+ * a Google Places pick fills city/state/zip/area (and lat/lng for the map)
+ * in one go; everything stays editable afterwards.
+ */
+function BuildingAddressFields({ bi, initial }: { bi: number; initial: ClientFormBuilding }) {
+  const [addr, setAddr] = useState({
+    address: initial.address,
+    city: initial.city,
+    state: initial.state || "NY",
+    zip: initial.zip,
+    region: initial.region || "Manhattan",
+    latitude: initial.latitude ?? null,
+    longitude: initial.longitude ?? null,
+  });
+  return (
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">Building Name</label>
+          <input name={`b[${bi}].name`} placeholder="e.g. 220 East 72nd" defaultValue={initial.name} className="input bg-white" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">Street Address</label>
+          <AddressAutocomplete
+            name={`b[${bi}].address`}
+            value={addr.address}
+            onChange={(v) => setAddr((a) => ({ ...a, address: v }))}
+            onResolved={(r) => setAddr({ address: r.address, city: r.city, state: r.state || "NY", zip: r.zip, region: r.region, latitude: r.latitude, longitude: r.longitude })}
+            className="input bg-white"
+          />
+        </div>
+      </div>
+      <input type="hidden" name={`b[${bi}].latitude`} value={addr.latitude ?? ""} />
+      <input type="hidden" name={`b[${bi}].longitude`} value={addr.longitude ?? ""} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">City</label>
+          <input name={`b[${bi}].city`} value={addr.city} onChange={(e) => setAddr((a) => ({ ...a, city: e.target.value }))} className="input bg-white" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">State</label>
+          <input name={`b[${bi}].state`} value={addr.state} onChange={(e) => setAddr((a) => ({ ...a, state: e.target.value }))} className="input bg-white" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">Zip</label>
+          <input name={`b[${bi}].zip`} value={addr.zip} onChange={(e) => setAddr((a) => ({ ...a, zip: e.target.value }))} className="input bg-white" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-slate-500 uppercase mb-1">Area</label>
+          <select name={`b[${bi}].region`} value={addr.region} onChange={(e) => setAddr((a) => ({ ...a, region: e.target.value }))} className="input bg-white">
+            {BUILDING_REGIONS.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </>
   );
 }

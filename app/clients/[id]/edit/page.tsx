@@ -47,6 +47,8 @@ export default async function EditClientPage({ params }: { params: Promise<{ id:
           state: b.state,
           zip: b.zip,
           region: b.region,
+          latitude: b.latitude ?? null,
+          longitude: b.longitude ?? null,
           contacts: rows
             .map((l) => contactById.get(l.contact_id))
             .filter((c): c is NonNullable<typeof c> => Boolean(c))

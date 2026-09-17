@@ -41,7 +41,7 @@ function roleFromTitle(title: string): ContactRole {
 }
 
 interface ParsedContact { id?: string; name: string; title: string; phone: string; email: string }
-interface ParsedBuilding { id?: string; name: string; address: string; city: string; state: string; zip: string; region: BuildingRegion; contacts: ParsedContact[] }
+interface ParsedBuilding { id?: string; name: string; address: string; city: string; state: string; zip: string; region: BuildingRegion; latitude: number | null; longitude: number | null; contacts: ParsedContact[] }
 
 /**
  * Reads the indexed rows the NewClientForm posts (b[0].name, b[0].c[1].phone
@@ -53,7 +53,7 @@ function parseBuildings(formData: FormData): ParsedBuilding[] {
   const get = (i: number) => {
     let b = buildings.get(i);
     if (!b) {
-      b = { name: "", address: "", city: "", state: "", zip: "", region: "Other", contacts: [] };
+      b = { name: "", address: "", city: "", state: "", zip: "", region: "Other", latitude: null, longitude: null, contacts: [] };
       buildings.set(i, b);
     }
     return b;
@@ -70,10 +70,11 @@ function parseBuildings(formData: FormData): ParsedBuilding[] {
       contactRows.set(id, row);
       continue;
     }
-    const b = /^b\[(\d+)\]\.(id|name|address|city|state|zip|region)$/.exec(key);
+    const b = /^b\[(\d+)\]\.(id|name|address|city|state|zip|region|latitude|longitude)$/.exec(key);
     if (b) {
       const row = get(Number(b[1]));
       if (b[2] === "id") row.id = value || undefined;
+      else if (b[2] === "latitude" || b[2] === "longitude") row[b[2]] = value && Number.isFinite(Number(value)) ? Number(value) : null;
       else if (b[2] === "region") row.region = (BUILDING_REGIONS as readonly string[]).includes(value) ? (value as BuildingRegion) : "Other";
       else row[b[2] as "name" | "address" | "city" | "state" | "zip"] = value;
     }
@@ -135,8 +136,8 @@ export async function createClientAction(formData: FormData) {
       state: b.state || "NY",
       zip: b.zip,
       region: b.region,
-      latitude: null,
-      longitude: null,
+      latitude: b.latitude,
+      longitude: b.longitude,
       active: true,
     });
     let primaryContactId: string | undefined;
@@ -230,11 +231,11 @@ export async function updateClientAction(clientId: string, formData: FormData) {
   }
 
   for (const b of submitted) {
-    const fields = { name: b.name || b.address, address: b.address, city: b.city, state: b.state || "NY", zip: b.zip, region: b.region };
+    const fields = { name: b.name || b.address, address: b.address, city: b.city, state: b.state || "NY", zip: b.zip, region: b.region, latitude: b.latitude, longitude: b.longitude };
     let buildingId = b.id && clientBuildings.some((x) => x.id === b.id) ? b.id : undefined;
     if (buildingId) await updateBuilding(buildingId, { ...fields, active: true });
     else {
-      const created = await createBuildingRecord({ client_company_id: clientId, ...fields, latitude: null, longitude: null, active: true });
+      const created = await createBuildingRecord({ client_company_id: clientId, ...fields, active: true });
       buildingId = created.id;
     }
 

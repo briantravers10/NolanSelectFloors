@@ -5,10 +5,12 @@ import { Button } from "@/components/ui";
 import { BUILDING_REGIONS } from "@/lib/types";
 import type { ClientCompany, Contact } from "@/lib/types";
 import { createBuildingAction } from "@/app/buildings/actions";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 
 export function NewBuildingForm({ clients, contacts }: { clients: ClientCompany[]; contacts: Contact[] }) {
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
   const filteredContacts = useMemo(() => contacts.filter((c) => c.client_company_id === clientId), [contacts, clientId]);
+  const [addr, setAddr] = useState({ address: "", city: "", state: "", zip: "", region: "Other", latitude: "", longitude: "" });
 
   return (
     <form action={createBuildingAction} className="space-y-5">
@@ -32,7 +34,7 @@ export function NewBuildingForm({ clients, contacts }: { clients: ClientCompany[
           </select>
         </Field>
         <Field label="Region">
-          <select name="region" className="input" defaultValue="Other">
+          <select name="region" className="input" value={addr.region} onChange={(e) => setAddr((a) => ({ ...a, region: e.target.value }))}>
             {BUILDING_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </Field>
@@ -43,17 +45,27 @@ export function NewBuildingForm({ clients, contacts }: { clients: ClientCompany[
       </Section>
 
       <Section title="Address">
-        <Field label="Street Address"><input name="address" required className="input" /></Field>
+        <Field label="Street Address">
+          <AddressAutocomplete
+            name="address"
+            required
+            value={addr.address}
+            onChange={(v) => setAddr((a) => ({ ...a, address: v }))}
+            onResolved={(r) =>
+              setAddr({ address: r.address, city: r.city, state: r.state, zip: r.zip, region: r.region, latitude: r.latitude?.toString() ?? "", longitude: r.longitude?.toString() ?? "" })
+            }
+          />
+        </Field>
         <div className="grid grid-cols-3 gap-2">
-          <Field label="City"><input name="city" required className="input" /></Field>
-          <Field label="State"><input name="state" required maxLength={2} className="input" /></Field>
-          <Field label="Zip"><input name="zip" required className="input" /></Field>
+          <Field label="City"><input name="city" required value={addr.city} onChange={(e) => setAddr((a) => ({ ...a, city: e.target.value }))} className="input" /></Field>
+          <Field label="State"><input name="state" required maxLength={2} value={addr.state} onChange={(e) => setAddr((a) => ({ ...a, state: e.target.value }))} className="input" /></Field>
+          <Field label="Zip"><input name="zip" required value={addr.zip} onChange={(e) => setAddr((a) => ({ ...a, zip: e.target.value }))} className="input" /></Field>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Latitude (optional, approximate)"><input name="latitude" type="number" step="0.000001" className="input" /></Field>
-          <Field label="Longitude (optional, approximate)"><input name="longitude" type="number" step="0.000001" className="input" /></Field>
+          <Field label="Latitude (filled from address)"><input name="latitude" type="number" step="0.000001" value={addr.latitude} onChange={(e) => setAddr((a) => ({ ...a, latitude: e.target.value }))} className="input" /></Field>
+          <Field label="Longitude (filled from address)"><input name="longitude" type="number" step="0.000001" value={addr.longitude} onChange={(e) => setAddr((a) => ({ ...a, longitude: e.target.value }))} className="input" /></Field>
         </div>
-        <p className="text-xs text-slate-500">No live geocoding is configured — enter coordinates manually if you want this building to show on the Map view.</p>
+        <p className="text-xs text-slate-500">Pick the address from the suggestions and city, state, zip, area and map location fill in automatically.</p>
       </Section>
 
       <Section title="Access & Operations">
