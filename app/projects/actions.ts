@@ -7,6 +7,7 @@ import {
   createProjectDrawing,
   createProjectMaterial,
   createProjectNote,
+  setSchedulePickupItemCost,
   createPhotoRecord,
   createTask,
   reassignOrReleaseBid,
@@ -205,4 +206,16 @@ export async function saveProjectEstimateAction(id: string, value: number) {
   if (!(await canEdit("projects"))) return;
   await saveProjectEstimatedValue(id, value);
   revalidatePath(`/projects/${id}`);
+}
+
+/** Price on a schedule pickup item — counts toward the project's materials cost. */
+export async function setPickupItemCostAction(projectId: string, itemId: string, formData: FormData) {
+  if (!(await canEdit("materials")) && !(await canEdit("projects"))) return;
+  const raw = String(formData.get("cost") ?? "").trim();
+  const cost = raw === "" ? null : Math.max(0, Number(raw));
+  if (cost !== null && !Number.isFinite(cost)) return;
+  const actingUser = await getActingUser();
+  await setSchedulePickupItemCost(itemId, cost, actingUser.fullName);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/schedule");
 }

@@ -160,7 +160,7 @@ export default async function ScheduleEditPage({
                 const isSelected = row.projectId === selectedProjectId;
                 return (
                   <div key={row.key} className={`rounded-xl ${isSelected ? "ring-2 ring-sky-400" : ""}`}>
-                    <ScheduleDayRowCard row={row} />
+                    <ScheduleDayRowCard row={row} editableNotes />
                   </div>
                 );
               })}

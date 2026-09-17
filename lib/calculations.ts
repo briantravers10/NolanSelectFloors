@@ -182,11 +182,12 @@ export function computeProjectCosting(
   project: Pick<Project, "project_value" | "other_cost">,
   assignments: ScheduleAssignment[],
   projectMaterials: ProjectMaterial[],
-  projectId: string
+  projectId: string,
+  extraMaterialCost = 0
 ): ProjectCosting {
   const laborCost = projectLaborCost(assignments, projectId);
   const materialCost = round2(
-    projectMaterials.filter((m) => m.project_id === projectId).reduce((sum, m) => sum + m.cost, 0)
+    projectMaterials.filter((m) => m.project_id === projectId).reduce((sum, m) => sum + m.cost, 0) + extraMaterialCost
   );
   const otherCost = project.other_cost ?? 0;
   const totalCost = round2(laborCost + materialCost + otherCost);

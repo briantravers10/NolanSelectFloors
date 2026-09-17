@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ScheduleJobRow } from "@/lib/schedule";
 import { PhoneLink, EmailLink } from "@/components/ui";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
+import { EditableNotes } from "./EditableNotes";
 import {
   COI_CLASSES,
   COI_DISPLAY_LABELS,
@@ -19,7 +20,7 @@ import {
  * project, jump to Create/Edit Schedule for this job/date, and the
  * tel:/mailto: contact links) — those aren't schedule-editing controls.
  */
-export function ScheduleDayRowCard({ row }: { row: ScheduleJobRow }) {
+export function ScheduleDayRowCard({ row, editableNotes = false }: { row: ScheduleJobRow; editableNotes?: boolean }) {
   const blockClasses = SCHEDULE_COLOR_BLOCK_CLASSES[row.scheduleColor];
 
   return (
@@ -94,13 +95,17 @@ export function ScheduleDayRowCard({ row }: { row: ScheduleJobRow }) {
           </div>
         </div>
 
-        {/* Right: notes in their own box */}
-        <div className="rounded-lg border border-slate-300 bg-white/60 px-2.5 py-1.5 min-h-[3rem]">
-          <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Notes</div>
-          <div className="text-[13px] text-slate-900 whitespace-pre-wrap leading-snug">
-            {row.notes ? row.notes : <span className="text-slate-500">None.</span>}
+        {/* Right: notes in their own box (editable in place on Create/Edit) */}
+        {editableNotes ? (
+          <EditableNotes projectId={row.projectId} date={row.date} notes={row.notes} />
+        ) : (
+          <div className="rounded-lg border border-slate-300 bg-white/60 px-2.5 py-1.5 min-h-[3rem]">
+            <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Notes</div>
+            <div className="text-[13px] text-slate-900 whitespace-pre-wrap leading-snug">
+              {row.notes ? row.notes : <span className="text-slate-500">None.</span>}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* QUICKBOOKS — read-only, inherited automatically via project_id.

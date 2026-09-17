@@ -871,14 +871,47 @@ export async function getOrCreateProjectScheduleDay(projectId: string, date: str
     created_at: now,
     updated_at: now,
   };
+  // A job stays on the schedule until Completed, so a new day row for an
+  // already-scheduled job is a continuation: start it from the latest
+  // earlier entry (color Blue → Gray, COI/materials/notes as they were)
+  // and carry its crew, instead of blank defaults.
+  const prior = (await listProjectScheduleDays())
+    .filter((d) => d.project_id === projectId && d.schedule_date < date)
+    .sort((a, b) => a.schedule_date.localeCompare(b.schedule_date))
+    .at(-1);
+  if (prior) {
+    record.schedule_color = prior.schedule_color === "Blue" ? "Gray" : prior.schedule_color;
+    record.coi_status = prior.coi_status;
+    record.materials_status = prior.materials_status;
+    record.work_type_id = prior.work_type_id;
+    record.notes = prior.notes;
+  }
   const client = sb();
+  let saved: ProjectScheduleDay = record;
   if (client) {
     const { data, error } = await client.from("project_schedule_days").insert(record).select().single();
     if (error) throw error;
-    return data as ProjectScheduleDay;
+    saved = data as ProjectScheduleDay;
+  } else {
+    getStore().projectScheduleDays.push(record);
   }
-  getStore().projectScheduleDays.push(record);
-  return record;
+  if (prior) {
+    const priorCrew = (await listScheduleAssignments()).filter((a) => a.project_id === projectId && a.schedule_date === prior.schedule_date);
+    const already = new Set((await listScheduleAssignments()).filter((a) => a.project_id === projectId && a.schedule_date === date).map((a) => a.employee_id));
+    for (const a of priorCrew) {
+      if (already.has(a.employee_id)) continue;
+      await createScheduleAssignment({
+        project_id: projectId,
+        employee_id: a.employee_id,
+        schedule_date: date,
+        role_on_job: a.role_on_job,
+        time_and_half: false,
+        call_time: a.call_time ?? undefined,
+        actorName,
+      });
+    }
+  }
+  return saved;
 }
 
 /**
@@ -988,6 +1021,19 @@ export async function listSchedulePickupItems(): Promise<SchedulePickupItem[]> {
 
 export async function listSchedulePickupItemsForDay(projectScheduleDayId: string): Promise<SchedulePickupItem[]> {
   return (await listSchedulePickupItems()).filter((i) => i.project_schedule_day_id === projectScheduleDayId);
+}
+
+/** Sets/clears the price on a pickup item (from the project page). */
+export async function setSchedulePickupItemCost(id: string, cost: number | null, actorName: string): Promise<void> {
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("schedule_pickup_items").update({ cost, updated_by: actorName, updated_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const item = getStore().schedulePickupItems.find((i) => i.id === id);
+    if (item) Object.assign(item, { cost, updated_by: actorName, updated_at: now });
+  }
 }
 
 export async function createSchedulePickupItem(input: {

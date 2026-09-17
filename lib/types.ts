@@ -862,6 +862,9 @@ export interface SchedulePickupItem {
   project_schedule_day_id: string;
   description: string;
   status: SchedulePickupStatus;
+  // Optional price, set from the project page so the pickup counts toward
+  // the job's materials cost (migration 0019).
+  cost?: number | null;
   created_by?: string;
   updated_by?: string;
   created_at: string;
