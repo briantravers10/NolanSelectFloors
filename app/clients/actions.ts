@@ -2,7 +2,24 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createBuildingContact, createBuildingRecord, createClientCompanyRecord, createContact, updateBuilding, updateClientCompany } from "@/lib/db";
+import {
+  createBuildingContact,
+  createBuildingRecord,
+  createClientCompanyRecord,
+  createContact,
+  deleteBuilding,
+  deleteBuildingContact,
+  deleteContact,
+  listBuildingContacts,
+  listBuildings,
+  listClientCompanies,
+  listContacts,
+  listJobRequests,
+  listProjects,
+  updateBuilding,
+  updateClientCompany,
+  updateContact,
+} from "@/lib/db";
 import { canEdit } from "@/lib/permissions";
 import { BUILDING_REGIONS, CONTACT_ROLES } from "@/lib/types";
 import type { BuildingRegion, ContactRole } from "@/lib/types";
@@ -23,8 +40,8 @@ function roleFromTitle(title: string): ContactRole {
   return match ?? "Other";
 }
 
-interface ParsedContact { name: string; title: string; phone: string; email: string }
-interface ParsedBuilding { name: string; address: string; city: string; state: string; zip: string; region: BuildingRegion; contacts: ParsedContact[] }
+interface ParsedContact { id?: string; name: string; title: string; phone: string; email: string }
+interface ParsedBuilding { id?: string; name: string; address: string; city: string; state: string; zip: string; region: BuildingRegion; contacts: ParsedContact[] }
 
 /**
  * Reads the indexed rows the NewClientForm posts (b[0].name, b[0].c[1].phone
@@ -44,18 +61,20 @@ function parseBuildings(formData: FormData): ParsedBuilding[] {
   const contactRows = new Map<string, ParsedContact>();
   for (const [key, raw] of formData.entries()) {
     const value = String(raw).trim();
-    const c = /^b\[(\d+)\]\.c\[(\d+)\]\.(name|title|phone|email)$/.exec(key);
+    const c = /^b\[(\d+)\]\.c\[(\d+)\]\.(id|name|title|phone|email)$/.exec(key);
     if (c) {
       const id = `${c[1]}:${c[2]}`;
       const row = contactRows.get(id) ?? { name: "", title: "", phone: "", email: "" };
-      row[c[3] as keyof ParsedContact] = value;
+      if (c[3] === "id") row.id = value || undefined;
+      else row[c[3] as "name" | "title" | "phone" | "email"] = value;
       contactRows.set(id, row);
       continue;
     }
-    const b = /^b\[(\d+)\]\.(name|address|city|state|zip|region)$/.exec(key);
+    const b = /^b\[(\d+)\]\.(id|name|address|city|state|zip|region)$/.exec(key);
     if (b) {
       const row = get(Number(b[1]));
-      if (b[2] === "region") row.region = (BUILDING_REGIONS as readonly string[]).includes(value) ? (value as BuildingRegion) : "Other";
+      if (b[2] === "id") row.id = value || undefined;
+      else if (b[2] === "region") row.region = (BUILDING_REGIONS as readonly string[]).includes(value) ? (value as BuildingRegion) : "Other";
       else row[b[2] as "name" | "address" | "city" | "state" | "zip"] = value;
     }
   }
@@ -88,7 +107,7 @@ export async function createClientAction(formData: FormData) {
     ap_contact_phone: str(formData, "ap_contact_phone") || undefined,
     ap_contact_email: str(formData, "ap_contact_email") || undefined,
     relationship_start_date: str(formData, "relationship_start_date") || undefined,
-    active: formData.get("active") !== "off",
+    active: formData.get("active") === "on",
     billing_notes: str(formData, "billing_notes") || undefined,
     notes: str(formData, "notes") || undefined,
   });
@@ -138,4 +157,118 @@ export async function createClientAction(formData: FormData) {
   revalidatePath("/clients");
   revalidatePath("/buildings");
   redirect(`/clients/${client.id}`);
+}
+
+function clientFields(formData: FormData) {
+  return {
+    phone: str(formData, "phone") || undefined,
+    email: str(formData, "email") || undefined,
+    address: str(formData, "address") || undefined,
+    ap_contact_name: str(formData, "ap_contact_name") || undefined,
+    ap_contact_phone: str(formData, "ap_contact_phone") || undefined,
+    ap_contact_email: str(formData, "ap_contact_email") || undefined,
+    relationship_start_date: str(formData, "relationship_start_date") || undefined,
+    active: formData.get("active") === "on",
+    billing_notes: str(formData, "billing_notes") || undefined,
+    notes: str(formData, "notes") || undefined,
+  };
+}
+
+/**
+ * Edit an existing client from the same form, prefilled. Existing
+ * buildings/contacts arrive with hidden ids and are updated in place; rows
+ * without an id are created; existing ones missing from the submission
+ * were removed in the form. A removed building that has projects or job
+ * requests is marked inactive rather than deleted so history is kept.
+ */
+export async function updateClientAction(clientId: string, formData: FormData) {
+  if (!(await canEdit("clients"))) return;
+  const name = str(formData, "name");
+  if (!name) return;
+  const [clients, allBuildings, allContacts, allLinks, projects, jobRequests] = await Promise.all([
+    listClientCompanies(),
+    listBuildings(),
+    listContacts(),
+    listBuildingContacts(),
+    listProjects(),
+    listJobRequests(),
+  ]);
+  const client = clients.find((c) => c.id === clientId);
+  if (!client) return;
+
+  await updateClientCompany(clientId, { name, ...clientFields(formData) });
+
+  // Main point of contact: update the linked contact, create it, or clear it.
+  const mainName = str(formData, "main_contact_name");
+  const mainPatch = {
+    ...splitName(mainName || " "),
+    title: str(formData, "main_contact_title") || "Main Point of Contact",
+    phone: str(formData, "main_contact_phone") || undefined,
+    email: str(formData, "main_contact_email") || undefined,
+  };
+  const existingMain = client.main_contact_id ? allContacts.find((c) => c.id === client.main_contact_id) : undefined;
+  if (mainName && existingMain) {
+    await updateContact(existingMain.id, mainPatch);
+  } else if (mainName) {
+    const main = await createContact({ client_company_id: clientId, ...mainPatch });
+    await updateClientCompany(clientId, { main_contact_id: main.id });
+  } else if (existingMain) {
+    await updateClientCompany(clientId, { main_contact_id: undefined });
+    await deleteContact(existingMain.id);
+  }
+
+  const submitted = parseBuildings(formData);
+  const clientBuildings = allBuildings.filter((b) => b.client_company_id === clientId);
+  const keptBuildingIds = new Set(submitted.map((b) => b.id).filter(Boolean));
+  const referenced = new Set([...projects.map((p) => p.building_id), ...jobRequests.map((j) => j.building_id)]);
+
+  // Buildings removed in the form.
+  for (const b of clientBuildings) {
+    if (keptBuildingIds.has(b.id)) continue;
+    if (referenced.has(b.id)) await updateBuilding(b.id, { active: false });
+    else await deleteBuilding(b.id);
+  }
+
+  for (const b of submitted) {
+    const fields = { name: b.name || b.address, address: b.address, city: b.city, state: b.state || "NY", zip: b.zip, region: b.region };
+    let buildingId = b.id && clientBuildings.some((x) => x.id === b.id) ? b.id : undefined;
+    if (buildingId) await updateBuilding(buildingId, { ...fields, active: true });
+    else {
+      const created = await createBuildingRecord({ client_company_id: clientId, ...fields, latitude: null, longitude: null, active: true });
+      buildingId = created.id;
+    }
+
+    const existingLinks = allLinks.filter((l) => l.building_id === buildingId);
+    const keptContactIds = new Set(b.contacts.map((c) => c.id).filter(Boolean));
+    for (const link of existingLinks) {
+      if (keptContactIds.has(link.contact_id)) continue;
+      // Contact removed from this building — drop the contact entirely if
+      // it isn't linked anywhere else and isn't the main contact.
+      const linkedElsewhere = allLinks.some((l) => l.contact_id === link.contact_id && l.building_id !== buildingId);
+      if (!linkedElsewhere && link.contact_id !== client.main_contact_id) await deleteContact(link.contact_id);
+      else await deleteBuildingContact(buildingId, link.contact_id);
+    }
+
+    let primaryContactId: string | undefined;
+    for (const [i, c] of b.contacts.entries()) {
+      const patch = { ...splitName(c.name), title: c.title || undefined, phone: c.phone || undefined, email: c.email || undefined };
+      let contactId = c.id && allContacts.some((x) => x.id === c.id) ? c.id : undefined;
+      if (contactId) {
+        await updateContact(contactId, patch);
+        const link = existingLinks.find((l) => l.contact_id === contactId);
+        if (!link) await createBuildingContact({ building_id: buildingId, contact_id: contactId, role: roleFromTitle(c.title), is_primary: i === 0 });
+      } else {
+        const created = await createContact({ client_company_id: clientId, ...patch });
+        contactId = created.id;
+        await createBuildingContact({ building_id: buildingId, contact_id: contactId, role: roleFromTitle(c.title), is_primary: i === 0 });
+      }
+      if (i === 0) primaryContactId = contactId;
+    }
+    await updateBuilding(buildingId, { primary_contact_id: primaryContactId });
+  }
+
+  revalidatePath("/clients");
+  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/buildings");
+  redirect(`/clients/${clientId}`);
 }

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { listBuildingContacts, listBuildings, listClientCompanies, listContacts, listJobRequests, listProjects } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, EmailLink, StatusBadge, EmptyState, Stat } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
+import { canEdit } from "@/lib/permissions";
 import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,6 +18,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
   ]);
   const client = clients.find((c) => c.id === id);
   if (!client) notFound();
+  const canEditClients = await canEdit("clients");
 
   const clientBuildings = buildings.filter((b) => b.client_company_id === id);
   const buildingIds = new Set(clientBuildings.map((b) => b.id));
@@ -48,9 +50,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         title={client.name}
         subtitle={client.address}
         action={
-          <div className="flex gap-3 text-sm">
+          <div className="flex items-center gap-3 text-sm">
             <PhoneLink phone={client.phone} />
             <EmailLink email={client.email} />
+            {canEditClients && (
+              <Link href={`/clients/${id}/edit`} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                Edit Client
+              </Link>
+            )}
           </div>
         }
       />

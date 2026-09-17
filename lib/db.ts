@@ -157,6 +157,44 @@ export async function listBuildingContacts(): Promise<BuildingContact[]> {
   return getStore().buildingContacts;
 }
 
+export async function deleteContact(id: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("contacts").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    store.contacts = store.contacts.filter((c) => c.id !== id);
+    store.buildingContacts = store.buildingContacts.filter((bc) => bc.contact_id !== id);
+  }
+}
+
+/** Removes a building only when nothing references it (no projects or
+ * job requests); otherwise the caller should mark it inactive instead so
+ * job history stays intact. Cascades its contact links. */
+export async function deleteBuilding(id: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("buildings").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    store.buildings = store.buildings.filter((b) => b.id !== id);
+    store.buildingContacts = store.buildingContacts.filter((bc) => bc.building_id !== id);
+  }
+}
+
+export async function deleteBuildingContact(buildingId: string, contactId: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("building_contacts").delete().eq("building_id", buildingId).eq("contact_id", contactId);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    store.buildingContacts = store.buildingContacts.filter((bc) => !(bc.building_id === buildingId && bc.contact_id === contactId));
+  }
+}
+
 /** Links a contact to a building with a role; the first contact added to
  * a building is normally flagged is_primary so it's the POC on the
  * schedule/building pages. */
