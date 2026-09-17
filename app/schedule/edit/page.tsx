@@ -14,19 +14,21 @@ import {
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { buildScheduleJobRows } from "@/lib/schedule";
-import { dayLabel, formatDateShort, todayIso } from "@/lib/dates";
+import { addDays, dayLabel, formatDateShort, isoDate, todayIso } from "@/lib/dates";
 import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
 import { employeeDisplayName } from "@/lib/employee-name";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { ScheduleEditForm } from "@/components/schedule/ScheduleEditForm";
-import { SCHEDULE_COLOR_DOT } from "@/components/schedule/badges";
+import { ScheduleDayRowCard } from "@/components/schedule/ScheduleDayRowCard";
+import { QuickJobForm } from "@/components/schedule/QuickJobForm";
 
 /**
- * CREATE / EDIT SCHEDULE — the one place all schedule controls live, per
- * the client's hard split. Left column: pick an existing job/day entry to
- * edit (filterable by date). Right column: a single, large, clearly
- * labeled single-column form covering every schedule-specific field. On
- * save, the user lands back on View Schedule for that date.
+ * CREATE / EDIT SCHEDULE. Layout, top to bottom:
+ *   1. Date strip (prev / next / picker) + Quick Job.
+ *   2. Left, wide: the day's schedule exactly as View Schedule shows it,
+ *      so every save is visible immediately; each block has an Edit link
+ *      that loads it into the form. Right: the single-column form.
+ *   3. Bottom, compact: who's not on any job that day.
  */
 export default async function ScheduleEditPage({
   searchParams,
@@ -54,10 +56,8 @@ export default async function ScheduleEditPage({
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const activeEmployees = employees.filter((e) => e.active);
 
-  // Every project, labeled with its building/unit/management company so
-  // office staff can find the right job in one glance — "select the job
-  // from existing projects" per spec.
   const jobOptions = [...projects]
+    .filter((p) => p.pipeline_stage !== "Complete")
     .map((p) => {
       const building = buildingById.get(p.building_id);
       const client = building ? clientById.get(building.client_company_id) : undefined;
@@ -66,8 +66,14 @@ export default async function ScheduleEditPage({
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
-  // "Select an existing entry to edit" — every job already on the
-  // schedule for the chosen date.
+  const buildingOptions = buildings
+    .filter((b) => b.active)
+    .map((b) => {
+      const client = clientById.get(b.client_company_id);
+      return { id: b.id, label: `${b.name}${client ? ` · ${client.name}` : ""}` };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+
   const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes });
 
   const selectedProjectId = projectParam && projects.some((p) => p.id === projectParam) ? projectParam : undefined;
@@ -77,10 +83,6 @@ export default async function ScheduleEditPage({
     : [];
   const selectedPickupItems = selectedDay ? pickupItems.filter((i) => i.project_schedule_day_id === selectedDay.id) : [];
 
-  // Everyone active who isn't on ANY job this date — the "who's still free"
-  // list the office looks at while building the day. Anyone with logged
-  // time off that day is shown, but flagged, so they aren't assigned by
-  // mistake (same warn-don't-block convention as the crew picker).
   const assignedIds = new Set(assignments.filter((a) => a.schedule_date === date).map((a) => a.employee_id));
   const notOnSchedule = activeEmployees
     .filter((e) => !assignedIds.has(e.id))
@@ -90,83 +92,110 @@ export default async function ScheduleEditPage({
     })
     .sort((a, b) => (a.offLabel ? 1 : 0) - (b.offLabel ? 1 : 0) || a.name.localeCompare(b.name));
 
+  const prevDate = isoDate(addDays(new Date(date + "T00:00:00"), -1));
+  const nextDate = isoDate(addDays(new Date(date + "T00:00:00"), 1));
+
   return (
     <div>
-      <PageHeader
-        title="Create / Edit Schedule"
-        subtitle="All schedule controls live here — color, crew, COI, materials, work type and notes. View Schedule is read-only."
-      />
+      <PageHeader title="Create / Edit Schedule" subtitle="Build the day here. Every save shows up in the list on the left straight away." />
       <ScheduleSubNav active="edit" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start">
-        <Card className="p-4">
-          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Load an Existing Entry</h2>
-          <form className="space-y-2 mb-4">
-            <label className="block text-[11px] text-slate-500 uppercase">Date</label>
-            <input type="date" name="date" defaultValue={date} className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
-            <button type="submit" className="w-full rounded-lg bg-sky-600 text-white px-3.5 py-1.5 text-sm font-medium hover:bg-sky-700">
-              Show Jobs For This Date
-            </button>
-          </form>
+      {/* 1. Date strip + Quick Job */}
+      <Card className="p-3 mb-4 flex flex-wrap items-center gap-2">
+        <Link href={`/schedule/edit?date=${prevDate}`} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm hover:bg-slate-50" aria-label="Previous day">
+          ‹
+        </Link>
+        <form className="flex items-center gap-2">
+          <input type="date" name="date" defaultValue={date} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
+          <button type="submit" className="rounded-lg bg-slate-800 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-900">
+            Go
+          </button>
+        </form>
+        <Link href={`/schedule/edit?date=${nextDate}`} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm hover:bg-slate-50" aria-label="Next day">
+          ›
+        </Link>
+        <div className="text-sm font-semibold text-slate-800 ml-1">
+          {dayLabel(date)}, {formatDateShort(date)}
+        </div>
+        <div className="ml-auto flex-1 sm:flex-none min-w-[280px] flex justify-end">
+          <QuickJobForm date={date} buildingOptions={buildingOptions} />
+        </div>
+      </Card>
 
-          <div className="text-[11px] font-semibold text-slate-500 uppercase mb-1">
-            {dayLabel(date)}, {formatDateShort(date)}
+      {/* 2. Day's schedule (left) + form (right) */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_440px] gap-5 items-start">
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+              On the schedule — {rowsForDate.length} {rowsForDate.length === 1 ? "job" : "jobs"}
+            </h2>
+            {selectedProjectId && (
+              <Link href={`/schedule/edit?date=${date}`} className="text-xs text-sky-600 hover:text-sky-800">
+                + New entry instead
+              </Link>
+            )}
           </div>
           {rowsForDate.length === 0 ? (
-            <EmptyState message="No jobs on the schedule for this date yet." />
+            <Card className="p-6">
+              <EmptyState message="Nothing on the schedule for this day yet. Pick a job in the form, or use Quick Job for a small one-off." />
+            </Card>
           ) : (
-            <div className="space-y-1">
-              {rowsForDate.map((row) => (
-                <Link
-                  key={row.key}
-                  href={`/schedule/edit?project=${row.projectId}&date=${date}`}
-                  className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-slate-50 border ${
-                    row.projectId === selectedProjectId ? "border-sky-400 bg-sky-50" : "border-transparent"
-                  }`}
-                >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${SCHEDULE_COLOR_DOT[row.scheduleColor]}`} />
-                  <span className="truncate flex-1 text-slate-800">
-                    {row.buildingName}
-                    {row.unitNumber ? ` — Unit ${row.unitNumber}` : ""}
-                  </span>
-                </Link>
-              ))}
+            <div className="flex flex-col gap-3">
+              {rowsForDate.map((row) => {
+                const isSelected = row.projectId === selectedProjectId;
+                return (
+                  <div key={row.key} className={`rounded-xl ${isSelected ? "ring-2 ring-sky-400" : ""}`}>
+                    <ScheduleDayRowCard row={row} />
+                  </div>
+                );
+              })}
             </div>
           )}
-        </Card>
+        </div>
 
-        <Card className="p-4">
-          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Not on the schedule</h2>
-          <p className="text-[11px] text-slate-500 mb-2">
-            {dayLabel(date)}, {formatDateShort(date)} — {notOnSchedule.length} of {activeEmployees.length} not assigned to any job.
-          </p>
-          {notOnSchedule.length === 0 ? (
-            <EmptyState message="Everyone is on a job this day." />
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {notOnSchedule.map((e) => (
-                <li key={e.id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
-                  <span className={e.offLabel ? "text-slate-400" : "text-slate-800"}>{e.name}</span>
-                  {e.offLabel && <span className="text-amber-700 font-semibold text-xs">{e.offLabel}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <ScheduleEditForm
-          key={`${selectedProjectId ?? "new"}-${date}`}
-          date={date}
-          jobOptions={jobOptions}
-          employees={activeEmployees}
-          workTypes={workTypes.filter((w) => w.active)}
-          selectedProjectId={selectedProjectId}
-          selectedDay={selectedDay}
-          selectedCrewEmployeeIds={selectedCrew}
-          timeOffEntries={timeOffEntries.map((t) => ({ employee_id: t.employee_id, start_date: t.start_date, end_date: t.end_date, type: t.type }))}
-          pickupItems={selectedPickupItems}
-        />
+        <div className="xl:sticky xl:top-20">
+          <ScheduleEditForm
+            key={`${selectedProjectId ?? "new"}-${date}`}
+            date={date}
+            jobOptions={jobOptions}
+            employees={activeEmployees}
+            workTypes={workTypes.filter((w) => w.active)}
+            selectedProjectId={selectedProjectId}
+            selectedDay={selectedDay}
+            selectedCrewEmployeeIds={selectedCrew}
+            timeOffEntries={timeOffEntries.map((t) => ({ employee_id: t.employee_id, start_date: t.start_date, end_date: t.end_date, type: t.type }))}
+            pickupItems={selectedPickupItems}
+          />
+        </div>
       </div>
+
+      {/* 3. Not on the schedule — compact, at the bottom */}
+      <Card className="p-3 mt-5">
+        <div className="flex items-baseline justify-between mb-1.5">
+          <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Not on the schedule</h2>
+          <span className="text-[11px] text-slate-500">
+            {notOnSchedule.length} of {activeEmployees.length} free on {dayLabel(date)}
+          </span>
+        </div>
+        {notOnSchedule.length === 0 ? (
+          <p className="text-xs text-slate-500">Everyone is on a job this day.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {notOnSchedule.map((e) => (
+              <span
+                key={e.id}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${
+                  e.offLabel ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+                title={e.offLabel ?? undefined}
+              >
+                {e.name}
+                {e.offLabel && <span className="font-semibold">{e.offLabel}</span>}
+              </span>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

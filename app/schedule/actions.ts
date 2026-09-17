@@ -6,6 +6,7 @@ import {
   confirmDay,
   createActualLaborEntry,
   createScheduleAssignment,
+  createQuickProject,
   createSchedulePickupItem,
   createWorkType,
   deleteActualLaborEntry,
@@ -216,7 +217,9 @@ export async function saveScheduleEntryAction(formData: FormData) {
     }
   }
 
-  redirect(`/schedule?date=${schedule_date}`);
+  // Stay on Create/Edit so the change is visible right away in the
+  // day's list next to the form (View Schedule is still one tab away).
+  redirect(`/schedule/edit?date=${schedule_date}`);
 }
 
 // ---------------------------------------------------------------------
@@ -294,4 +297,28 @@ export async function toggleWorkTypeActiveAction(id: string, active: boolean) {
   if (!(await canEdit("company_setup"))) return;
   await updateWorkType(id, { active });
   revalidatePath("/company-setup");
+}
+
+/**
+ * Quick Job from the schedule page: building + optional unit + a line of
+ * what the work is → a project straight in "Scheduled", then back to
+ * Create/Edit with that job loaded in the form so crew/color can be set.
+ */
+export async function createQuickJobAction(formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
+  const building_id = String(formData.get("building_id") ?? "");
+  const schedule_date = String(formData.get("schedule_date") ?? "");
+  const description = String(formData.get("description") ?? "").trim();
+  if (!building_id || !schedule_date || !description) return;
+  const actingUser = await getActingUser();
+  const project = await createQuickProject({
+    building_id,
+    unit_number: String(formData.get("unit_number") ?? "").trim() || undefined,
+    description,
+    start_date: schedule_date,
+    actorName: actingUser.fullName,
+  });
+  revalidatePath("/projects");
+  revalidatePath("/schedule");
+  redirect(`/schedule/edit?project=${project.id}&date=${schedule_date}`);
 }

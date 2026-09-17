@@ -46,7 +46,7 @@ export function ScheduleEditForm({
   const [scheduleDate, setScheduleDate] = useState(date);
 
   return (
-    <Card className="p-6">
+    <Card className="p-5">
       <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">
         {isEditing ? "Edit This Schedule Entry" : "Create a New Schedule Entry"}
       </h2>
@@ -56,7 +56,7 @@ export function ScheduleEditForm({
           : "Pick a job and date, fill in the fields below, and save to add it to the schedule."}
       </p>
 
-      <form action={saveScheduleEntryAction} className="space-y-6 max-w-xl">
+      <form action={saveScheduleEntryAction} className="space-y-5">
         <div>
           <label className="block text-sm font-semibold text-slate-800 mb-1.5">Date</label>
           <input

@@ -1533,7 +1533,7 @@ async function insertProjectFromJobRequest(
   initialBidStatus: BidStatus
 ): Promise<Project> {
   const store = getStore();
-  const building = store.buildings.find((b) => b.id === jr.building_id);
+  const building = (await listBuildings()).find((b) => b.id === jr.building_id);
   const now = new Date().toISOString();
   const project: Project = {
     id: randomUUID(),
@@ -1570,6 +1570,51 @@ async function insertProjectFromJobRequest(
 }
 
 /**
+ * "Quick Job" — for the small one-day turnarounds that never go through a
+ * job request or a bid. Creates the same project row every other path
+ * creates, but lands it straight in pipeline_stage "Scheduled" so it can
+ * be put on the schedule immediately. Everything else (value, materials,
+ * photos…) can be filled in on the project page later if it matters.
+ */
+export async function createQuickProject(input: {
+  building_id: string;
+  unit_number?: string;
+  description: string;
+  start_date: string;
+  actorName: string;
+}): Promise<Project> {
+  const building = (await listBuildings()).find((b) => b.id === input.building_id);
+  const now = new Date().toISOString();
+  const project: Project = {
+    id: randomUUID(),
+    company_id: getCurrentCompanyId(),
+    building_id: input.building_id,
+    unit_number: input.unit_number || undefined,
+    name: `${building?.name ?? "Building"}${input.unit_number ? " — Unit " + input.unit_number : ""}`,
+    description: input.description,
+    project_value: 0,
+    other_cost: 0,
+    needs_transportation: true,
+    start_date: input.start_date,
+    created_at: now,
+    updated_at: now,
+    pipeline_stage: "Scheduled",
+    bid_status: "Accepted",
+    bid_accepted_at: now,
+    scheduled_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("projects").insert(project);
+    if (error) throw error;
+  } else {
+    getStore().projects.push(project);
+  }
+  logActivity({ action: "Created quick job", related_type: "project", related_id: project.id, actor_name: input.actorName, detail: `${project.name} — ${input.description}` });
+  return project;
+}
+
+/**
  * "Convert to Project" — used from an already-approved/ready job request.
  * The bid is treated as already accepted (that approval happened at the
  * job-request stage), so the new project row starts at pipeline_stage
@@ -1579,7 +1624,7 @@ export async function convertJobRequestToProject(
   jobRequestId: string,
   overrides?: Partial<Pick<Project, "name" | "project_value" | "start_date" | "target_end_date" | "needs_transportation">>
 ): Promise<Project> {
-  const jr = getStore().jobRequests.find((j) => j.id === jobRequestId);
+  const jr = (await listJobRequests()).find((j) => j.id === jobRequestId);
   if (!jr) throw new Error("Job request not found");
   const project = await insertProjectFromJobRequest(jr, overrides, "Bid Accepted", "Accepted");
   logActivity({ action: "Converted job request to project", related_type: "project", related_id: project.id, detail: `From job request ${jobRequestId} — bid accepted` });
@@ -1593,7 +1638,7 @@ export async function convertJobRequestToProject(
  * Dashboard for an estimator to claim.
  */
 export async function createBidFromJobRequest(jobRequestId: string): Promise<Project> {
-  const jr = getStore().jobRequests.find((j) => j.id === jobRequestId);
+  const jr = (await listJobRequests()).find((j) => j.id === jobRequestId);
   if (!jr) throw new Error("Job request not found");
   const project = await insertProjectFromJobRequest(jr, undefined, "Bid Sent", "Unclaimed");
   logActivity({ action: "Created bid", related_type: "project", related_id: project.id, detail: `From job request ${jobRequestId} — unclaimed, awaiting an estimator` });
