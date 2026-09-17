@@ -11,6 +11,9 @@ import {
 import { Card, PageHeader, PhoneLink, StatusBadge, EmptyState } from "@/components/ui";
 import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
 import type { Building } from "@/lib/types";
+import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
+import { canEdit } from "@/lib/permissions";
+import { setBuildingClientAction } from "../actions";
 
 const FIELD_LABELS: { key: keyof Building; label: string }[] = [
   { key: "access_instructions", label: "Access Instructions" },
@@ -37,6 +40,8 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
   if (!building) notFound();
 
   const client = clients.find((c) => c.id === building.client_company_id);
+  const isUnassigned = client?.name === UNASSIGNED_CLIENT_NAME;
+  const canEditBuildings = await canEdit("buildings");
   const contactLinks = buildingContacts.filter((bc) => bc.building_id === id);
   const buildingContactPeople = contactLinks
     .map((bc) => ({ link: bc, contact: contacts.find((c) => c.id === bc.contact_id) }))
@@ -60,6 +65,32 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
           )
         }
       />
+
+      {canEditBuildings && (
+        <Card className={`p-3 mb-5 ${isUnassigned ? "border-amber-300 bg-amber-50" : ""}`}>
+          <form action={setBuildingClientAction.bind(null, id)} className="flex flex-wrap items-center gap-2">
+            <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              {isUnassigned ? "No management company yet — file this building under:" : "Management company:"}
+            </label>
+            <select name="client_company_id" defaultValue={building.client_company_id} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm min-w-[220px]">
+              {clients
+                .filter((c) => c.name !== UNASSIGNED_CLIENT_NAME || c.id === building.client_company_id)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+            </select>
+            <button type="submit" className="rounded-lg bg-slate-800 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-900">
+              {isUnassigned ? "Assign" : "Move"}
+            </button>
+            {isUnassigned && (
+              <Link href="/clients/new" className="text-xs text-sky-600 hover:text-sky-800">
+                Company not listed? Create it →
+              </Link>
+            )}
+          </form>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">

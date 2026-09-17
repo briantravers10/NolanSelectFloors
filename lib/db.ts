@@ -72,6 +72,7 @@ import type {
   TimeOffType,
   WorkTypeRecord,
 } from "./types";
+import { UNASSIGNED_CLIENT_NAME } from "./types";
 
 function sb() {
   return getSupabaseClient();
@@ -2208,6 +2209,20 @@ export async function deleteClientCompany(id: string, actorName: string): Promis
     store.clientCompanies = store.clientCompanies.filter((c) => c.id !== id);
   }
   logActivity({ action: "Deleted client", related_type: "client_company", related_id: id, actor_name: actorName, detail: existing.name });
+}
+
+/** The placeholder "client" a Quick Job building goes under when the
+ * management company isn't known yet. Created once on first use; the
+ * building page lets it be moved to the real company later. */
+export async function getOrCreateUnassignedClient(): Promise<ClientCompany> {
+  const existing = (await listClientCompanies()).find((c) => c.name === UNASSIGNED_CLIENT_NAME);
+  if (existing) return existing;
+  return createClientCompanyRecord({
+    name: UNASSIGNED_CLIENT_NAME,
+    type: "Unassigned",
+    active: true,
+    notes: "Buildings here were added from Quick Job without a management company. Open each building to move it to the right company.",
+  });
 }
 
 export async function updateClientCompany(id: string, patch: Partial<Omit<ClientCompany, "id" | "company_id" | "created_at">>): Promise<void> {

@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createBuildingRecord } from "@/lib/db";
+import { createBuildingRecord, updateBuilding } from "@/lib/db";
 import type { BuildingRegion } from "@/lib/types";
 import { canEdit } from "@/lib/permissions";
 
@@ -45,4 +45,17 @@ export async function createBuildingAction(formData: FormData) {
   });
   revalidatePath("/buildings");
   redirect(`/buildings/${building.id}`);
+}
+
+/** Move a building to a (different) management company — used to file
+ * Quick Job buildings that started under the "Unassigned" placeholder. */
+export async function setBuildingClientAction(buildingId: string, formData: FormData) {
+  if (!(await canEdit("buildings"))) return;
+  const client_company_id = String(formData.get("client_company_id") ?? "");
+  if (!client_company_id) return;
+  await updateBuilding(buildingId, { client_company_id });
+  revalidatePath(`/buildings/${buildingId}`);
+  revalidatePath("/buildings");
+  revalidatePath("/clients");
+  revalidatePath("/schedule");
 }

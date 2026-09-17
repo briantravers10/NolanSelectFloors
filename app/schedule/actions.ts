@@ -9,6 +9,7 @@ import {
   createBuildingRecord,
   createClientCompanyRecord,
   createContact,
+  getOrCreateUnassignedClient,
   listBuildingContacts,
   listBuildings,
   listClientCompanies,
@@ -347,19 +348,12 @@ export async function createQuickJobAction(formData: FormData) {
   if (building && !client) client = clients.find((c) => c.id === building!.client_company_id);
   if (!building) {
     if (!client) {
-      if (!clientName) {
-        const keep = new URLSearchParams({
-          date: schedule_date,
-          qj: "need-company",
-          qj_building: buildingName,
-          qj_unit: String(formData.get("unit_number") ?? ""),
-          qj_contact: contactName,
-          qj_phone: contactPhone,
-          qj_desc: description,
-        });
-        redirect(`/schedule/edit?${keep.toString()}`);
-      }
-      client = await createClientCompanyRecord({ name: clientName, type: "Property Management", active: true });
+      // No company given: file the building under the "Unassigned"
+      // placeholder so the job can go ahead; it can be moved to the real
+      // company from the building page later.
+      client = clientName
+        ? await createClientCompanyRecord({ name: clientName, type: "Property Management", active: true })
+        : await getOrCreateUnassignedClient();
     }
     const latRaw = String(formData.get("latitude") ?? "");
     const lngRaw = String(formData.get("longitude") ?? "");

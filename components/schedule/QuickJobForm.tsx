@@ -45,11 +45,6 @@ export function QuickJobForm({
   return (
     <form action={createQuickJobAction} className="rounded-xl border border-sky-200 bg-sky-50 p-3 w-full space-y-2">
       <input type="hidden" name="schedule_date" value={date} />
-      {error === "need-company" && (
-        <p className="text-xs text-rose-700 font-medium">
-          &quot;{prefill?.building}&quot; isn&apos;t on file yet — type the management company it belongs to (or pick one) and hit Create &amp; Schedule again.
-        </p>
-      )}
       <div className="grid grid-cols-1 sm:grid-cols-[2fr_2fr_1fr] gap-2">
         <div>
           <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">Building</label>
@@ -75,15 +70,14 @@ export function QuickJobForm({
             {known?.clientName ? (
               <span className="normal-case text-slate-400">— {known.clientName}</span>
             ) : buildingName.trim() ? (
-              <span className="normal-case text-rose-600">— needed for a new building</span>
+              <span className="normal-case text-slate-400">— optional, can be added later</span>
             ) : null}
           </label>
           <input
             name="client_name"
             list="qj-clients"
             autoComplete="off"
-            required={!known && buildingName.trim().length > 0}
-            placeholder={known ? "Already on file" : "Pick one or type a new company"}
+            placeholder={known ? "Already on file" : "Pick one, type a new one, or leave blank"}
             className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm"
           />
           <datalist id="qj-clients">
@@ -157,7 +151,7 @@ export function QuickJobForm({
         <button type="button" onClick={() => setOpen(false)} className="text-sm text-slate-500 hover:text-slate-800">
           Cancel
         </button>
-        <span className="text-[11px] text-slate-500">New buildings, companies and contacts are saved to Clients / Buildings automatically.</span>
+        <span className="text-[11px] text-slate-500">New buildings, companies and contacts are saved to Clients / Buildings automatically. A building with no company goes under &quot;Unassigned&quot; until you move it.</span>
       </div>
     </form>
   );

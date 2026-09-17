@@ -1081,3 +1081,7 @@ export interface QuickBooksSyncLogEntry {
   error_detail?: string;
   initiated_by?: string;
 }
+
+/** Placeholder management company a Quick Job building is filed under when
+ * the real company isn't known yet (see lib/db.ts getOrCreateUnassignedClient). */
+export const UNASSIGNED_CLIENT_NAME = "Unassigned — add management company later";

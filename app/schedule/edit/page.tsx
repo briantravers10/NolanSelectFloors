@@ -13,6 +13,7 @@ import {
   listWorkTypes,
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
+import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
 import { buildScheduleJobRows } from "@/lib/schedule";
 import { addDays, dayLabel, formatDateShort, isoDate, todayIso } from "@/lib/dates";
 import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
@@ -70,7 +71,7 @@ export default async function ScheduleEditPage({
     .filter((b) => b.active)
     .map((b) => ({ name: b.name, clientName: clientById.get(b.client_company_id)?.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const quickClients = clients.map((c) => ({ name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const quickClients = clients.filter((c) => c.name !== UNASSIGNED_CLIENT_NAME).map((c) => ({ name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
   const quickContacts = contacts
     .map((c) => ({ name: `${c.first_name} ${c.last_name}`.trim(), clientName: c.client_company_id ? clientById.get(c.client_company_id)?.name : undefined }))
     .filter((c) => c.name)
