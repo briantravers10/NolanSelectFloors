@@ -55,7 +55,7 @@ export default async function StaffPage() {
                 <tr key={e.id} className={`border-b border-slate-100 last:border-0 hover:bg-slate-50 ${!e.active ? "opacity-50" : ""}`}>
                   <td className="px-4 py-3">
                     <Link href={`/staff/${e.id}`} className="font-medium text-slate-900 hover:text-sky-600 inline-flex items-center gap-1.5">
-                      {e.first_name} {e.last_name}
+                      {e.first_name} {e.last_name}{e.nickname ? <span className="text-slate-500 font-normal"> ({e.nickname})</span> : null}
                     </Link>
                     {offToday.has(e.id) && (
                       <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap">

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { employeeDisplayName } from "@/lib/employee-name";
 import {
   listBuildingContacts,
   listBuildings,
@@ -73,7 +74,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     const dow = dayLabel(activeDate);
     const dateLabel = formatDateShort(activeDate);
     const work = a.role_on_job + (a.time_and_half ? " (time-and-half)" : "");
-    return { employeeName: emp ? `${emp.first_name} ${emp.last_name}` : "Crew member", text: `${emp?.first_name ?? "Crew member"}, please go to ${location}${unitPart} at ${callTime} on ${dow}, ${dateLabel}. Work: ${work}.` };
+    return { employeeName: emp ? employeeDisplayName(emp) : "Crew member", text: `${emp?.first_name ?? "Crew member"}, please go to ${location}${unitPart} at ${callTime} on ${dow}, ${dateLabel}. Work: ${work}.` };
   });
   const scheduleMessage = scheduleMessages.length > 0 ? scheduleMessages.map((m) => m.text).join("\n\n") : `No crew scheduled for ${dayLabel(activeDate)}, ${formatDateShort(activeDate)}.`;
 

@@ -16,6 +16,7 @@ import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { buildScheduleJobRows } from "@/lib/schedule";
 import { dayLabel, formatDateShort, todayIso } from "@/lib/dates";
 import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
+import { employeeDisplayName } from "@/lib/employee-name";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { ScheduleEditForm } from "@/components/schedule/ScheduleEditForm";
 import { SCHEDULE_COLOR_DOT } from "@/components/schedule/badges";
@@ -85,7 +86,7 @@ export default async function ScheduleEditPage({
     .filter((e) => !assignedIds.has(e.id))
     .map((e) => {
       const off = isEmployeeOffOn(timeOffEntries, e.id, date);
-      return { id: e.id, name: `${e.first_name} ${e.last_name}`, offLabel: off ? timeOffWarningLabel(off.type) : null };
+      return { id: e.id, name: employeeDisplayName(e), offLabel: off ? timeOffWarningLabel(off.type) : null };
     })
     .sort((a, b) => (a.offLabel ? 1 : 0) - (b.offLabel ? 1 : 0) || a.name.localeCompare(b.name));
 

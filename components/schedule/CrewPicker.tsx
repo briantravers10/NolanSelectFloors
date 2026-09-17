@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Employee, TimeOffType } from "@/lib/types";
 import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
+import { employeeDisplayName, employeeSearchText } from "@/lib/employee-name";
 
 /** The minimal shape CrewPicker needs from a TimeOffEntry — kept separate
  * from the full db type so this client component doesn't need to import
@@ -50,7 +51,7 @@ export function CrewPicker({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return employees;
-    return employees.filter((e) => `${e.first_name} ${e.last_name}`.toLowerCase().includes(q));
+    return employees.filter((e) => employeeSearchText(e).includes(q));
   }, [employees, query]);
 
   function offWarning(employeeId: string): string | null {
@@ -84,7 +85,7 @@ export function CrewPicker({
                 }`}
                 title={warning ? `${warning} — remove from crew` : "Remove from crew"}
               >
-                {e.first_name} {e.last_name}
+                {employeeDisplayName(e)}
                 {warning && <span className="font-semibold">{warning}</span>}
                 <span aria-hidden>×</span>
               </button>
@@ -97,7 +98,7 @@ export function CrewPicker({
         type="text"
         value={query}
         onChange={(ev) => setQuery(ev.target.value)}
-        placeholder="Type a name to find someone…"
+        placeholder="Type a name or nickname to find someone…"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-2"
       />
 
@@ -119,7 +120,7 @@ export function CrewPicker({
                   onChange={() => toggle(e.id)}
                   className="rounded border-slate-300"
                 />
-                {e.first_name} {e.last_name}
+                {employeeDisplayName(e)}
                 {warning && <span className="text-amber-700 font-semibold text-xs">{warning}</span>}
               </label>
             );

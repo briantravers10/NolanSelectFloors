@@ -18,12 +18,13 @@ import { STAFF_CAPABILITIES, TAX_STATUSES } from "@/lib/types";
 import type { TimeOffEntry } from "@/lib/types";
 import { computeTimeOffUsage, splitUpcomingAndPast } from "@/lib/time-off";
 import { canEdit } from "@/lib/permissions";
+import { employeeDisplayName } from "@/lib/employee-name";
 
 function taxStatusLabel(status?: string) {
   return status === "W-4" ? "W-4 Employee" : status === "1099" ? "1099 Contractor" : "Not set";
 }
 import { AddTimeOffForm } from "@/components/staff/AddTimeOffForm";
-import { addTimeOffAction, deleteTimeOffAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
+import { addTimeOffAction, deleteTimeOffAction, updateEmployeeNicknameAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -61,7 +62,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
   return (
     <div>
       <PageHeader
-        title={`${employee.first_name} ${employee.last_name}`}
+        title={employeeDisplayName(employee)}
         subtitle={employee.title}
         action={
           <div className="flex gap-3 text-sm">
@@ -274,6 +275,18 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
           <div className="mt-4 pt-4 border-t border-slate-200 text-sm">
             <div className="flex justify-between mb-1"><span className="text-slate-500">Status</span><span>{employee.active ? "Active" : "Inactive"}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Driver</span><span>{employee.is_driver ? "Yes" : "No"}</span></div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Nickname</h2>
+            {canEditStaff ? (
+              <form action={updateEmployeeNicknameAction.bind(null, employee.id)} className="flex items-center gap-2">
+                <input name="nickname" defaultValue={employee.nickname ?? ""} placeholder="e.g. Migs" className="flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
+                <Button type="submit" variant="secondary" className="text-xs py-1">Save</Button>
+              </form>
+            ) : (
+              <div className="text-sm text-slate-800">{employee.nickname || "Not set"}</div>
+            )}
+            <p className="text-[11px] text-slate-400 mt-1">Shows in brackets after their name on the schedule and is searchable in the crew picker.</p>
           </div>
           <div className="mt-4 pt-4 border-t border-slate-200">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Tax Status</h2>

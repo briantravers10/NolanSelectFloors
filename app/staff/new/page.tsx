@@ -22,6 +22,10 @@ export default async function NewStaffPage() {
             </div>
           </div>
           <div>
+            <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Nickname <span className="normal-case text-slate-400">(what the crew call them — shows in brackets on the schedule)</span></label>
+            <input name="nickname" placeholder="e.g. Migs" className="input" />
+          </div>
+          <div>
             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Job Title</label>
             <input name="title" placeholder="e.g. Installer, Sander, Foreman" className="input" />
           </div>

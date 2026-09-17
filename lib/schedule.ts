@@ -23,6 +23,7 @@ import type {
   WorkTypeRecord,
 } from "./types";
 import { round2 } from "./calculations";
+import { employeeDisplayName } from "./employee-name";
 import { jobLaborSummary } from "./labor-cost";
 
 // ---------------------------------------------------------------------
@@ -274,11 +275,11 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
     const crew = dayAssignments.filter((a) => a.project_id === projectId);
     const crewNames = crew.map((a) => {
       const e = employeeById.get(a.employee_id);
-      return e ? `${e.first_name} ${e.last_name}` : "Unknown";
+      return e ? employeeDisplayName(e) : "Unknown";
     });
     const crewList = crew.map((a) => {
       const e = employeeById.get(a.employee_id);
-      return { assignmentId: a.id, employeeId: a.employee_id, name: e ? `${e.first_name} ${e.last_name}` : "Unknown" };
+      return { assignmentId: a.id, employeeId: a.employee_id, name: e ? employeeDisplayName(e) : "Unknown" };
     });
     const scheduleDay = dayScheduleDays.find((d) => d.project_id === projectId);
     const earliestCallTime = crew.length > 0 ? crew.reduce<string | null>((min, a) => {
@@ -439,7 +440,7 @@ export function compileCompletedJobSummary(
   const labor: CompletedJobEmployeeLabor[] = employeeIds.map((employeeId) => {
     const actualsForEmployee = projectActuals.filter((a) => a.employee_id === employeeId);
     const emp = employeeById.get(employeeId);
-    const employeeName = emp ? `${emp.first_name} ${emp.last_name}` : employeeId;
+    const employeeName = emp ? employeeDisplayName(emp) : employeeId;
     if (actualsForEmployee.length > 0) {
       const days = new Set(actualsForEmployee.map((a) => a.work_date));
       return {

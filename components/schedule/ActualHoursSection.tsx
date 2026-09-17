@@ -1,4 +1,5 @@
 import type { ActualLaborEntry, Employee, Project } from "@/lib/types";
+import { employeeDisplayName } from "@/lib/employee-name";
 import { actualHoursWarnings, totalActualHoursByEmployeeDay } from "@/lib/schedule";
 import { Card, AlertPill, Button } from "@/components/ui";
 import { addActualLaborEntryAction, deleteActualLaborEntryAction } from "@/app/schedule/actions";
@@ -46,7 +47,7 @@ export function ActualHoursSection({
             return (
               <div key={`${t.employee_id}-${t.work_date}`} className="border border-slate-200 rounded-lg p-2.5">
                 <div className="flex items-center justify-between text-sm font-medium text-slate-900">
-                  <span>{emp ? `${emp.first_name} ${emp.last_name}` : t.employee_id}</span>
+                  <span>{emp ? employeeDisplayName(emp) : t.employee_id}</span>
                   <span>{t.totalHours} hrs total</span>
                 </div>
                 <div className="mt-1 space-y-1">
@@ -74,7 +75,7 @@ export function ActualHoursSection({
         <div>
           <label className="block text-[10px] text-slate-500 uppercase mb-0.5">Employee</label>
           <select name="employee_id" required className="rounded-md border border-slate-300 px-2 py-1.5 text-sm">
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+            {employees.map((e) => <option key={e.id} value={e.id}>{employeeDisplayName(e)}</option>)}
           </select>
         </div>
         <div>

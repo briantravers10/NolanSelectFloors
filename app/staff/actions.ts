@@ -47,10 +47,22 @@ export async function createStaffAction(formData: FormData) {
     hire_date: String(formData.get("hire_date") ?? "") || undefined,
     notes: String(formData.get("notes") ?? "") || undefined,
     tax_status: parseTaxStatus(formData.get("tax_status")),
+    nickname: String(formData.get("nickname") ?? "").trim() || undefined,
     capabilities,
   });
   revalidatePath("/staff");
   redirect(`/staff/${employee.id}`);
+}
+
+/** Sets/clears the nickname shown in brackets on the schedule. */
+export async function updateEmployeeNicknameAction(employeeId: string, formData: FormData) {
+  if (!(await canEdit("staff"))) return;
+  const actingUser = await getActingUser();
+  const nickname = String(formData.get("nickname") ?? "").trim() || null;
+  await updateEmployee(employeeId, { nickname: nickname as string | undefined }, actingUser.fullName);
+  revalidatePath(`/staff/${employeeId}`);
+  revalidatePath("/staff");
+  revalidatePath("/schedule");
 }
 
 /**

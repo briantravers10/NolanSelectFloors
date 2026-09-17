@@ -1,4 +1,5 @@
 import { listActivityLog, listEmployees, listProjects } from "@/lib/db";
+import { employeeDisplayName } from "@/lib/employee-name";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { isScheduleActivity } from "@/lib/schedule";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
@@ -22,7 +23,7 @@ export default async function ScheduleHistoryPage({
   if (employee) {
     entries = entries.filter((a) => {
       const emp = a.related_type === "employee" ? employeeById.get(a.related_id ?? "") : undefined;
-      const empName = emp ? `${emp.first_name} ${emp.last_name}` : "";
+      const empName = emp ? employeeDisplayName(emp) : "";
       return empName.toLowerCase().includes(employee.toLowerCase()) || (a.detail ?? "").toLowerCase().includes(employee.toLowerCase());
     });
   }

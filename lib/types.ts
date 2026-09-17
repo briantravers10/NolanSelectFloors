@@ -442,6 +442,9 @@ export interface Employee {
   hire_date?: string;
   notes?: string;
   tax_status?: TaxStatus;
+  // What the crew actually call them — searchable in the crew picker and
+  // shown in brackets after the full name on the schedule.
+  nickname?: string;
   created_at: string;
   // ANNUAL time-off allowance (build 7, Vacation & Sick Day Tracker) — per
   // employee, NOT a flat company-wide number. Nullable: unset means "not
