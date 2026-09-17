@@ -31,6 +31,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
   const lastJobReceived = clientJobRequests.slice().sort((a, b) => (b.received_at < a.received_at ? -1 : 1))[0];
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const contactById = new Map(contacts.map((c) => [c.id, c]));
+  const mainContact = client.main_contact_id ? contactById.get(client.main_contact_id) : undefined;
 
   // Point of contact per building — primary contact first, falling back to
   // whichever contact is linked, so it's visible right here without an
@@ -60,6 +61,42 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         <Stat label="Total Job History" value={clientProjects.length} />
         <Stat label="Last Job Received" value={lastJobReceived ? formatDateLong(lastJobReceived.received_at.slice(0, 10)) : "—"} />
       </div>
+
+      <Card className="p-4 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Main Point of Contact</div>
+            {mainContact ? (
+              <>
+                <div className="font-medium text-slate-800">{mainContact.first_name} {mainContact.last_name}</div>
+                {mainContact.title && <div className="text-xs text-slate-500">{mainContact.title}</div>}
+                <PhoneLink phone={mainContact.phone} className="text-xs" />
+                <div><EmailLink email={mainContact.email} className="text-xs" /></div>
+              </>
+            ) : (
+              <div className="text-slate-400">Not set</div>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Accounts Payable</div>
+            {client.ap_contact_name || client.ap_contact_phone || client.ap_contact_email ? (
+              <>
+                <div className="font-medium text-slate-800">{client.ap_contact_name}</div>
+                <PhoneLink phone={client.ap_contact_phone} className="text-xs" />
+                <div><EmailLink email={client.ap_contact_email} className="text-xs" /></div>
+              </>
+            ) : (
+              <div className="text-slate-400">Not set</div>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Relationship</div>
+            <div className="text-slate-800">Since {client.relationship_start_date ? formatDateLong(client.relationship_start_date) : "—"}</div>
+            <div className="text-xs text-slate-500">{client.active === false ? "Inactive" : "Active"}</div>
+            {client.billing_notes && <div className="text-xs text-slate-600 mt-1"><span className="font-medium">Billing:</span> {client.billing_notes}</div>}
+          </div>
+        </div>
+      </Card>
 
       {client.notes && (
         <Card className="p-4 mb-5">

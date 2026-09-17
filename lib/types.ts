@@ -252,6 +252,9 @@ export interface ClientCompany {
   ap_contact_name?: string;
   ap_contact_phone?: string;
   ap_contact_email?: string;
+  // Main point of contact at the management company — a contacts row
+  // (client_company_id = this client) so it also appears under Contacts.
+  main_contact_id?: string;
   relationship_start_date?: string;
   active?: boolean;
   billing_notes?: string;

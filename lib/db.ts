@@ -157,6 +157,21 @@ export async function listBuildingContacts(): Promise<BuildingContact[]> {
   return getStore().buildingContacts;
 }
 
+/** Links a contact to a building with a role; the first contact added to
+ * a building is normally flagged is_primary so it's the POC on the
+ * schedule/building pages. */
+export async function createBuildingContact(input: Omit<BuildingContact, "id">): Promise<BuildingContact> {
+  const record: BuildingContact = { id: randomUUID(), ...input };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("building_contacts").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().buildingContacts.push(record);
+  }
+  return record;
+}
+
 export async function listJobRequests(): Promise<JobRequest[]> {
   const client = sb();
   if (client) {
@@ -2052,6 +2067,28 @@ export async function createClientCompanyRecord(input: Omit<ClientCompany, "id" 
   }
   logActivity({ action: "Added client company", related_type: "client_company", related_id: record.id, detail: record.name });
   return record;
+}
+
+export async function updateClientCompany(id: string, patch: Partial<Omit<ClientCompany, "id" | "company_id" | "created_at">>): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("client_companies").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const existing = getStore().clientCompanies.find((c) => c.id === id);
+    if (existing) Object.assign(existing, patch);
+  }
+}
+
+export async function updateBuilding(id: string, patch: Partial<Omit<Building, "id" | "company_id" | "created_at">>): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("buildings").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const existing = getStore().buildings.find((b) => b.id === id);
+    if (existing) Object.assign(existing, patch);
+  }
 }
 
 export async function createBuildingRecord(input: Omit<Building, "id" | "company_id" | "created_at">): Promise<Building> {
