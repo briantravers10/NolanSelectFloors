@@ -4,8 +4,11 @@
  * formatting existed. Non-US / unrecognisable input is returned as typed.
  */
 export function formatUsPhone(raw: string): string {
-  let digits = raw.replace(/\D/g, "");
-  if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+  // Strip our own "+1" prefix first so re-formatting a partially typed
+  // value (backspacing through "+1 (555") doesn't count the 1 as a digit.
+  const body = raw.trim().startsWith("+1") ? raw.trim().slice(2) : raw;
+  let digits = body.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1") && body === raw) digits = digits.slice(1);
   if (digits.length > 10) return raw.trim(); // international / extension — leave alone
   if (digits.length === 0) return "";
   const a = digits.slice(0, 3);
