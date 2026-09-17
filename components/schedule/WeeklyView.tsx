@@ -27,11 +27,11 @@ export function WeeklyView({ weekDates, today, rowsByDate }: { weekDates: string
                     href={`/schedule?date=${date}`}
                     className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50 text-xs"
                   >
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${SCHEDULE_COLOR_DOT[row.scheduleColor]}`} />
-                    <span className="truncate flex-1 text-slate-800">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${row.weekendOff ? "bg-slate-300" : SCHEDULE_COLOR_DOT[row.scheduleColor]}`} />
+                    <span className={`truncate flex-1 ${row.weekendOff ? "text-slate-400 line-through" : "text-slate-800"}`}>
                       {row.buildingName}{row.unitNumber ? ` — ${row.unitNumber}` : ""}
                     </span>
-                    <span className="text-slate-400 shrink-0">{row.crewCount} crew</span>
+                    <span className="text-slate-400 shrink-0">{row.weekendOff ? "off" : `${row.crewCount} crew`}</span>
                   </Link>
                 ))}
               </div>

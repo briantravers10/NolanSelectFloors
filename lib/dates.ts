@@ -37,6 +37,13 @@ export function formatDateShort(iso?: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** Saturday / Sunday check on an ISO date string (no timezone drift). */
+export function isWeekend(iso: string): boolean {
+  const d = new Date(iso + "T00:00:00");
+  const w = d.getDay();
+  return w === 0 || w === 6;
+}
+
 export function dayLabel(iso: string): string {
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString("en-US", { weekday: "long" });

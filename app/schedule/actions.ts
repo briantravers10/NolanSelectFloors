@@ -433,3 +433,25 @@ export async function removeFromScheduleAction(projectId: string, date: string, 
   revalidateSchedule(projectId);
   redirect(`/schedule/edit?date=${date}`);
 }
+
+/**
+ * "Working this Saturday/Sunday": turns a greyed weekend carry-over into a
+ * real scheduled day — creates the day row (copied from the last working
+ * day, crew included) so it counts like any other day.
+ */
+export async function workWeekendDayAction(projectId: string, date: string) {
+  if (!(await canEdit("schedule"))) return;
+  const actingUser = await getActingUser();
+  await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
+  revalidateSchedule(projectId);
+  redirect(`/schedule/edit?date=${date}`);
+}
+
+/** Undo of the above: drop the weekend day's entry and crew again. */
+export async function notWorkingWeekendDayAction(projectId: string, date: string) {
+  if (!(await canEdit("schedule"))) return;
+  const actingUser = await getActingUser();
+  await removeProjectFromSchedule(projectId, date, actingUser.fullName);
+  revalidateSchedule(projectId);
+  redirect(`/schedule/edit?date=${date}`);
+}

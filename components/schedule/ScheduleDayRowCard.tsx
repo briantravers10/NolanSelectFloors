@@ -1,8 +1,12 @@
+"use client";
+
 import Link from "next/link";
 import type { ScheduleJobRow } from "@/lib/schedule";
 import { PhoneLink, EmailLink } from "@/components/ui";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
 import { EditableNotes } from "./EditableNotes";
+import { isWeekend } from "@/lib/dates";
+import { notWorkingWeekendDayAction, workWeekendDayAction } from "@/app/schedule/actions";
 import {
   COI_CLASSES,
   COI_DISPLAY_LABELS,
@@ -22,9 +26,32 @@ import {
  */
 export function ScheduleDayRowCard({ row, editableNotes = false }: { row: ScheduleJobRow; editableNotes?: boolean }) {
   const blockClasses = SCHEDULE_COLOR_BLOCK_CLASSES[row.scheduleColor];
+  const off = Boolean(row.weekendOff);
+  const weekendOn = !off && isWeekend(row.date) && editableNotes;
 
   return (
-    <div className={`border-2 rounded-xl px-3 py-2 ${blockClasses}`}>
+    <div className={`border-2 rounded-xl px-3 py-2 ${off ? "border-dashed border-slate-300 bg-slate-100 opacity-60 grayscale" : blockClasses}`}>
+      {off && (
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5 rounded-md bg-white/70 border border-slate-300 px-2 py-1">
+          <span className="text-xs font-semibold text-slate-700">Weekend — not working. Carried from {row.carriedFrom}; picks up again Monday.</span>
+          {editableNotes && (
+            <form action={workWeekendDayAction.bind(null, row.projectId, row.date)}>
+              <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 cursor-pointer">
+                <input type="checkbox" onChange={(e) => e.currentTarget.form?.requestSubmit()} className="rounded border-slate-400" />
+                Working this {new Date(row.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" })}
+              </label>
+            </form>
+          )}
+        </div>
+      )}
+      {weekendOn && (
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5 rounded-md bg-white/70 border border-emerald-300 px-2 py-1">
+          <span className="text-xs font-semibold text-emerald-800">Working this {new Date(row.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" })} — crew and labor cost count for today.</span>
+          <form action={notWorkingWeekendDayAction.bind(null, row.projectId, row.date)}>
+            <button type="submit" className="text-xs text-slate-600 hover:text-rose-700 underline">Not working after all</button>
+          </form>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-x-3 gap-y-1.5">
         {/* Left: who / where / crew / badges */}
         <div className="min-w-0 space-y-1">
@@ -96,7 +123,7 @@ export function ScheduleDayRowCard({ row, editableNotes = false }: { row: Schedu
         </div>
 
         {/* Right: notes in their own box (editable in place on Create/Edit) */}
-        {editableNotes ? (
+        {editableNotes && !off ? (
           <EditableNotes projectId={row.projectId} date={row.date} notes={row.notes} />
         ) : (
           <div className="rounded-lg border border-slate-300 bg-white/60 px-2.5 py-1.5 min-h-[3rem]">

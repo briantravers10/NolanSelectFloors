@@ -91,7 +91,7 @@ export default async function ScheduleEditPage({
   // Who's busy = everyone on any row shown for this date, including crew
   // carried over with a job from an earlier day (not just rows saved on
   // this exact date).
-  const assignedIds = new Set(rowsForDate.flatMap((r) => r.crew.map((c) => c.employeeId)));
+  const assignedIds = new Set(rowsForDate.filter((r) => !r.weekendOff).flatMap((r) => r.crew.map((c) => c.employeeId)));
   const notOnSchedule = activeEmployees
     .filter((e) => !assignedIds.has(e.id))
     .map((e) => {

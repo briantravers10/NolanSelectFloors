@@ -25,6 +25,7 @@ import type {
 import { round2 } from "./calculations";
 import { employeeDisplayName } from "./employee-name";
 import { jobLaborSummary } from "./labor-cost";
+import { isWeekend } from "./dates";
 
 // ---------------------------------------------------------------------
 // SCHEDULE COLOR PRIORITY
@@ -211,6 +212,10 @@ export interface ScheduleJobRow {
   // it was actually put on the schedule. A job stays on every following
   // day until it's marked Completed.
   carriedFrom?: string;
+  // A carried-over job on a Saturday/Sunday: shown greyed as "not working"
+  // until someone ticks "Working this Saturday", which creates the real
+  // day row (and only then does crew / labor cost count for that day).
+  weekendOff?: boolean;
   // "Items to Order / Collect" (build 8) — empty when the job/day has no
   // project_schedule_days row yet, or none were added.
   pickupItems: SchedulePickupItem[];
@@ -356,13 +361,16 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       scheduleDayId: scheduleDay?.id,
       earliestCallTime,
       carriedFrom,
+      weekendOff: Boolean(carriedFrom) && isWeekend(date),
       pickupItems: scheduleDay ? pickupItems.filter((i) => i.project_schedule_day_id === scheduleDay.id) : [],
       qbDocuments: qbDocuments.filter((d) => d.project_id === projectId),
     });
   }
 
   const withSortLabel = rows.map((r) => ({ ...r, sortLabel: r.buildingName ?? r.projectId }));
-  return sortScheduleDayRows<(typeof withSortLabel)[number]>(withSortLabel);
+  const sorted = sortScheduleDayRows<(typeof withSortLabel)[number]>(withSortLabel);
+  // Weekend "not working" carry-overs sink below the jobs actually on.
+  return [...sorted.filter((r) => !r.weekendOff), ...sorted.filter((r) => r.weekendOff)];
 }
 
 // ---------------------------------------------------------------------
