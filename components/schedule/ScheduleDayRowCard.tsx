@@ -23,103 +23,86 @@ export function ScheduleDayRowCard({ row }: { row: ScheduleJobRow }) {
   const blockClasses = SCHEDULE_COLOR_BLOCK_CLASSES[row.scheduleColor];
 
   return (
-    <div className={`border-2 rounded-xl p-5 space-y-4 ${blockClasses}`}>
-      {/* Header: building/unit + navigation links */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className={`border-2 rounded-xl px-4 py-3 space-y-2 ${blockClasses}`}>
+      {/* Header: building/unit + address + links */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-lg font-semibold text-slate-900">
+          <div className="text-base font-semibold text-slate-900 leading-tight">
             {row.buildingName ?? "Unknown Building"}
             {row.unitNumber ? ` — Unit ${row.unitNumber}` : ""}
+            {row.address && <span className="text-slate-600 font-normal text-sm"> · {row.address}</span>}
           </div>
-          <div className="text-sm text-slate-700 mt-0.5">{row.address}</div>
           {row.carriedFrom && (
-            <div className="text-xs text-slate-600 mt-1">
-              Still open — carried over from {row.carriedFrom}. Set Schedule Type to Completed to take it off the schedule.
+            <div className="text-[11px] text-slate-600 mt-0.5">
+              Still open — carried over from {row.carriedFrom}. Set Schedule Type to Completed to take it off.
             </div>
           )}
         </div>
-        <div className="flex items-center gap-3 shrink-0 text-sm">
+        <div className="flex items-center gap-2 shrink-0 text-xs">
           <Link href={`/projects/${row.projectId}`} className="text-sky-700 hover:underline font-medium">
             View Project →
           </Link>
           <Link
             href={`/schedule/edit?project=${row.projectId}&date=${row.date}`}
-            className="rounded-lg bg-white/80 border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-white"
+            className="rounded-md bg-white/80 border border-slate-300 px-2 py-1 font-medium text-slate-700 hover:bg-white"
           >
-            Edit This Entry
+            Edit
           </Link>
         </div>
       </div>
 
-      {/* Management company / contact */}
-      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
-        <div>
-          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Management Company</div>
-          <div className="text-sm text-slate-900 mt-0.5">{row.clientName ?? "—"}</div>
+      {/* Company · contact · crew on compact lines */}
+      <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        <div className="min-w-0">
+          <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mr-1.5">Company</span>
+          <span className="text-slate-900">{row.clientName ?? "—"}</span>
         </div>
-        <div>
-          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Point of Contact</div>
-          <div className="text-sm text-slate-900 mt-0.5">{row.contactName ?? "—"}</div>
-          <div className="flex flex-wrap items-center gap-3 mt-0.5">
-            <PhoneLink phone={row.contactPhone} className="text-sm" />
-            {row.contactEmail && <EmailLink email={row.contactEmail} className="text-sm" />}
-          </div>
+        <div className="min-w-0 flex flex-wrap items-center gap-x-2">
+          <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Contact</span>
+          <span className="text-slate-900">{row.contactName ?? "—"}</span>
+          <PhoneLink phone={row.contactPhone} className="text-sm" />
+          {row.contactEmail && <EmailLink email={row.contactEmail} className="text-sm" />}
         </div>
       </div>
-
-      {/* Crew */}
-      <div>
-        <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Crew — {row.crewCount}</div>
-        <div className="text-sm text-slate-900 mt-0.5">
+      <div className="text-sm">
+        <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mr-1.5">Crew — {row.crewCount}</span>
+        <span className="text-slate-900">
           {row.crewCount > 0 ? row.crewNames.join(" / ") : <span className="text-slate-500">No crew assigned yet</span>}
-        </div>
+        </span>
       </div>
 
-      {/* Status row: COI / Materials / Work type */}
-      <div className="flex flex-wrap gap-2.5">
-        <span className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-sm font-medium ${
+      {/* Status badges */}
+      <div className="flex flex-wrap gap-1.5">
+        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${
           row.coiStatus === "Approved" ? "bg-emerald-100 text-emerald-800 border-emerald-400" : COI_CLASSES[row.coiStatus]
         }`}>
-          Certificate of Insurance: {COI_DISPLAY_LABELS[row.coiStatus]}
+          COI: {COI_DISPLAY_LABELS[row.coiStatus]}
         </span>
-        <span className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-sm font-medium ${MATERIALS_CLASSES[row.materialsStatus]}`}>
+        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${MATERIALS_CLASSES[row.materialsStatus]}`}>
           Materials: {MATERIALS_DISPLAY_LABELS[row.materialsStatus]}
         </span>
-        <span className="inline-flex items-center rounded-lg border border-slate-300 bg-white/70 px-3 py-1.5 text-sm font-medium text-slate-800">
-          Work Type: {row.workTypeName ?? "Not set"}
-        </span>
       </div>
 
-      {/* Notes — always visible, never collapsed */}
-      <div>
-        <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Job Notes / Work Description</div>
-        <div className="text-sm text-slate-900 mt-0.5 whitespace-pre-wrap">
-          {row.notes ? row.notes : <span className="text-slate-500">No notes for this job/day.</span>}
-        </div>
+      {/* Notes */}
+      <div className="text-sm">
+        <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mr-1.5">Notes</span>
+        <span className="text-slate-900 whitespace-pre-wrap">{row.notes ? row.notes : <span className="text-slate-500">None.</span>}</span>
       </div>
 
-      {/* Items to Order / Collect — read-only, only shown when non-empty.
-          A lightweight supplementary list, deliberately small/quiet so it
-          doesn't compete with the fields above; toggling status only
-          happens from Create/Edit Schedule, per the View/Edit split. */}
+      {/* Items to Order / Collect — read-only, only when non-empty */}
       {row.pickupItems.length > 0 && (
-        <div>
-          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Items to Collect</div>
-          <ul className="text-sm text-slate-800 mt-0.5 space-y-0.5">
+        <div className="text-sm">
+          <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mr-1.5">Items to Collect</span>
+          <span className="inline-flex flex-wrap gap-x-3 gap-y-0.5">
             {row.pickupItems.map((item) => (
-              <li key={item.id} className="flex items-center gap-1.5">
-                <span className="text-slate-400">•</span>
-                <span className={item.status === "Collected" ? "line-through text-slate-500" : ""}>{item.description}</span>
-                <span
-                  className={`text-xs font-medium ${
-                    item.status === "Collected" ? "text-emerald-700" : "text-amber-700"
-                  }`}
-                >
-                  {item.status === "Collected" ? "✓ Collected" : "— Needed"}
+              <span key={item.id} className={item.status === "Collected" ? "line-through text-slate-500" : "text-slate-900"}>
+                {item.description}
+                <span className={`ml-1 text-xs font-medium ${item.status === "Collected" ? "text-emerald-700" : "text-amber-700"}`}>
+                  {item.status === "Collected" ? "✓" : "— needed"}
                 </span>
-              </li>
+              </span>
             ))}
-          </ul>
+          </span>
         </div>
       )}
 

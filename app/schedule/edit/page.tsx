@@ -77,7 +77,7 @@ export default async function ScheduleEditPage({
     .filter((c) => c.name)
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes });
+  const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems });
 
   const selectedProjectId = projectParam && projects.some((p) => p.id === projectParam) ? projectParam : undefined;
   // Prefill from the row as shown for this date — which, for a job carried
@@ -134,8 +134,8 @@ export default async function ScheduleEditPage({
         </div>
       </Card>
 
-      {/* 2. Day's schedule (left) + form (right) */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_440px] gap-5 items-start">
+      {/* 2. Day's schedule (left) + form (right, scrolls on its own) */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-5 items-start">
         <div>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
@@ -152,7 +152,7 @@ export default async function ScheduleEditPage({
               <EmptyState message="Nothing on the schedule for this day yet. Pick a job in the form, or use Quick Job for a small one-off." />
             </Card>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
               {rowsForDate.map((row) => {
                 const isSelected = row.projectId === selectedProjectId;
                 return (
@@ -165,13 +165,12 @@ export default async function ScheduleEditPage({
           )}
         </div>
 
-        <div className="xl:sticky xl:top-20">
+        <div className="xl:sticky xl:top-[4.5rem] xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto xl:pr-1">
           <ScheduleEditForm
             key={`${selectedProjectId ?? "new"}-${date}`}
             date={date}
             jobOptions={jobOptions}
             employees={activeEmployees}
-            workTypes={workTypes.filter((w) => w.active)}
             selectedProjectId={selectedProjectId}
             selectedDay={selectedDay}
             selectedCrewEmployeeIds={selectedCrew}

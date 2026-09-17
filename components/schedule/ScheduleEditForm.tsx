@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { Employee, ProjectScheduleDay, SchedulePickupItem, WorkTypeRecord } from "@/lib/types";
-import { COI_STATUSES, SCHEDULE_COLORS, SCHEDULE_JOB_STATUSES, SCHEDULE_MATERIALS_STATUSES } from "@/lib/types";
+import type { Employee, ProjectScheduleDay, SchedulePickupItem } from "@/lib/types";
+import { COI_STATUSES, SCHEDULE_COLORS, SCHEDULE_MATERIALS_STATUSES } from "@/lib/types";
 import { Card, Button } from "@/components/ui";
 import { addPickupItemAction, deletePickupItemAction, removeFromScheduleAction, saveScheduleEntryAction, togglePickupItemStatusAction } from "@/app/schedule/actions";
 import { SCHEDULE_COLOR_FORM_LABELS } from "./badges";
@@ -21,7 +21,6 @@ export function ScheduleEditForm({
   date,
   jobOptions,
   employees,
-  workTypes,
   selectedProjectId,
   selectedDay,
   selectedCrewEmployeeIds,
@@ -31,7 +30,6 @@ export function ScheduleEditForm({
   date: string;
   jobOptions: { id: string; label: string }[];
   employees: Employee[];
-  workTypes: WorkTypeRecord[];
   selectedProjectId?: string;
   selectedDay?: ProjectScheduleDay;
   selectedCrewEmployeeIds: string[];
@@ -140,37 +138,10 @@ export function ScheduleEditForm({
           </select>
         </div>
 
-        <div>
-          <label className="block text-sm font-semibold text-slate-800 mb-1.5">Work Type</label>
-          <select
-            name="work_type_id"
-            defaultValue={selectedDay?.work_type_id ?? ""}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
-          >
-            <option value="">— Not set —</option>
-            {workTypes.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-slate-800 mb-1.5">Job Status</label>
-          <select
-            name="job_status"
-            defaultValue={selectedDay?.job_status ?? "Scheduled"}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm"
-          >
-            {SCHEDULE_JOB_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-slate-500 mt-1">Also updates the project&apos;s pipeline stage — same as before.</p>
-        </div>
+        {/* Work Type and Job Status were dropped from the form at the
+            client's request (status lives in Schedule Type). Keep whatever
+            work type an older entry had so saving doesn't clear it. */}
+        {selectedDay?.work_type_id && <input type="hidden" name="work_type_id" value={selectedDay.work_type_id} />}
 
         <div>
           <label className="block text-sm font-semibold text-slate-800 mb-1.5">Job Notes</label>
