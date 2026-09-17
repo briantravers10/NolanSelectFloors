@@ -8,6 +8,7 @@ import {
   createClientCompanyRecord,
   createContact,
   deleteBuilding,
+  deleteClientCompany,
   deleteBuildingContact,
   deleteContact,
   listBuildingContacts,
@@ -21,6 +22,7 @@ import {
   updateContact,
 } from "@/lib/db";
 import { canEdit } from "@/lib/permissions";
+import { getActingUser } from "@/lib/current-user";
 import { BUILDING_REGIONS, CONTACT_ROLES } from "@/lib/types";
 import type { BuildingRegion, ContactRole } from "@/lib/types";
 
@@ -272,4 +274,22 @@ export async function updateClientAction(clientId: string, formData: FormData) {
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/buildings");
   redirect(`/clients/${clientId}`);
+}
+
+/**
+ * Permanent delete (for duplicates created by a double-tap). Refused when
+ * the client has any projects or job requests, so real history can't be
+ * wiped by accident — mark the client Inactive from Edit Client instead.
+ */
+export async function deleteClientAction(clientId: string) {
+  if (!(await canEdit("clients"))) return;
+  const [buildings, projects, jobRequests] = await Promise.all([listBuildings(), listProjects(), listJobRequests()]);
+  const buildingIds = new Set(buildings.filter((b) => b.client_company_id === clientId).map((b) => b.id));
+  const hasHistory = projects.some((p) => buildingIds.has(p.building_id)) || jobRequests.some((j) => buildingIds.has(j.building_id));
+  if (hasHistory) redirect(`/clients/${clientId}?err=has-history`);
+  const actingUser = await getActingUser();
+  await deleteClientCompany(clientId, actingUser.fullName);
+  revalidatePath("/clients");
+  revalidatePath("/buildings");
+  redirect("/clients");
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Icon } from "./Icon";
+import { formatUsPhone, phoneHref } from "@/lib/phone";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>{children}</div>;
@@ -114,9 +115,9 @@ export function AlertPill({ children, tone = "warn" }: { children: ReactNode; to
 export function PhoneLink({ phone, className = "" }: { phone?: string; className?: string }) {
   if (!phone) return <span className="text-slate-400">—</span>;
   return (
-    <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className={`text-sky-600 hover:underline inline-flex items-center gap-1 ${className}`}>
+    <a href={phoneHref(phone)} className={`text-sky-600 hover:underline inline-flex items-center gap-1 ${className}`}>
       <Icon name="phone" className="w-3.5 h-3.5" />
-      {phone}
+      {formatUsPhone(phone) || phone}
     </a>
   );
 }
@@ -147,38 +148,7 @@ export function LinkButton({ href, children, variant = "primary" }: { href: stri
   );
 }
 
-export function Button({
-  children,
-  variant = "primary",
-  type = "button",
-  onClick,
-  className = "",
-  disabled,
-}: {
-  children: ReactNode;
-  variant?: "primary" | "secondary" | "danger";
-  type?: "button" | "submit";
-  onClick?: () => void;
-  className?: string;
-  disabled?: boolean;
-}) {
-  const cls =
-    variant === "primary"
-      ? "bg-sky-600 text-white hover:bg-sky-700 disabled:bg-sky-300"
-      : variant === "danger"
-      ? "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
-      : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50";
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed ${cls} ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
+export { Button } from "./Button";
 
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (

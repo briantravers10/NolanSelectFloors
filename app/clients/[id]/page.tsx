@@ -4,10 +4,13 @@ import { listBuildingContacts, listBuildings, listClientCompanies, listContacts,
 import { Card, PageHeader, PhoneLink, EmailLink, StatusBadge, EmptyState, Stat } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
 import { canEdit } from "@/lib/permissions";
+import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
+import { deleteClientAction } from "../actions";
 import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
 
-export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClientDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ err?: string }> }) {
   const { id } = await params;
+  const { err } = await searchParams;
   const [clients, buildings, contacts, buildingContacts, projects, jobRequests] = await Promise.all([
     listClientCompanies(),
     listBuildings(),
@@ -212,6 +215,21 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               );
             })}
           </div>
+          {canEditClients && (
+            <div className="mt-5 pt-4 border-t border-slate-200">
+              {err === "has-history" && (
+                <p className="text-xs text-rose-700 mb-2">
+                  This client has jobs or job requests, so it can&apos;t be deleted. Untick Active on Edit Client instead.
+                </p>
+              )}
+              <ConfirmDeleteButton
+                action={deleteClientAction.bind(null, id)}
+                label="Delete client"
+                title={`Permanently delete ${client.name}?`}
+                warning="This removes the client and all of its buildings and contacts. It can't be undone. Only possible while the client has no jobs or job requests."
+              />
+            </div>
+          )}
         </Card>
       </div>
     </div>

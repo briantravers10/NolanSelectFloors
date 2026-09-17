@@ -6,6 +6,7 @@ import { getCurrentSession, isRealAuthConfigured } from "@/lib/auth";
 import { isOwnerActingUser } from "@/lib/permissions";
 import { signOutAction } from "@/app/login/actions";
 import { Button } from "./ui";
+import { BackButton } from "./BackButton";
 
 /**
  * Dev "acting as" selector visibility (build 12 — Activating Real Login,
@@ -35,6 +36,7 @@ export async function TopBar() {
       <Link href="/dashboard" className="md:hidden font-semibold text-slate-900 shrink-0">
         Nolan Select
       </Link>
+      <BackButton />
       <div className="flex-1 flex justify-end md:justify-start">
         <SearchBox />
       </div>

@@ -6,6 +6,7 @@ import { BUILDING_REGIONS } from "@/lib/types";
 import type { ClientCompany, Contact } from "@/lib/types";
 import { createBuildingAction } from "@/app/buildings/actions";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { PhoneInput } from "@/components/PhoneInput";
 
 export function NewBuildingForm({ clients, contacts }: { clients: ClientCompany[]; contacts: Contact[] }) {
   const [clientId, setClientId] = useState(clients[0]?.id ?? "");
@@ -71,7 +72,7 @@ export function NewBuildingForm({ clients, contacts }: { clients: ClientCompany[
       <Section title="Access & Operations">
         <div className="grid grid-cols-2 gap-2">
           <Field label="Superintendent Name"><input name="superintendent_name" className="input" /></Field>
-          <Field label="Superintendent Phone"><input name="superintendent_phone" className="input" /></Field>
+          <Field label="Superintendent Phone"><PhoneInput name="superintendent_phone" /></Field>
         </div>
         <Field label="Access Instructions"><textarea name="access_instructions" rows={2} className="input" /></Field>
         <Field label="Working Hours"><input name="working_hours" className="input" /></Field>

@@ -2,6 +2,7 @@ import { Card, PageHeader, Button } from "@/components/ui";
 import { STAFF_CAPABILITIES, TAX_STATUSES } from "@/lib/types";
 import { canEditPayRates, getActingUser } from "@/lib/current-user";
 import { createStaffAction } from "../actions";
+import { PhoneInput } from "@/components/PhoneInput";
 
 export default async function NewStaffPage() {
   const actingUser = await getActingUser();
@@ -32,7 +33,7 @@ export default async function NewStaffPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Phone</label>
-              <input name="phone" className="input" />
+              <PhoneInput name="phone" />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Email</label>

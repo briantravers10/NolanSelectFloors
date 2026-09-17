@@ -1,4 +1,5 @@
 import { listLeads } from "@/lib/db";
+import { PhoneInput } from "@/components/PhoneInput";
 import { Card, PageHeader, StatusBadge, Button, PhoneLink, EmailLink, EmptyState } from "@/components/ui";
 import { formatCurrency } from "@/lib/calculations";
 import { LEAD_STATUSES } from "@/lib/types";
@@ -21,7 +22,7 @@ export default async function NewBusinessPage() {
         <form action={addLeadAction} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input name="company_name" placeholder="Company name" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <input name="contact_name" placeholder="Contact name" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <input name="phone" placeholder="Phone" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <PhoneInput name="phone" placeholder="Phone" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <input name="email" placeholder="Email" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <input name="source" placeholder="Source (referral, website, etc.)" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <input name="estimated_value" type="number" placeholder="Estimated annual value $" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { PhoneInput } from "@/components/PhoneInput";
 import { Button } from "@/components/ui";
 import { BUILDING_REGIONS, CONTACT_ROLES } from "@/lib/types";
 import { createClientAction, updateClientAction } from "@/app/clients/actions";
@@ -96,7 +97,7 @@ export function NewClientForm({ clientId, initial }: { clientId?: string; initia
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Main Office Phone</label>
-            <input name="phone" defaultValue={v.phone} className="input" />
+            <PhoneInput name="phone" defaultValue={v.phone} />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Main Office Email</label>
@@ -116,7 +117,7 @@ export function NewClientForm({ clientId, initial }: { clientId?: string; initia
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input name="main_contact_name" placeholder="Full name" defaultValue={v.main_contact_name} className="input" />
           <input name="main_contact_title" placeholder="Title (e.g. Property Manager)" defaultValue={v.main_contact_title} className="input" list="contact-titles" />
-          <input name="main_contact_phone" placeholder="Phone" defaultValue={v.main_contact_phone} className="input" />
+          <PhoneInput name="main_contact_phone" placeholder="Phone" defaultValue={v.main_contact_phone} />
           <input name="main_contact_email" placeholder="Email" type="email" defaultValue={v.main_contact_email} className="input" />
         </div>
       </section>
@@ -161,7 +162,7 @@ export function NewClientForm({ clientId, initial }: { clientId?: string; initia
                     {cd.id && <input type="hidden" name={`b[${bi}].c[${ci}].id`} value={cd.id} />}
                     <input name={`b[${bi}].c[${ci}].name`} placeholder="Full name" defaultValue={cd.name} className="input bg-white" />
                     <input name={`b[${bi}].c[${ci}].title`} placeholder="Title (e.g. Super)" defaultValue={cd.title} className="input bg-white" list="contact-titles" />
-                    <input name={`b[${bi}].c[${ci}].phone`} placeholder="Phone" defaultValue={cd.phone} className="input bg-white" />
+                    <PhoneInput name={`b[${bi}].c[${ci}].phone`} placeholder="Phone" defaultValue={cd.phone} className="input bg-white" />
                     <input name={`b[${bi}].c[${ci}].email`} placeholder="Email (optional)" type="email" defaultValue={cd.email} className="input bg-white" />
                     <button type="button" onClick={() => removeContact(b.key, c.key)} className="text-xs text-slate-400 hover:text-rose-600 sm:px-1" aria-label="Remove contact">
                       ✕
@@ -188,7 +189,7 @@ export function NewClientForm({ clientId, initial }: { clientId?: string; initia
         <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Accounts Payable Contact</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <input name="ap_contact_name" placeholder="Name" defaultValue={v.ap_contact_name} className="input" />
-          <input name="ap_contact_phone" placeholder="Phone" defaultValue={v.ap_contact_phone} className="input" />
+          <PhoneInput name="ap_contact_phone" placeholder="Phone" defaultValue={v.ap_contact_phone} />
           <input name="ap_contact_email" placeholder="Email" type="email" defaultValue={v.ap_contact_email} className="input" />
         </div>
       </section>

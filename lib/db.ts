@@ -2107,6 +2107,27 @@ export async function createClientCompanyRecord(input: Omit<ClientCompany, "id" 
   return record;
 }
 
+/** Removes a client company. Its buildings, contacts, and anything hanging
+ * off those buildings cascade in Postgres; the in-memory store mirrors the
+ * same. Callers should refuse when the client has projects/job requests. */
+export async function deleteClientCompany(id: string, actorName: string): Promise<void> {
+  const existing = (await listClientCompanies()).find((c) => c.id === id);
+  if (!existing) return;
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("client_companies").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    const buildingIds = new Set(store.buildings.filter((b) => b.client_company_id === id).map((b) => b.id));
+    store.buildings = store.buildings.filter((b) => !buildingIds.has(b.id));
+    store.buildingContacts = store.buildingContacts.filter((bc) => !buildingIds.has(bc.building_id));
+    store.contacts = store.contacts.filter((c) => c.client_company_id !== id);
+    store.clientCompanies = store.clientCompanies.filter((c) => c.id !== id);
+  }
+  logActivity({ action: "Deleted client", related_type: "client_company", related_id: id, actor_name: actorName, detail: existing.name });
+}
+
 export async function updateClientCompany(id: string, patch: Partial<Omit<ClientCompany, "id" | "company_id" | "created_at">>): Promise<void> {
   const client = sb();
   if (client) {

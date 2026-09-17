@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PhoneInput } from "@/components/PhoneInput";
 import Link from "next/link";
 import { listBuildingContacts, listBuildings, listClientCompanies, listContacts } from "@/lib/db";
 import { Card, PageHeader, Button, EmptyState } from "@/components/ui";
@@ -28,8 +29,14 @@ export default async function ContactDetailPage({ params }: { params: Promise<{ 
           <Field label="First Name" name="first_name" defaultValue={contact.first_name} />
           <Field label="Last Name" name="last_name" defaultValue={contact.last_name} />
           <Field label="Title / Role" name="title" defaultValue={contact.title} />
-          <Field label="Phone" name="phone" defaultValue={contact.phone} />
-          <Field label="Mobile" name="mobile_phone" defaultValue={contact.mobile_phone} />
+          <div>
+            <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Phone</label>
+            <PhoneInput name="phone" defaultValue={contact.phone} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Mobile</label>
+            <PhoneInput name="mobile_phone" defaultValue={contact.mobile_phone} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
           <Field label="Email" name="email" defaultValue={contact.email} />
           <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Notes</label>
