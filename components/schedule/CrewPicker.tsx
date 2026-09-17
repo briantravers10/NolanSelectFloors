@@ -71,6 +71,14 @@ export function CrewPicker({
 
   return (
     <div>
+      {/* What actually gets submitted: one hidden input per selected
+          person, regardless of the search filter. The visible checkboxes
+          are UI only — with a filter typed, the unfiltered ones aren't
+          rendered, so relying on them dropped everyone you'd ticked before
+          changing the search. */}
+      {[...checked].map((id) => (
+        <input key={id} type="hidden" name="employee_ids" value={id} />
+      ))}
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {selected.map((e) => {
@@ -114,7 +122,6 @@ export function CrewPicker({
               <label key={e.id} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50 cursor-pointer">
                 <input
                   type="checkbox"
-                  name="employee_ids"
                   value={e.id}
                   checked={checked.has(e.id)}
                   onChange={() => toggle(e.id)}
