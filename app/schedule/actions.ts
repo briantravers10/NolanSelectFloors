@@ -13,6 +13,7 @@ import {
   listBuildings,
   listClientCompanies,
   listContacts,
+  removeProjectFromSchedule,
   updateBuilding,
   updateContact,
   createScheduleAssignment,
@@ -404,4 +405,13 @@ export async function createQuickJobAction(formData: FormData) {
   revalidatePath("/projects");
   revalidatePath("/schedule");
   redirect(`/schedule/edit?project=${project.id}&date=${schedule_date}`);
+}
+
+/** Remove a job from the schedule — this day only, or every day. */
+export async function removeFromScheduleAction(projectId: string, date: string, scope: "day" | "all") {
+  if (!(await canEdit("schedule"))) return;
+  const actingUser = await getActingUser();
+  await removeProjectFromSchedule(projectId, scope === "day" ? date : undefined, actingUser.fullName);
+  revalidateSchedule(projectId);
+  redirect(`/schedule/edit?date=${date}`);
 }

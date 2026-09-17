@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Employee, ProjectScheduleDay, SchedulePickupItem, WorkTypeRecord } from "@/lib/types";
 import { COI_STATUSES, SCHEDULE_COLORS, SCHEDULE_JOB_STATUSES, SCHEDULE_MATERIALS_STATUSES } from "@/lib/types";
 import { Card, Button } from "@/components/ui";
-import { addPickupItemAction, deletePickupItemAction, saveScheduleEntryAction, togglePickupItemStatusAction } from "@/app/schedule/actions";
+import { addPickupItemAction, deletePickupItemAction, removeFromScheduleAction, saveScheduleEntryAction, togglePickupItemStatusAction } from "@/app/schedule/actions";
 import { SCHEDULE_COLOR_FORM_LABELS } from "./badges";
 import { CrewPicker, type CrewTimeOffEntry } from "./CrewPicker";
 
@@ -253,6 +253,51 @@ export function ScheduleEditForm({
           Save to Schedule
         </Button>
       </form>
+
+      {isEditing && selectedProjectId && <RemoveFromSchedule projectId={selectedProjectId} date={scheduleDate} />}
     </Card>
+  );
+}
+
+/**
+ * Two-step remove, outside the main form so it can't be hit by accident
+ * while saving. "This day" drops just this date's entry — note the job
+ * will still carry over from an earlier day if it has one. "Every day"
+ * clears all of the job's schedule entries; the project itself stays.
+ */
+function RemoveFromSchedule({ projectId, date }: { projectId: string; date: string }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return (
+      <div className="mt-4 pt-3 border-t border-slate-200 text-right">
+        <button type="button" onClick={() => setConfirming(true)} className="text-xs text-rose-600 hover:text-rose-800 underline">
+          Remove from schedule
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm">
+      <p className="text-rose-900 font-medium mb-1">Remove this job from the schedule?</p>
+      <p className="text-xs text-rose-800 mb-3">
+        The project and its history are kept — this only clears schedule entries and crew. If the job was on the schedule on
+        earlier days, &quot;this day&quot; alone won&apos;t stop it carrying over; use &quot;every day&quot; for that.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <form action={removeFromScheduleAction.bind(null, projectId, date, "day")}>
+          <button type="submit" className="rounded-lg border border-rose-300 bg-white text-rose-700 px-3 py-1.5 text-xs font-medium hover:bg-rose-100">
+            Remove this day only
+          </button>
+        </form>
+        <form action={removeFromScheduleAction.bind(null, projectId, date, "all")}>
+          <button type="submit" className="rounded-lg bg-rose-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-rose-700">
+            Remove from every day
+          </button>
+        </form>
+        <button type="button" onClick={() => setConfirming(false)} className="text-xs text-slate-600 hover:text-slate-900">
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }

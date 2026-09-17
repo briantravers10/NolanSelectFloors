@@ -880,6 +880,43 @@ export async function getOrCreateProjectScheduleDay(projectId: string, date: str
   return record;
 }
 
+/**
+ * Takes a job off the schedule. `date` given → just that day's entry
+ * (day row + its pickup items, that day's crew). No date → every day's
+ * entries for the project, so it disappears from the schedule entirely
+ * (the project itself is untouched). Logged to Change History.
+ */
+export async function removeProjectFromSchedule(projectId: string, date: string | undefined, actorName: string): Promise<void> {
+  const [days, assignments] = await Promise.all([listProjectScheduleDays(), listScheduleAssignments()]);
+  const dayIds = days.filter((d) => d.project_id === projectId && (!date || d.schedule_date === date)).map((d) => d.id);
+  const assignmentIds = assignments.filter((a) => a.project_id === projectId && (!date || a.schedule_date === date)).map((a) => a.id);
+  const client = sb();
+  if (client) {
+    if (assignmentIds.length) {
+      const { error } = await client.from("schedule_assignments").delete().in("id", assignmentIds);
+      if (error) throw error;
+    }
+    if (dayIds.length) {
+      const { error } = await client.from("project_schedule_days").delete().in("id", dayIds);
+      if (error) throw error;
+    }
+  } else {
+    const store = getStore();
+    const dayIdSet = new Set(dayIds);
+    const asgIdSet = new Set(assignmentIds);
+    store.scheduleAssignments = store.scheduleAssignments.filter((a) => !asgIdSet.has(a.id));
+    store.schedulePickupItems = store.schedulePickupItems.filter((i) => !dayIdSet.has(i.project_schedule_day_id));
+    store.projectScheduleDays = store.projectScheduleDays.filter((d) => !dayIdSet.has(d.id));
+  }
+  logActivity({
+    action: "Removed from schedule",
+    related_type: "project",
+    related_id: projectId,
+    actor_name: actorName,
+    detail: date ? `Removed the ${date} entry` : `Removed every schedule entry (${dayIds.length} day${dayIds.length === 1 ? "" : "s"})`,
+  });
+}
+
 type ScheduleDayPatch = Partial<
   Pick<ProjectScheduleDay, "schedule_color" | "coi_status" | "materials_status" | "job_status" | "work_type_id" | "notes">
 >;
