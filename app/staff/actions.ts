@@ -5,8 +5,13 @@ import { revalidatePath } from "next/cache";
 import { createEmployee, createTimeOffEntry, deleteTimeOffEntry, updateEmployee } from "@/lib/db";
 import { canEditPayRates, canEditTimeOffAllowance, getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
-import type { PayType, StaffCapability, TimeOffType } from "@/lib/types";
-import { TIME_OFF_TYPES } from "@/lib/types";
+import type { PayType, StaffCapability, TaxStatus, TimeOffType } from "@/lib/types";
+import { TAX_STATUSES, TIME_OFF_TYPES } from "@/lib/types";
+
+function parseTaxStatus(raw: FormDataEntryValue | null): TaxStatus | undefined {
+  const value = String(raw ?? "").trim();
+  return (TAX_STATUSES as readonly string[]).includes(value) ? (value as TaxStatus) : undefined;
+}
 
 export async function createStaffAction(formData: FormData) {
   if (!(await canEdit("staff"))) return;
@@ -41,10 +46,25 @@ export async function createStaffAction(formData: FormData) {
     active: formData.get("active") !== "off",
     hire_date: String(formData.get("hire_date") ?? "") || undefined,
     notes: String(formData.get("notes") ?? "") || undefined,
+    tax_status: parseTaxStatus(formData.get("tax_status")),
     capabilities,
   });
   revalidatePath("/staff");
   redirect(`/staff/${employee.id}`);
+}
+
+/**
+ * Sets whether the person is a W-4 payroll employee or a 1099 contractor.
+ * Not gated like pay rates — anyone with Staff edit access can set it.
+ * An empty selection clears it back to "not set".
+ */
+export async function updateEmployeeTaxStatusAction(employeeId: string, formData: FormData) {
+  if (!(await canEdit("staff"))) return;
+  const actingUser = await getActingUser();
+  const tax_status = parseTaxStatus(formData.get("tax_status")) ?? null;
+  await updateEmployee(employeeId, { tax_status: tax_status as TaxStatus | undefined }, actingUser.fullName);
+  revalidatePath(`/staff/${employeeId}`);
+  revalidatePath("/staff");
 }
 
 /**

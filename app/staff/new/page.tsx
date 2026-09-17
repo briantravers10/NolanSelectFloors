@@ -1,5 +1,5 @@
 import { Card, PageHeader, Button } from "@/components/ui";
-import { STAFF_CAPABILITIES } from "@/lib/types";
+import { STAFF_CAPABILITIES, TAX_STATUSES } from "@/lib/types";
 import { canEditPayRates, getActingUser } from "@/lib/current-user";
 import { createStaffAction } from "../actions";
 
@@ -44,6 +44,15 @@ export default async function NewStaffPage() {
               <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Hire Date</label>
               <input name="hire_date" type="date" className="input" />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Tax Status</label>
+            <select name="tax_status" defaultValue="" className="input">
+              <option value="">Not set</option>
+              {TAX_STATUSES.map((t) => (
+                <option key={t} value={t}>{t === "W-4" ? "W-4 Employee" : "1099 Contractor"}</option>
+              ))}
+            </select>
           </div>
           {canEditRates ? (
             <div className="grid grid-cols-2 gap-3 border border-slate-200 rounded-lg p-3">

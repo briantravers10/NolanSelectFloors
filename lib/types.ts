@@ -415,6 +415,12 @@ export interface ProjectWorkType {
 export const PAY_TYPES = ["daily", "hourly"] as const;
 export type PayType = (typeof PAY_TYPES)[number];
 
+// Tax/payroll classification: W-4 = payroll employee (withholding), 1099 =
+// independent contractor. Optional so existing rows are "not set" until
+// the office fills it in.
+export const TAX_STATUSES = ["W-4", "1099"] as const;
+export type TaxStatus = (typeof TAX_STATUSES)[number];
+
 export interface Employee {
   id: string;
   company_id: string;
@@ -435,6 +441,7 @@ export interface Employee {
   active: boolean;
   hire_date?: string;
   notes?: string;
+  tax_status?: TaxStatus;
   created_at: string;
   // ANNUAL time-off allowance (build 7, Vacation & Sick Day Tracker) — per
   // employee, NOT a flat company-wide number. Nullable: unset means "not

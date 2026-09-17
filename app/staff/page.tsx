@@ -44,6 +44,7 @@ export default async function StaffPage() {
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Title</th>
                 <th className="px-4 py-3">Phone</th>
+                <th className="px-4 py-3">Tax</th>
                 <th className="px-4 py-3 text-center">Driver</th>
                 {canViewRates && <th className="px-4 py-3 text-right">Pay Rate</th>}
                 <th className="px-4 py-3">Capabilities</th>
@@ -72,6 +73,7 @@ export default async function StaffPage() {
                   </td>
                   <td className="px-4 py-3 text-slate-600">{e.title}</td>
                   <td className="px-4 py-3"><PhoneLink phone={e.phone} /></td>
+                  <td className="px-4 py-3 text-slate-600">{e.tax_status ?? "—"}</td>
                   <td className="px-4 py-3 text-center">{e.is_driver ? "Yes" : "—"}</td>
                   {canViewRates && <td className="px-4 py-3 text-right">{payRateLabel(e)}</td>}
                   <td className="px-4 py-3 text-slate-500 text-xs">{(skillsByEmployee.get(e.id) ?? []).join(", ")}</td>

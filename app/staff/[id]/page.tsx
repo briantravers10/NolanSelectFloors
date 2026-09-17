@@ -14,11 +14,16 @@ import { formatCurrency } from "@/lib/calculations";
 import { employeeLaborHistory, payRateLabel } from "@/lib/labor-cost";
 import { canEditPayRates, canEditTimeOffAllowance, canViewLaborCost, canViewTimeOffAllowance, getActingUser } from "@/lib/current-user";
 import { addDays, dayLabel, formatDateLong, formatDateShort, isoDate, startOfWeek, todayIso } from "@/lib/dates";
-import { STAFF_CAPABILITIES } from "@/lib/types";
+import { STAFF_CAPABILITIES, TAX_STATUSES } from "@/lib/types";
 import type { TimeOffEntry } from "@/lib/types";
 import { computeTimeOffUsage, splitUpcomingAndPast } from "@/lib/time-off";
+import { canEdit } from "@/lib/permissions";
+
+function taxStatusLabel(status?: string) {
+  return status === "W-4" ? "W-4 Employee" : status === "1099" ? "1099 Contractor" : "Not set";
+}
 import { AddTimeOffForm } from "@/components/staff/AddTimeOffForm";
-import { addTimeOffAction, deleteTimeOffAction, updateEmployeePayRateAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
+import { addTimeOffAction, deleteTimeOffAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,6 +39,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
   ]);
   const employee = employees.find((e) => e.id === id);
   if (!employee) notFound();
+  const canEditStaff = await canEdit("staff");
   const canViewRates = canViewLaborCost(actingUser);
   const canEditRates = canEditPayRates(actingUser);
   const canViewAllowance = canViewTimeOffAllowance(actingUser);
@@ -268,6 +274,22 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
           <div className="mt-4 pt-4 border-t border-slate-200 text-sm">
             <div className="flex justify-between mb-1"><span className="text-slate-500">Status</span><span>{employee.active ? "Active" : "Inactive"}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Driver</span><span>{employee.is_driver ? "Yes" : "No"}</span></div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Tax Status</h2>
+            {canEditStaff ? (
+              <form action={updateEmployeeTaxStatusAction.bind(null, employee.id)} className="flex items-center gap-2">
+                <select name="tax_status" defaultValue={employee.tax_status ?? ""} className="flex-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm">
+                  <option value="">Not set</option>
+                  {TAX_STATUSES.map((t) => (
+                    <option key={t} value={t}>{t === "W-4" ? "W-4 Employee" : "1099 Contractor"}</option>
+                  ))}
+                </select>
+                <Button type="submit" variant="secondary" className="text-xs py-1">Save</Button>
+              </form>
+            ) : (
+              <div className="text-sm text-slate-800">{taxStatusLabel(employee.tax_status)}</div>
+            )}
           </div>
         </Card>
       </div>
