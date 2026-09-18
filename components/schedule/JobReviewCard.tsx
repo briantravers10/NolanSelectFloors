@@ -124,6 +124,9 @@ export function JobReviewCard({
         {ids.map((id) => (
           <input key={id} type="hidden" name="employee_ids" value={id} />
         ))}
+        {row.crew.map((c) => (
+          <input key={`s-${c.employeeId}`} type="hidden" name="scheduled_ids" value={c.employeeId} />
+        ))}
         <table className="w-full text-sm">
           <thead>
             <tr className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">

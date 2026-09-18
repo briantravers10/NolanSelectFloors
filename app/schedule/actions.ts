@@ -528,6 +528,18 @@ export async function saveJobHoursAction(projectId: string, date: string, formDa
   for (const e of existing) {
     if (!listed.includes(e.employee_id)) await deleteActualLaborEntry(e.id, actingUser.fullName);
   }
+  // Anyone the SCHEDULE had on this job who was removed with ✕ is taken off
+  // the day's crew too — otherwise they'd come straight back from the
+  // schedule (and still be costed against this job).
+  const scheduled = formData.getAll("scheduled_ids").map(String).filter(Boolean);
+  const removed = scheduled.filter((id) => !listed.includes(id));
+  if (removed.length > 0) {
+    // Materialises a carried-forward day (copying its crew) so the
+    // removal applies to this date only, not the day it was carried from.
+    await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
+    const dayCrew = (await listScheduleAssignments()).filter((a) => a.project_id === projectId && a.schedule_date === date && removed.includes(a.employee_id));
+    for (const a of dayCrew) await deleteScheduleAssignment(a.id, actingUser.fullName);
+  }
   revalidateSchedule(projectId);
   revalidatePath("/schedule/review");
   revalidatePath("/reports");
