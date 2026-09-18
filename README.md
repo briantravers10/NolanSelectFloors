@@ -649,6 +649,15 @@ isolated duplicate. The mapping (`lib/schedule.ts`
 | Scheduled     | Bid Sent, Bid Accepted, **Scheduled**       |
 | In Progress   | **In Progress**                             |
 | Complete      | **Complete**                                |
+| Cancelled     | *(leaves the stage alone)*                  |
+
+`Cancelled` (migration 0026) is a per-DAY status set from End of Day
+Review or the Schedule Type dropdown: the day row stays for history, but
+its `schedule_assignments` and any `actual_labor_entries` for that
+project/date are deleted (`lib/db.ts cancelProjectScheduleDay`) so nobody
+is costed against a job that didn't happen. The office reassigns the
+freed-up crew elsewhere on the schedule (or not). A cancelled day does
+not carry forward, and it does not touch `pipeline_stage`.
 
 (Bold = the stage `job_status` writes when set from the Schedule; the
 others are simply the stages that read back as that same `job_status`
@@ -838,6 +847,20 @@ employee/actual-hours/Completed Job systems. Nothing about the just-built
 Schedule redesign (View/Create-Edit split, `schedule_assignments`) changed —
 see `supabase/migrations/0006_labor_cost_tracking.sql`, `lib/labor-cost.ts`
 and `lib/current-user.ts`.
+
+### One day rate per person per day (double bookings)
+
+A person on two jobs the same day is paid ONE day rate, never two. Both
+cost systems enforce this: `computeActualLaborCosts` splits a day-rate
+person's single rate across their entries by hours, and
+`lib/calculations.ts plannedAssignmentShares` splits the highest single
+`assignment_cost` for that employee+date evenly across their assignments
+(used by every planned-cost sum: day/week summaries, project labor cost,
+completed-job fallback, payroll's schedule fallback, project and staff
+pages). The hours on End of Day Review only decide how that one rate is
+shared between the jobs, and the review cards prefill a double-booked
+person's 8 hours split across their jobs. Removing someone with ✕ on the
+review also removes their schedule assignment for that day.
 
 ### Reconciling planned vs. actual labor cost
 
