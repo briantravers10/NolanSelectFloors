@@ -30,6 +30,7 @@ import {
   deleteScheduleAssignment,
   deleteSchedulePickupItem,
   getOrCreateProjectScheduleDay,
+  cancelProjectScheduleDay,
   listScheduleAssignments,
   saveCompletionNotes,
   toggleSchedulePickupItemStatus,
@@ -215,7 +216,8 @@ export async function saveScheduleEntryAction(formData: FormData) {
   const notes = String(formData.get("notes") ?? "");
 
   const markComplete = schedule_color === "Complete";
-  if (!markComplete && schedule_color && schedule_color !== day.schedule_color) await setScheduleColorAction(project_id, schedule_date, formData);
+  const markCancelled = schedule_color === "Cancelled";
+  if (!markComplete && !markCancelled && schedule_color && schedule_color !== day.schedule_color) await setScheduleColorAction(project_id, schedule_date, formData);
   if (coi_status && coi_status !== day.coi_status) await setCoiStatusAction(project_id, schedule_date, formData);
   if (materials_status && materials_status !== day.materials_status) await setMaterialsStatusAction(project_id, schedule_date, formData);
   if (markComplete) {
@@ -225,6 +227,13 @@ export async function saveScheduleEntryAction(formData: FormData) {
     const done = new FormData();
     done.set("job_status", "Complete");
     if (day.job_status !== "Complete") await setJobStatusAction(project_id, schedule_date, done);
+  } else if (markCancelled) {
+    // "Cancelled": keep the entry for history but drop its crew and hours
+    // so nobody is costed against it. Crew boxes below are ignored.
+    await cancelProjectScheduleDay(project_id, schedule_date, actingUser.fullName);
+    if (notes !== (day.notes ?? "")) await setScheduleNotesAction(project_id, schedule_date, formData);
+    revalidateSchedule(project_id);
+    return;
   } else if (job_status && job_status !== day.job_status) await setJobStatusAction(project_id, schedule_date, formData);
   if (work_type_id !== (day.work_type_id ?? "")) await setWorkTypeAction(project_id, schedule_date, formData);
   if (notes !== (day.notes ?? "")) await setScheduleNotesAction(project_id, schedule_date, formData);
@@ -473,8 +482,16 @@ export async function notWorkingWeekendDayAction(projectId: string, date: string
 export async function setReviewJobStatusAction(projectId: string, date: string, formData: FormData) {
   if (!(await canEdit("schedule"))) return;
   const status = String(formData.get("job_status") ?? "");
-  if (status !== "Complete" && status !== "In Progress") return;
+  if (status !== "Complete" && status !== "In Progress" && status !== "Cancelled") return;
   const actingUser = await getActingUser();
+  if (status === "Cancelled") {
+    // Keeps the job in history; removes its crew + logged hours for the day
+    // so their labor cost drops off. The office reassigns them elsewhere.
+    await cancelProjectScheduleDay(projectId, date, actingUser.fullName);
+    revalidateSchedule(projectId);
+    revalidatePath("/schedule/review");
+    return;
+  }
   const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
   if (day.job_status !== status) await updateProjectScheduleDay(day.id, { job_status: status as ScheduleJobStatus }, actingUser.fullName);
   revalidateSchedule(projectId);

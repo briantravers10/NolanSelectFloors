@@ -999,6 +999,37 @@ type ScheduleDayPatch = Partial<
  * `projects.pipeline_stage` (see lib/schedule.ts mapJobStatusToPipelineStage)
  * — never an isolated duplicate status.
  */
+/**
+ * Cancel a job for one day: the day row stays (history), its status becomes
+ * Cancelled, and every crew assignment + logged hours for that project/date
+ * are removed so nobody is costed against a job that didn't happen. The
+ * office reassigns those people elsewhere (or not) on the schedule.
+ */
+export async function cancelProjectScheduleDay(projectId: string, date: string, actorName: string): Promise<void> {
+  const [day, assignments, entries, employees] = await Promise.all([
+    getOrCreateProjectScheduleDay(projectId, date, actorName),
+    listScheduleAssignments(),
+    listActualLaborEntries(),
+    listEmployees(),
+  ]);
+  const crew = assignments.filter((a) => a.project_id === projectId && a.schedule_date === date);
+  const logged = entries.filter((e) => e.project_id === projectId && e.work_date === date);
+  for (const a of crew) await deleteScheduleAssignment(a.id, actorName);
+  for (const e of logged) await deleteActualLaborEntry(e.id, actorName);
+  if (day.job_status !== "Cancelled") await updateProjectScheduleDay(day.id, { job_status: "Cancelled" }, actorName);
+  const names = crew.map((a) => {
+    const e = employees.find((x) => x.id === a.employee_id);
+    return e ? `${e.first_name} ${e.last_name}` : a.employee_id;
+  });
+  logActivity({
+    action: "Job cancelled for the day",
+    related_type: "project",
+    related_id: projectId,
+    actor_name: actorName,
+    detail: `${date}: cancelled${names.length ? ` — crew freed up: ${names.join(", ")}` : " — no crew was assigned"}${logged.length ? `; ${logged.length} logged hours entr${logged.length === 1 ? "y" : "ies"} removed` : ""}`,
+  });
+}
+
 export async function updateProjectScheduleDay(id: string, patch: ScheduleDayPatch, actorName: string): Promise<ProjectScheduleDay> {
   const rows = await listProjectScheduleDays();
   const before = rows.find((d) => d.id === id);
@@ -1033,7 +1064,7 @@ export async function updateProjectScheduleDay(id: string, patch: ScheduleDayPat
     });
   }
 
-  if (patch.job_status) {
+  if (patch.job_status && patch.job_status !== "Cancelled") {
     await updateProjectPipelineStage(before.project_id, mapJobStatusToPipelineStage(patch.job_status));
   }
 

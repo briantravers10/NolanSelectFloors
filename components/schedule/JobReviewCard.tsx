@@ -67,6 +67,7 @@ export function JobReviewCard({
   const [addId, setAddId] = useState("");
 
   const isComplete = row.jobStatus === "Complete";
+  const isCancelled = row.jobStatus === "Cancelled";
   const lines = ids.map((id) => {
     const emp = employeeById.get(id);
     const hrs = Number(hours[id] ?? 0) || 0;
@@ -78,7 +79,7 @@ export function JobReviewCard({
   const doubleBooked = lines.filter((l) => jobCount(l.id) > 1);
 
   return (
-    <div className={`border-2 rounded-xl px-3 py-2.5 ${isComplete ? "border-emerald-400 bg-emerald-50" : SCHEDULE_COLOR_BLOCK_CLASSES[row.scheduleColor]}`}>
+    <div className={`border-2 rounded-xl px-3 py-2.5 ${isCancelled ? "border-rose-300 bg-rose-50" : isComplete ? "border-emerald-400 bg-emerald-50" : SCHEDULE_COLOR_BLOCK_CLASSES[row.scheduleColor]}`}>
       <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
           <div className="text-[15px] font-semibold text-slate-900 leading-tight">
@@ -94,16 +95,31 @@ export function JobReviewCard({
           <label className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Status</label>
           <select
             name="job_status"
-            defaultValue={isComplete ? "Complete" : "In Progress"}
-            onChange={(e) => e.currentTarget.form?.requestSubmit()}
-            className={`rounded-lg border px-2 py-1 text-sm font-medium ${isComplete ? "border-emerald-400 bg-white text-emerald-800" : "border-slate-300 bg-white text-slate-800"}`}
+            defaultValue={isCancelled ? "Cancelled" : isComplete ? "Complete" : "In Progress"}
+            onChange={(e) => {
+              if (e.currentTarget.value === "Cancelled" && !window.confirm("Cancel this job for today? Everyone assigned is taken off it and their labor cost for this job is removed. The job stays in history.")) {
+                e.currentTarget.value = isComplete ? "Complete" : "In Progress";
+                return;
+              }
+              e.currentTarget.form?.requestSubmit();
+            }}
+            className={`rounded-lg border px-2 py-1 text-sm font-medium ${isCancelled ? "border-rose-400 bg-white text-rose-800" : isComplete ? "border-emerald-400 bg-white text-emerald-800" : "border-slate-300 bg-white text-slate-800"}`}
           >
             <option value="In Progress">Still going — carries to next day</option>
             <option value="Complete">✅ Completed today — off the schedule</option>
+            <option value="Cancelled">❌ Cancelled — crew freed up, no labor cost</option>
           </select>
         </form>
       </div>
 
+      {isCancelled ? (
+        <div className="rounded-md bg-white/70 border border-rose-200 px-2 py-1.5 text-xs text-rose-900">
+          Cancelled for {row.date}. Anyone who was assigned has been taken off this job and no labor is costed to it.
+          If they were sent to another job, add them there on the{" "}
+          <Link href={`/schedule/edit?date=${row.date}`} className="font-medium underline">schedule</Link>; if they went home, leave them off.
+          Switch the status back to Still going if it&apos;s on again.
+        </div>
+      ) : (
       <form action={saveJobHoursAction.bind(null, row.projectId, row.date)}>
         {ids.map((id) => (
           <input key={id} type="hidden" name="employee_ids" value={id} />
@@ -204,6 +220,7 @@ export function JobReviewCard({
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }

@@ -60,6 +60,7 @@ export default async function WeeklySummaryPage({ searchParams }: { searchParams
     crew: Set<string>;
     completed: boolean;
     completedOn?: string;
+    cancelledDays?: string[];
     notes?: string;
   };
   const byProject = new Map<string, Entry>();
@@ -86,6 +87,7 @@ export default async function WeeklySummaryPage({ searchParams }: { searchParams
         e.completed = true;
         e.completedOn = e.completedOn ?? date;
       }
+      if (row.jobStatus === "Cancelled") e.cancelledDays = [...(e.cancelledDays ?? []), date];
       byProject.set(row.projectId, e);
     }
   }
@@ -182,8 +184,13 @@ export default async function WeeklySummaryPage({ searchParams }: { searchParams
                           <span className="inline-flex rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-medium">
                             Completed{e.completedOn ? ` ${dayLabel(e.completedOn).slice(0, 3)}` : ""}
                           </span>
+                        ) : e.cancelledDays && e.cancelledDays.length === e.days.length ? (
+                          <span className="inline-flex rounded-full bg-rose-100 text-rose-800 px-2 py-0.5 text-xs font-medium">Cancelled</span>
                         ) : (
                           <span className="inline-flex rounded-full bg-sky-100 text-sky-800 px-2 py-0.5 text-xs font-medium">Ongoing</span>
+                        )}
+                        {e.cancelledDays && e.cancelledDays.length > 0 && e.cancelledDays.length < e.days.length && (
+                          <div className="text-[10px] text-rose-700 mt-0.5">Cancelled {e.cancelledDays.map((d) => dayLabel(d).slice(0, 3)).join(", ")}</div>
                         )}
                       </td>
                     </tr>

@@ -91,6 +91,10 @@ export function mapJobStatusToPipelineStage(status: ScheduleJobStatus): Pipeline
       return "In Progress";
     case "Complete":
       return "Complete";
+    case "Cancelled":
+      // A cancelled DAY doesn't change the project's stage (the job may be
+      // rescheduled); lib/db.ts skips the pipeline write for it.
+      return "Scheduled";
   }
 }
 
@@ -316,8 +320,9 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       const anchorDate = [lastDay?.schedule_date, lastCrewDate].filter((x): x is string => Boolean(x)).sort().at(-1);
       if (!anchorDate) continue;
       if (project.pipeline_stage === "Complete") continue;
-      if (lastDay && lastDay.schedule_date === anchorDate && lastDay.job_status === "Complete") continue;
-      if (lastDay?.job_status === "Complete") continue;
+      // A Completed or Cancelled day is the end of the line — nothing to
+      // carry forward until the office schedules it again.
+      if (lastDay?.job_status === "Complete" || lastDay?.job_status === "Cancelled") continue;
       carriedFrom = anchorDate;
       scheduleDay = lastDay;
       crew = projectAssignments.filter((a) => a.schedule_date === anchorDate);

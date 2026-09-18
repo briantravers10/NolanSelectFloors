@@ -77,4 +77,5 @@ export const JOB_STATUS_CLASSES: Record<ScheduleJobStatus, string> = {
   Scheduled: "bg-sky-100 text-sky-700 border-sky-300",
   "In Progress": "bg-blue-100 text-blue-700 border-blue-300",
   Complete: "bg-emerald-100 text-emerald-700 border-emerald-300",
+  Cancelled: "bg-rose-100 text-rose-700 border-rose-300",
 };

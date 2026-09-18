@@ -111,8 +111,9 @@ export function ScheduleEditForm({
               </option>
             ))}
             <option value="Complete">✅ Completed — job done, take it off the schedule</option>
+            <option value="Cancelled">❌ Cancelled — keep in history, remove crew &amp; labor cost</option>
           </select>
-          <p className="text-xs text-slate-500 mt-1">A job stays on the schedule every day until it&apos;s marked Completed here.</p>
+          <p className="text-xs text-slate-500 mt-1">A job stays on the schedule every day until it&apos;s marked Completed here. Cancelled keeps the entry but frees up its crew for the day.</p>
         </div>
 
         <div>

@@ -839,7 +839,7 @@ export type ScheduleMaterialsStatus = (typeof SCHEDULE_MATERIALS_STATUSES)[numbe
 /** Separate from `ProjectStatus`/`PipelineStage`. Setting this from the
  * Schedule always updates the real `projects.pipeline_stage` too — see
  * lib/schedule.ts mapJobStatusToPipelineStage / README. */
-export const SCHEDULE_JOB_STATUSES = ["Scheduled", "In Progress", "Complete"] as const;
+export const SCHEDULE_JOB_STATUSES = ["Scheduled", "In Progress", "Complete", "Cancelled"] as const;
 export type ScheduleJobStatus = (typeof SCHEDULE_JOB_STATUSES)[number];
 
 /**
