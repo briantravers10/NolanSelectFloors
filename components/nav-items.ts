@@ -32,6 +32,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/tasks", label: "Tasks", icon: "check", sectionKey: "tasks" },
   { href: "/new-business", label: "New Business", icon: "spark", sectionKey: "new_business" },
   { href: "/reports", label: "Reports", icon: "chart", sectionKey: "reports" },
+  // Weekly hours by person, grouped W-4 / 1099 — gated with Reports.
+  { href: "/payroll", label: "Payroll", icon: "clipboard", sectionKey: "reports" },
   // Not section-gated — the owner's personal agenda, always visible.
   { href: "/agenda", label: "My Agenda", icon: "calendar" },
   { href: "/company-setup", label: "Company Setup", icon: "settings", sectionKey: "company_setup" },

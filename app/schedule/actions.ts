@@ -509,5 +509,6 @@ export async function saveJobHoursAction(projectId: string, date: string, formDa
   revalidateSchedule(projectId);
   revalidatePath("/schedule/review");
   revalidatePath("/reports");
+  revalidatePath("/payroll");
   revalidatePath("/staff");
 }
