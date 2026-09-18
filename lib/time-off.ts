@@ -72,9 +72,17 @@ export function daysInYear(startDate: string, endDate: string, year: number): nu
   const start = startDate < yearStart ? yearStart : startDate;
   const end = endDate > yearEnd ? yearEnd : endDate;
   if (end < start) return 0;
-  const a = new Date(start + "T00:00:00").getTime();
-  const b = new Date(end + "T00:00:00").getTime();
-  return Math.round((b - a) / (1000 * 60 * 60 * 24)) + 1;
+  // Working days only — Saturdays and Sundays never count against
+  // anyone's vacation or sick allowance.
+  let count = 0;
+  const cursor = new Date(start + "T00:00:00");
+  const last = new Date(end + "T00:00:00");
+  while (cursor <= last) {
+    const dow = cursor.getDay();
+    if (dow !== 0 && dow !== 6) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
 }
 
 export interface TimeOffUsage {
@@ -85,6 +93,8 @@ export interface TimeOffUsage {
   sickUsed: number;
   sickAllowed: number | null;
   sickOver: boolean;
+  personalUsed: number;
+  unpaidUsed: number;
 }
 
 /** One employee's year-to-date Vacation/Sick usage vs. their allowance.
@@ -98,11 +108,15 @@ export function computeTimeOffUsage(
 ): TimeOffUsage {
   let vacationUsed = 0;
   let sickUsed = 0;
+  let personalUsed = 0;
+  let unpaidUsed = 0;
   for (const e of entries) {
     const days = daysInYear(e.start_date, e.end_date, year);
     if (days <= 0) continue;
     if (e.type === "Vacation") vacationUsed += days;
     else if (e.type === "Sick") sickUsed += days;
+    else if (e.type === "Personal") personalUsed += days;
+    else if (e.type === "Unpaid") unpaidUsed += days;
   }
   const vacationAllowed = employee.vacation_days_allowed ?? null;
   const sickAllowed = employee.sick_days_allowed ?? null;
@@ -114,6 +128,8 @@ export function computeTimeOffUsage(
     sickUsed,
     sickAllowed,
     sickOver: sickAllowed != null && sickUsed > sickAllowed,
+    personalUsed,
+    unpaidUsed,
   };
 }
 

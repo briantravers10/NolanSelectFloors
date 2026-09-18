@@ -84,7 +84,7 @@ export function CompletedJobCard({
             </div>
             {canViewLaborCost && (
               <div className="text-[11px] text-slate-400 mt-1">
-                Total Labor Cost reflects actual-hours entries only (rows marked &quot;from plan&quot; had no actual hours logged and aren&apos;t included).
+                Rows marked &quot;from plan&quot; had no hours confirmed on End of Day Review, so their scheduled day-rate cost is used instead.
               </div>
             )}
           </div>

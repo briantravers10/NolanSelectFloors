@@ -25,7 +25,7 @@ function taxStatusLabel(status?: string) {
 }
 import { AddTimeOffForm } from "@/components/staff/AddTimeOffForm";
 import { DeleteStaffButton } from "@/components/staff/DeleteStaffButton";
-import { addTimeOffAction, deleteTimeOffAction, deleteStaffAction, setEmployeeActiveAction, updateEmployeeNicknameAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
+import { addTimeOffAction, deleteTimeOffAction, deleteStaffAction, setEmployeeActiveAction, updateEmployeeProfileAction, updateEmployeeNicknameAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -262,17 +262,38 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
               )}
             </div>
           )}
-          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Capabilities</h2>
-          <div className="space-y-1.5">
-            {STAFF_CAPABILITIES.map((cap) => (
-              <div key={cap} className="flex items-center gap-2 text-sm">
-                <span className={`inline-flex w-4 h-4 rounded border items-center justify-center text-[10px] ${employeeCapabilities.has(cap) ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300"}`}>
-                  {employeeCapabilities.has(cap) ? "✓" : ""}
-                </span>
-                <span className={employeeCapabilities.has(cap) ? "text-slate-800" : "text-slate-400"}>{cap}</span>
+          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Role &amp; Capabilities</h2>
+          {canEditStaff ? (
+            <form action={updateEmployeeProfileAction.bind(null, employee.id)} className="space-y-2">
+              <div>
+                <label className="block text-[11px] text-slate-500 uppercase mb-1">Job Title</label>
+                <input name="title" defaultValue={employee.title} className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm" />
               </div>
-            ))}
-          </div>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="is_driver" defaultChecked={employee.is_driver} className="rounded border-slate-300" /> Driver
+              </label>
+              <div className="space-y-1">
+                {STAFF_CAPABILITIES.map((cap) => (
+                  <label key={cap} className="flex items-center gap-2 text-sm text-slate-800">
+                    <input type="checkbox" name="capabilities" value={cap} defaultChecked={employeeCapabilities.has(cap)} className="rounded border-slate-300" />
+                    {cap}
+                  </label>
+                ))}
+              </div>
+              <Button type="submit" variant="secondary" className="text-xs py-1">Save</Button>
+            </form>
+          ) : (
+            <div className="space-y-1.5">
+              {STAFF_CAPABILITIES.map((cap) => (
+                <div key={cap} className="flex items-center gap-2 text-sm">
+                  <span className={`inline-flex w-4 h-4 rounded border items-center justify-center text-[10px] ${employeeCapabilities.has(cap) ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300"}`}>
+                    {employeeCapabilities.has(cap) ? "✓" : ""}
+                  </span>
+                  <span className={employeeCapabilities.has(cap) ? "text-slate-800" : "text-slate-400"}>{cap}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-4 pt-4 border-t border-slate-200 text-sm">
             <div className="flex justify-between items-center mb-1">
               <span className="text-slate-500">Status</span>

@@ -2,11 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createEmployee, createTimeOffEntry, deleteEmployee, deleteTimeOffEntry, updateEmployee } from "@/lib/db";
+import { createEmployee, createTimeOffEntry, deleteEmployee, deleteTimeOffEntry, setEmployeeSkills, updateEmployee } from "@/lib/db";
 import { canEditPayRates, canEditTimeOffAllowance, getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
 import type { PayType, StaffCapability, TaxStatus, TimeOffType } from "@/lib/types";
-import { TAX_STATUSES, TIME_OFF_TYPES } from "@/lib/types";
+import { STAFF_CAPABILITIES, TAX_STATUSES, TIME_OFF_TYPES } from "@/lib/types";
 
 function parseTaxStatus(raw: FormDataEntryValue | null): TaxStatus | undefined {
   const value = String(raw ?? "").trim();
@@ -180,4 +180,18 @@ export async function deleteTimeOffAction(employeeId: string, entryId: string) {
   revalidatePath(`/staff/${employeeId}`);
   revalidatePath("/staff");
   revalidatePath("/dashboard");
+}
+
+/** Title, driver flag and capabilities — editable from the staff profile. */
+export async function updateEmployeeProfileAction(employeeId: string, formData: FormData) {
+  if (!(await canEdit("staff"))) return;
+  const actingUser = await getActingUser();
+  const title = String(formData.get("title") ?? "").trim();
+  const is_driver = formData.get("is_driver") === "on";
+  const capabilities = formData.getAll("capabilities").map(String).filter((c): c is StaffCapability => (STAFF_CAPABILITIES as readonly string[]).includes(c));
+  await updateEmployee(employeeId, { ...(title ? { title } : {}), is_driver }, actingUser.fullName);
+  await setEmployeeSkills(employeeId, capabilities);
+  revalidatePath(`/staff/${employeeId}`);
+  revalidatePath("/staff");
+  revalidatePath("/projects");
 }

@@ -657,6 +657,24 @@ export async function deleteTimeOffEntry(id: string, actorName: string): Promise
  * For someone who has left but has job history worth keeping, prefer
  * marking them Inactive (updateEmployee { active: false }) instead.
  */
+/** Replaces an employee's capability list. */
+export async function setEmployeeSkills(employeeId: string, capabilities: StaffCapability[]): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("employee_skills").delete().eq("employee_id", employeeId);
+    if (error) throw error;
+    if (capabilities.length > 0) {
+      const rows = capabilities.map((capability) => ({ id: randomUUID(), employee_id: employeeId, capability }));
+      const { error: insErr } = await client.from("employee_skills").insert(rows);
+      if (insErr) throw insErr;
+    }
+  } else {
+    const store = getStore();
+    store.employeeSkills = store.employeeSkills.filter((s) => s.employee_id !== employeeId);
+    for (const capability of capabilities) store.employeeSkills.push({ id: randomUUID(), employee_id: employeeId, capability });
+  }
+}
+
 export async function deleteEmployee(id: string, actorName: string): Promise<void> {
   const existing = (await listEmployees()).find((e) => e.id === id);
   if (!existing) return;

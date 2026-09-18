@@ -508,18 +508,22 @@ export function compileCompletedJobSummary(
     // Fallback: no actual-hours logged for this employee — treat each
     // planned schedule_assignments day as an 8-hour day. No labor cost is
     // computed here (that would mix the planned- and actual-cost systems).
-    const plannedDays = new Set(projectAssignments.filter((a) => a.employee_id === employeeId).map((a) => a.schedule_date));
+    const plannedForEmployee = projectAssignments.filter((a) => a.employee_id === employeeId);
+    const plannedDays = new Set(plannedForEmployee.map((a) => a.schedule_date));
     return {
       employee_id: employeeId,
       employeeName,
       daysWorked: plannedDays.size,
       totalHours: plannedDays.size * 8,
       source: "planned-fallback",
+      // Planned day-rate cost from the schedule, so the job still has a
+      // labor figure until hours are confirmed on End of Day Review.
+      laborCost: round2(plannedForEmployee.reduce((sum, a) => sum + a.assignment_cost, 0)),
     };
   });
 
   const totalManHours = round2(labor.reduce((sum, l) => sum + l.totalHours, 0));
-  const totalLaborCost = laborCostSummary.totalLaborCost;
+  const totalLaborCost = round2(labor.reduce((sum, l) => sum + (l.laborCost ?? 0), 0));
   const lastDay = projectDays.length > 0 ? [...projectDays].sort((a, b) => b.schedule_date.localeCompare(a.schedule_date))[0] : undefined;
 
   return {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listEmployeeSkills, listEmployees, listTimeOffEntries } from "@/lib/db";
 import { Card, PageHeader, LinkButton } from "@/components/ui";
 import { StaffTable } from "@/components/staff/StaffTable";
@@ -49,7 +50,12 @@ export default async function StaffPage() {
       <PageHeader
         title="Staff"
         subtitle={`${employees.filter((e) => e.active).length} active crew members.`}
-        action={<LinkButton href="/staff/new"><Icon name="plus" className="w-4 h-4" />New Staff</LinkButton>}
+        action={
+          <div className="flex items-center gap-2">
+            <Link href="/staff/time-off" className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Time Off Summary</Link>
+            <LinkButton href="/staff/new"><Icon name="plus" className="w-4 h-4" />New Staff</LinkButton>
+          </div>
+        }
       />
       <Card className="p-3">
         <StaffTable rows={rows} canViewRates={canViewRates} />
