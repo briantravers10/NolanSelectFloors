@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listOfficeUsers, listProjects } from "@/lib/db";
-import { Card, StatusBadge, EmptyState } from "@/components/ui";
+import { Card, EmptyState } from "@/components/ui";
 import { formatCurrency } from "@/lib/calculations";
 import { PIPELINE_STAGES } from "@/lib/types";
 import { movePipelineStageFormAction } from "./actions";
@@ -56,7 +56,6 @@ export async function Pipeline({ stageFilter }: { stageFilter?: string } = {}) {
                       <div className="text-xs text-slate-500 mb-1.5 truncate">{client?.name}</div>
                     </Link>
                     <div className="flex flex-wrap gap-1.5 mb-1.5">
-                      <StatusBadge status={p.bid_status} />
                     </div>
                     <div className="text-[11px] text-slate-400 mb-2">
                       {formatCurrency(p.project_value)} · {estimator?.full_name ?? "Unassigned"}

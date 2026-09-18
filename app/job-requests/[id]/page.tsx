@@ -12,20 +12,18 @@ import {
   listProjects,
 } from "@/lib/db";
 import { Card, PageHeader, StatusBadge, PhoneLink, Button } from "@/components/ui";
-import { BidOwnership } from "@/components/BidOwnership";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { getActingUser } from "@/lib/current-user";
 import { formatDateLong } from "@/lib/dates";
 import { formatCurrency } from "@/lib/calculations";
 import { getLastWorkedWithClient } from "@/lib/last-worked";
-import { JOB_REQUEST_STATUSES } from "@/lib/types";
-import { convertToProjectAction, createBidAction, saveJobRequestEstimateAction, setJobRequestStatusAction } from "../actions";
-
-const BIDDABLE_STATUSES = new Set(["New Request", "Site Visit Required", "Site Visit Scheduled", "Estimate Required"]);
+import { archiveJobRequestAction, convertToProjectAction, deleteJobRequestAction, saveJobRequestEstimateAction, startJobRequestAction, unarchiveJobRequestAction } from "../actions";
+import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
+import { canEdit } from "@/lib/permissions";
 
 export default async function JobRequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [jobRequests, buildings, clients, contacts, projects, officeUsers, actingUser, pricingFormulas, formulaComponents, materialRateItems] = await Promise.all([
+  const [jobRequests, buildings, clients, contacts, projects, , , pricingFormulas, formulaComponents, materialRateItems] = await Promise.all([
     listJobRequests(),
     listBuildings(),
     listClientCompanies(),
@@ -45,13 +43,18 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
   const contact = contacts.find((c) => c.id === jr.contact_id);
   const linkedProject = jr.converted_project_id ? projects.find((p) => p.id === jr.converted_project_id) : undefined;
   const lastWorked = client ? await getLastWorkedWithClient(client.id, jr.converted_project_id) : undefined;
+  const canEditRequests = await canEdit("job_requests");
+  const isCreated = jr.status === "Converted to Project" || Boolean(linkedProject);
+  const isArchived = jr.status === "Archived";
+  const isStarted = jr.status === "In Progress" || Boolean(jr.started_by_name);
+  const displayStatus = isCreated ? "Job Created" : jr.status;
 
   return (
     <div className="max-w-3xl">
       <PageHeader
         title={`${building?.name ?? "Building"}${jr.unit_number ? " — " + jr.unit_number : ""}`}
         subtitle={client?.name}
-        action={<StatusBadge status={jr.status} />}
+        action={<StatusBadge status={displayStatus} />}
       />
 
       {lastWorked && (
@@ -105,50 +108,66 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
             />
           </Card>
 
-          <Card className="p-4">
-            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Move to Status</h2>
-            <div className="flex flex-wrap gap-2">
-              {JOB_REQUEST_STATUSES.filter((s) => s !== jr.status && s !== "Converted to Project").map((s) => (
-                <form key={s} action={setJobRequestStatusAction.bind(null, jr.id, s)}>
-                  <button type="submit" className="text-xs rounded-full border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-100">
-                    {s}
-                  </button>
-                </form>
-              ))}
-            </div>
-          </Card>
-
-          {linkedProject ? (
-            <BidOwnership project={linkedProject} officeUsers={officeUsers} actingUser={actingUser} />
-          ) : (
-            jr.status !== "Converted to Project" &&
-            jr.status !== "Declined" &&
-            jr.status !== "Cancelled" && (
-              <Card className="p-4 space-y-4">
-                {BIDDABLE_STATUSES.has(jr.status) && (
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Create Bid</h2>
-                    <p className="text-sm text-slate-500 mb-3">
-                      Starts a project row in the &quot;Bid Sent&quot; pipeline stage, unclaimed, so an estimator can
-                      claim it from the Bid Dashboard and work the estimate.
-                    </p>
-                    <form action={createBidAction.bind(null, jr.id)}>
-                      <Button type="submit">Create Bid (Unclaimed)</Button>
-                    </form>
-                  </div>
+          <Card className="p-4 space-y-3">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Next Step</h2>
+            {isCreated ? (
+              <div className="text-sm text-slate-700">
+                Job created{jr.started_by_name ? ` by ${jr.started_by_name}` : ""}.{" "}
+                {linkedProject && (
+                  <Link href={`/projects/${linkedProject.id}`} className="text-sky-700 font-medium hover:underline">
+                    Open the job →
+                  </Link>
                 )}
-                <div className={BIDDABLE_STATUSES.has(jr.status) ? "border-t border-slate-100 pt-4" : ""}>
-                  <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Convert to Project</h2>
-                  <p className="text-sm text-slate-500 mb-3">
-                    For a job that&apos;s already approved — creates the project starting at &quot;Bid Accepted&quot;, skipping the bid stage.
-                  </p>
-                  <form action={convertToProjectAction.bind(null, jr.id)}>
-                    <Button type="submit">Convert to Project</Button>
+                <p className="text-xs text-slate-500 mt-1">Add it to the schedule from Create / Edit Schedule; from there it runs like any other job.</p>
+              </div>
+            ) : isArchived ? (
+              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
+                Archived — kept for the record, hidden from the open list.
+                {canEditRequests && (
+                  <form action={unarchiveJobRequestAction.bind(null, jr.id)}>
+                    <Button type="submit" variant="secondary">Reopen request</Button>
                   </form>
-                </div>
-              </Card>
-            )
-          )}
+                )}
+              </div>
+            ) : !isStarted ? (
+              <div>
+                <p className="text-sm text-slate-600 mb-3">Nobody has picked this up yet. Start it to put it under your name while you fill in the details.</p>
+                {canEditRequests && (
+                  <form action={startJobRequestAction.bind(null, jr.id)}>
+                    <Button type="submit">Start job</Button>
+                  </form>
+                )}
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-slate-700 mb-1">
+                  In progress — <span className="font-medium">{jr.started_by_name ?? "someone"}</span> started this
+                  {jr.started_at ? ` on ${formatDateLong(jr.started_at.slice(0, 10))}` : ""}.
+                </p>
+                <p className="text-sm text-slate-600 mb-3">When the details are in, create the job. Everything logged here carries over to it.</p>
+                {canEditRequests && (
+                  <form action={convertToProjectAction.bind(null, jr.id)}>
+                    <Button type="submit">Create job</Button>
+                  </form>
+                )}
+              </div>
+            )}
+            {canEditRequests && !isCreated && (
+              <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-slate-100">
+                {!isArchived && (
+                  <form action={archiveJobRequestAction.bind(null, jr.id)}>
+                    <button type="submit" className="text-xs text-slate-600 hover:text-slate-900 underline">Archive request</button>
+                  </form>
+                )}
+                <ConfirmDeleteButton
+                  action={deleteJobRequestAction.bind(null, jr.id)}
+                  label="Delete request"
+                  title="Delete this job request?"
+                  warning="Permanently removes the request. If you might need it later, archive it instead."
+                />
+              </div>
+            )}
+          </Card>
         </div>
 
         <Card className="p-4 h-fit">

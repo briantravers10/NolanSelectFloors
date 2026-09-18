@@ -24,6 +24,8 @@ export type ContactRole = (typeof CONTACT_ROLES)[number];
 
 export const JOB_REQUEST_STATUSES = [
   "New Request",
+  "In Progress",
+  "Archived",
   "Site Visit Required",
   "Site Visit Scheduled",
   "Estimate Required",
@@ -342,6 +344,11 @@ export interface JobRequest {
   estimate_sent_at?: string;
   approved_at?: string;
   converted_project_id?: string;
+  // Who hit "Start job" (office_users.id + name snapshot) and when — the
+  // request shows as In Progress under their name until the job's created.
+  started_by_user_id?: string | null;
+  started_by_name?: string | null;
+  started_at?: string | null;
   notes?: string;
   created_at: string;
   updated_at: string;

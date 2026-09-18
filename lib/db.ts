@@ -1587,6 +1587,34 @@ export async function createJobRequest(input: {
   return record;
 }
 
+/** "Start job": marks the request In Progress under the acting user. */
+export async function startJobRequest(id: string, userId: string, userName: string): Promise<void> {
+  const now = new Date().toISOString();
+  const patch = { status: "In Progress" as JobRequestStatus, started_by_user_id: userId, started_by_name: userName, started_at: now, updated_at: now };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("job_requests").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const jr = getStore().jobRequests.find((j) => j.id === id);
+    if (jr) Object.assign(jr, patch);
+  }
+  logActivity({ action: "Started job request", related_type: "job_request", related_id: id, actor_name: userName, detail: `${userName} is working on it` });
+}
+
+export async function deleteJobRequest(id: string, actorName: string): Promise<void> {
+  const existing = (await listJobRequests()).find((j) => j.id === id);
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("job_requests").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    store.jobRequests = store.jobRequests.filter((j) => j.id !== id);
+  }
+  logActivity({ action: "Deleted job request", related_type: "job_request", related_id: id, actor_name: actorName, detail: existing?.description ?? id });
+}
+
 export async function updateJobRequestStatus(id: string, status: JobRequestStatus): Promise<void> {
   const client = sb();
   const now = new Date().toISOString();

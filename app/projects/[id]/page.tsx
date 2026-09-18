@@ -22,7 +22,7 @@ import {
 } from "@/lib/db";
 import { canManageQuickBooksDocuments, canViewJobFinancials, canViewLaborCost, canViewQuickBooks, getActingUser } from "@/lib/current-user";
 import { jobLaborSummary } from "@/lib/labor-cost";
-import { Card, PageHeader, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
+import { Card, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { EditableTitle } from "@/components/projects/EditableTitle";
 import { canEdit } from "@/lib/permissions";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
@@ -70,7 +70,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     pickupItemsAll,
     tasks,
     notes,
-    officeUsers,
+    ,
     actingUser,
     activityLog,
     photos,

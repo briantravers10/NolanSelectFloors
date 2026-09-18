@@ -43,6 +43,8 @@ export function Stat({ label, value, tone = "default" }: { label: string; value:
 }
 
 const BADGE_COLORS: Record<string, string> = {
+  "Job Created": "bg-emerald-100 text-emerald-800",
+  Archived: "bg-slate-200 text-slate-600",
   // Job request statuses
   "New Request": "bg-sky-100 text-sky-700",
   "Site Visit Required": "bg-amber-100 text-amber-700",

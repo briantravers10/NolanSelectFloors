@@ -3,8 +3,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import {
-  createBidFromJobRequest,
   createJobRequest,
+  deleteJobRequest,
+  startJobRequest,
   findOpenDuplicateBids,
   listBuildings,
   logDuplicateBidOverride,
@@ -12,7 +13,7 @@ import {
   updateJobRequestStatus,
   convertJobRequestToProject,
 } from "@/lib/db";
-import { getCurrentUser } from "@/lib/current-user";
+import { getActingUser, getCurrentUser } from "@/lib/current-user";
 import { getLastWorkedWithClient, type LastWorkedWithResult } from "@/lib/last-worked";
 import type { JobRequestStatus } from "@/lib/types";
 import { canEdit } from "@/lib/permissions";
@@ -56,14 +57,6 @@ export async function createJobRequestAction(formData: FormData) {
   redirect(`/job-requests/${jr.id}`);
 }
 
-export async function createBidAction(jobRequestId: string) {
-  if (!(await canEdit("job_requests"))) return;
-  const project = await createBidFromJobRequest(jobRequestId);
-  revalidatePath("/job-requests");
-  revalidatePath("/projects");
-  redirect(`/projects/${project.id}`);
-}
-
 export async function setJobRequestStatusAction(id: string, status: JobRequestStatus) {
   if (!(await canEdit("job_requests"))) return;
   await updateJobRequestStatus(id, status);
@@ -71,12 +64,47 @@ export async function setJobRequestStatusAction(id: string, status: JobRequestSt
   revalidatePath("/job-requests");
 }
 
+/** Start job: the request goes In Progress under whoever clicked. */
+export async function startJobRequestAction(id: string) {
+  if (!(await canEdit("job_requests"))) return;
+  const actingUser = await getActingUser();
+  await startJobRequest(id, actingUser.id, actingUser.fullName);
+  revalidatePath("/job-requests");
+  revalidatePath(`/job-requests/${id}`);
+  revalidatePath("/dashboard");
+}
+
+/** Create job: turns the request into a project (its history carries
+ * over via job_request_id) and opens it. */
 export async function convertToProjectAction(id: string) {
   if (!(await canEdit("job_requests"))) return;
   const project = await convertJobRequestToProject(id);
   revalidatePath("/job-requests");
   revalidatePath("/projects");
+  revalidatePath("/dashboard");
   redirect(`/projects/${project.id}`);
+}
+
+export async function archiveJobRequestAction(id: string) {
+  if (!(await canEdit("job_requests"))) return;
+  await updateJobRequestStatus(id, "Archived");
+  revalidatePath("/job-requests");
+  revalidatePath(`/job-requests/${id}`);
+}
+
+export async function unarchiveJobRequestAction(id: string) {
+  if (!(await canEdit("job_requests"))) return;
+  await updateJobRequestStatus(id, "New Request");
+  revalidatePath("/job-requests");
+  revalidatePath(`/job-requests/${id}`);
+}
+
+export async function deleteJobRequestAction(id: string) {
+  if (!(await canEdit("job_requests"))) return;
+  const actingUser = await getActingUser();
+  await deleteJobRequest(id, actingUser.fullName);
+  revalidatePath("/job-requests");
+  redirect("/job-requests");
 }
 
 /** Saves a computed suggested price from the Estimate Calculator onto the
