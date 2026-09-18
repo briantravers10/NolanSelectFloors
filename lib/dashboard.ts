@@ -9,7 +9,6 @@ import {
   listProjects,
   listCrewRequirements,
   listScheduleAssignments,
-  listTasks,
   listTimeOffEntries,
 } from "./db";
 import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
@@ -65,7 +64,6 @@ export async function getDashboardData() {
     crewRequirements,
     assignments,
     projectMaterials,
-    tasks,
     timeOffEntries,
   ] = await Promise.all([
     listBuildings(),
@@ -78,7 +76,6 @@ export async function getDashboardData() {
     listCrewRequirements(),
     listScheduleAssignments(),
     listProjectMaterials(),
-    listTasks(),
     listTimeOffEntries(),
   ]);
 
@@ -237,15 +234,6 @@ export async function getDashboardData() {
       severity: "bad",
       message: `Unprocessed job request from ${building?.name ?? "a building"} needs to be triaged`,
       href: `/job-requests/${jr.id}`,
-    });
-  }
-
-  // Overdue tasks
-  for (const task of tasks.filter((t) => t.status !== "Completed" && t.due_date && t.due_date < today)) {
-    attention.push({
-      severity: "bad",
-      message: `Overdue task: ${task.title}`,
-      href: `/tasks`,
     });
   }
 

@@ -17,7 +17,6 @@ import {
   listProjects,
   listProjectWorkTypes,
   listScheduleAssignments,
-  listTasks,
 } from "@/lib/db";
 import { canManageQuickBooksDocuments, canViewJobFinancials, canViewLaborCost, canViewQuickBooks, getActingUser } from "@/lib/current-user";
 import { jobLaborSummary } from "@/lib/labor-cost";
@@ -48,7 +47,6 @@ import {
   setMaterialUnitPriceAction,
   addProjectNoteAction,
   addProjectPhotoAction,
-  addProjectTaskAction,
   movePipelineStageFormAction,
   saveProjectEstimateAction,
 } from "../actions";
@@ -68,7 +66,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     employeeSkills,
     crewRequirements,
     materials,
-    tasks,
     notes,
     ,
     actingUser,
@@ -91,7 +88,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listEmployeeSkills(),
     listCrewRequirements(),
     listProjectMaterials(),
-    listTasks(),
     listProjectNotes(),
     listOfficeUsers(),
     getActingUser(),
@@ -120,7 +116,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const scheduledDates = Array.from(new Set(projectAssignments.map((a) => a.schedule_date))).sort();
   const projectCrewReqs = crewRequirements.filter((r) => r.project_id === id);
   const projectMaterialsList = materials.filter((m) => m.project_id === id);
-  const projectTasks = tasks.filter((t) => t.related_type === "project" && t.related_id === id);
   const projectNotes = notes.filter((n) => n.project_id === id);
   const employeeById = new Map(employees.map((e) => [e.id, e]));
   const projectActivity = activityLog.filter((a) => a.related_type === "project" && a.related_id === id);
@@ -462,30 +457,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </tr>
                 </tfoot>
               </table>
-            )}
-          </Card>
-
-          <Card className="p-4">
-            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Tasks</h2>
-            <form action={addProjectTaskAction.bind(null, project.id)} className="flex flex-wrap gap-2 mb-4">
-              <input name="title" placeholder="New task…" required className="flex-1 min-w-[160px] rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              <input name="due_date" type="date" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              <Button type="submit">Add Task</Button>
-            </form>
-            {projectTasks.length === 0 ? (
-              <EmptyState message="No tasks linked to this project." />
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {projectTasks.map((t) => (
-                  <div key={t.id} className="py-2 flex items-center justify-between gap-3">
-                    <div className="text-sm text-slate-800">{t.title}</div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {t.due_date && <span className="text-xs text-slate-500">{t.due_date}</span>}
-                      <StatusBadge status={t.status} />
-                    </div>
-                  </div>
-                ))}
-              </div>
             )}
           </Card>
 

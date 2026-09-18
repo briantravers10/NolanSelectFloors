@@ -15,7 +15,6 @@ import {
   setSchedulePickupItemCost,
   updateProjectName,
   createPhotoRecord,
-  createTask,
   reassignOrReleaseBid,
   saveProjectEstimatedValue,
   updateBidStatus,
@@ -150,18 +149,6 @@ export async function deleteProjectMaterialAction(projectId: string, id: string)
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/materials");
   revalidatePath("/reports");
-}
-
-export async function addProjectTaskAction(projectId: string, formData: FormData) {
-  if (!(await canEdit("tasks"))) return;
-  await createTask({
-    title: String(formData.get("title") ?? ""),
-    related_type: "project",
-    related_id: projectId,
-    due_date: String(formData.get("due_date") ?? "") || undefined,
-  });
-  revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/tasks");
 }
 
 export async function addProjectNoteAction(projectId: string, formData: FormData) {
