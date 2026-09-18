@@ -10,6 +10,7 @@ import {
   createClientCompanyRecord,
   createContact,
   getOrCreateUnassignedClient,
+  listActualLaborEntries,
   listBuildingContacts,
   listBuildings,
   listClientCompanies,
@@ -30,6 +31,7 @@ import {
   listScheduleAssignments,
   saveCompletionNotes,
   toggleSchedulePickupItemStatus,
+  updateActualLaborEntry,
   updateProjectScheduleDay,
   updateScheduleAssignmentCallTime,
   updateWorkType,
@@ -454,4 +456,58 @@ export async function notWorkingWeekendDayAction(projectId: string, date: string
   await removeProjectFromSchedule(projectId, date, actingUser.fullName);
   revalidateSchedule(projectId);
   redirect(`/schedule/edit?date=${date}`);
+}
+
+// ---------------------------------------------------------------------
+// End of Day Review — per-job status + who worked / hours
+// ---------------------------------------------------------------------
+
+/** Status from the review card: Complete takes the job off the schedule
+ * from tomorrow (and marks the project Complete); In Progress keeps it
+ * carrying over. Same write path as the Schedule Type dropdown. */
+export async function setReviewJobStatusAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
+  const status = String(formData.get("job_status") ?? "");
+  if (status !== "Complete" && status !== "In Progress") return;
+  const actingUser = await getActingUser();
+  const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
+  if (day.job_status !== status) await updateProjectScheduleDay(day.id, { job_status: status as ScheduleJobStatus }, actingUser.fullName);
+  revalidateSchedule(projectId);
+  revalidatePath("/schedule/review");
+}
+
+/**
+ * Saves who worked a job on a date and their hours, as actual_labor_entries
+ * (the basis for real labor cost): one entry per person per job per day —
+ * updated in place if it exists, created if not, removed if their hours
+ * are cleared or they were taken off the list.
+ */
+export async function saveJobHoursAction(projectId: string, date: string, formData: FormData) {
+  if (!(await canEdit("schedule"))) return;
+  const actingUser = await getActingUser();
+  const listed = formData.getAll("employee_ids").map(String).filter(Boolean);
+  const existing = (await listActualLaborEntries()).filter((e) => e.project_id === projectId && e.work_date === date);
+  const byEmployee = new Map(existing.map((e) => [e.employee_id, e]));
+
+  for (const employeeId of listed) {
+    const hours = Number(formData.get(`hours__${employeeId}`) ?? 0) || 0;
+    const current = byEmployee.get(employeeId);
+    if (hours <= 0) {
+      if (current) await deleteActualLaborEntry(current.id, actingUser.fullName);
+      continue;
+    }
+    if (current) {
+      if (current.hours !== hours) await updateActualLaborEntry(current.id, { hours }, actingUser.fullName);
+    } else {
+      await createActualLaborEntry({ employee_id: employeeId, project_id: projectId, work_date: date, hours, actorName: actingUser.fullName });
+    }
+  }
+  // Anyone with an entry who's no longer listed didn't work this job today.
+  for (const e of existing) {
+    if (!listed.includes(e.employee_id)) await deleteActualLaborEntry(e.id, actingUser.fullName);
+  }
+  revalidateSchedule(projectId);
+  revalidatePath("/schedule/review");
+  revalidatePath("/reports");
+  revalidatePath("/staff");
 }

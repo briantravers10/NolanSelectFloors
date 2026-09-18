@@ -21,6 +21,7 @@ import { DailyList } from "@/components/schedule/DailyList";
 import { WeeklyView } from "@/components/schedule/WeeklyView";
 import { MonthlyView } from "@/components/schedule/MonthlyView";
 import { SendScheduleButton } from "@/components/schedule/SendScheduleButton";
+import { PrintButton } from "@/components/PrintButton";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 
@@ -100,6 +101,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
           ))}
         </div>
 
+        <PrintButton label="Print schedule" />
         {view === "day" && (
           <div className="flex items-center gap-2">
             <Link href={`/schedule?view=day&date=${isoDate(addDays(new Date(activeDate + "T00:00:00"), -1))}`}><Button variant="secondary">← Prev Day</Button></Link>

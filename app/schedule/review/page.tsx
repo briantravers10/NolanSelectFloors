@@ -20,8 +20,7 @@ import { canViewLaborCost, getActingUser } from "@/lib/current-user";
 import { formatCurrency } from "@/lib/calculations";
 import { addDays, dayLabel, formatDateShort, isoDate, todayIso } from "@/lib/dates";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
-import { DailyList } from "@/components/schedule/DailyList";
-import { ActualHoursSection } from "@/components/schedule/ActualHoursSection";
+import { JobReviewCard } from "@/components/schedule/JobReviewCard";
 import { ConfirmDayForm } from "@/components/schedule/ConfirmDayForm";
 
 export default async function ReviewPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -47,7 +46,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
     ]);
 
   const rows = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems });
-  const activeProjects = projects.filter((p) => rows.some((r) => r.projectId === p.id));
+  const workingRows = rows.filter((r) => !r.weekendOff);
   const confirmation = confirmations.find((c) => c.work_date === date);
   const canViewCost = canViewLaborCost(actingUser);
   const dayCost = dayLaborCostTotal(date, actualLaborEntries);
@@ -72,11 +71,23 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <div className="xl:col-span-2 space-y-4">
-          <Card className="p-4">
-            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Today&apos;s Jobs — Confirm Crew &amp; Status</h2>
-            <DailyList rows={rows} />
-          </Card>
-          <ActualHoursSection date={date} entries={actualLaborEntries} employees={employees.filter((e) => e.active)} projects={activeProjects.length > 0 ? activeProjects : projects} />
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Today&apos;s Jobs — status, who worked, hours</h2>
+            <span className="text-xs text-slate-500">{workingRows.length} {workingRows.length === 1 ? "job" : "jobs"}</span>
+          </div>
+          {workingRows.length === 0 ? (
+            <Card className="p-6 text-sm text-slate-500">Nothing on the schedule for this day.</Card>
+          ) : (
+            workingRows.map((row) => (
+              <JobReviewCard
+                key={row.key}
+                row={row}
+                employees={employees.filter((e) => e.active)}
+                entries={actualLaborEntries.filter((e) => e.project_id === row.projectId && e.work_date === date)}
+                canViewCost={canViewCost}
+              />
+            ))
+          )}
         </div>
         <div className="space-y-4">
           <ConfirmDayForm date={date} confirmation={confirmation} />

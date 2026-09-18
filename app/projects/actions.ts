@@ -8,6 +8,7 @@ import {
   createProjectMaterial,
   createProjectNote,
   setSchedulePickupItemCost,
+  updateProjectName,
   createPhotoRecord,
   createTask,
   reassignOrReleaseBid,
@@ -217,5 +218,17 @@ export async function setPickupItemCostAction(projectId: string, itemId: string,
   const actingUser = await getActingUser();
   await setSchedulePickupItemCost(itemId, cost, actingUser.fullName);
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/schedule");
+}
+
+/** Rename a job (e.g. "East" → "West"). Logged to the project's history. */
+export async function renameProjectAction(projectId: string, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+  const actingUser = await getActingUser();
+  await updateProjectName(projectId, name, actingUser.fullName);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
   revalidatePath("/schedule");
 }

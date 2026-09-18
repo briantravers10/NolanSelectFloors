@@ -43,3 +43,13 @@ body {
   outline: 2px solid #38bdf8;
   outline-offset: 1px;
 }
+
+/* ---- Print: only the page content, no shell or controls ---- */
+@media print {
+  aside, header, nav, .no-print, form button, select, input[type="date"] { display: none !important; }
+  body { background: #fff !important; }
+  main, .print-area { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+  * { box-shadow: none !important; }
+  a[href]::after { content: "" !important; }
+  .print-break { break-inside: avoid; }
+}

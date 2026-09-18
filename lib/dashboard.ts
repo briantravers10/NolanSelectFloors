@@ -16,7 +16,6 @@ import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
 import {
   compareCrewForProjectDate,
   findDoubleBookings,
-  isMissingDriver,
   summarizeDay,
 } from "./calculations";
 import { addDays, isoDate, todayIso } from "./dates";
@@ -161,17 +160,6 @@ export async function getDashboardData() {
       attention.push({
         severity: "bad",
         message: `${job.buildingName} (${job.project.name}) is missing ${row.missing} ${row.role}${row.missing > 1 ? "s" : ""} today`,
-        href: `/projects/${job.project.id}`,
-      });
-    }
-  }
-
-  // No driver assigned
-  for (const job of todaysJobs) {
-    if (isMissingDriver(job.project, assignments, employees, job.project.id, today)) {
-      attention.push({
-        severity: "bad",
-        message: `NO DRIVER ASSIGNED — ${job.buildingName} (${job.project.name}) needs transportation today`,
         href: `/projects/${job.project.id}`,
       });
     }

@@ -22,6 +22,7 @@ import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { ScheduleEditForm } from "@/components/schedule/ScheduleEditForm";
 import { ScheduleDayRowCard } from "@/components/schedule/ScheduleDayRowCard";
 import { QuickJobForm } from "@/components/schedule/QuickJobForm";
+import { PrintButton } from "@/components/PrintButton";
 
 /**
  * CREATE / EDIT SCHEDULE. Layout, top to bottom:
@@ -125,7 +126,8 @@ export default async function ScheduleEditPage({
         <div className="text-sm font-semibold text-slate-800 ml-1">
           {dayLabel(date)}, {formatDateShort(date)}
         </div>
-        <div className="ml-auto flex-1 sm:flex-none min-w-[280px] flex justify-end">
+        <div className="ml-auto flex-1 sm:flex-none min-w-[280px] flex justify-end gap-2">
+          <PrintButton />
           <QuickJobForm
             date={date}
             buildings={quickBuildings}

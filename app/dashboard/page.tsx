@@ -63,11 +63,6 @@ export default async function DashboardPage() {
                       <span>{job.project.name}</span>
                       <span>Crew: {job.manCount}</span>
                       <span>Labor: {formatCurrency(job.laborCost)}</span>
-                      {job.needsDriver && (
-                        <span className={job.hasDriver ? "text-emerald-600" : "text-rose-600 font-medium"}>
-                          {job.hasDriver ? "Driver assigned" : "NO DRIVER ASSIGNED"}
-                        </span>
-                      )}
                       {job.materialsWorstStatus && job.materialsWorstStatus !== "Delivered" && (
                         <span className="text-amber-600">Materials: {job.materialsWorstStatus}</span>
                       )}

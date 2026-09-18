@@ -1758,6 +1758,20 @@ function stampOnce(project: Project, field: keyof Project, iso: string) {
   if (!project[field]) (project as unknown as Record<string, unknown>)[field] = iso;
 }
 
+export async function updateProjectName(id: string, name: string, actorName: string): Promise<void> {
+  const project = (await listProjects()).find((p) => p.id === id);
+  if (!project) throw new Error("Project not found");
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("projects").update({ name, updated_at: now }).eq("id", id);
+    if (error) throw error;
+  } else {
+    Object.assign(project, { name, updated_at: now });
+  }
+  logActivity({ action: "Job renamed", related_type: "project", related_id: id, actor_name: actorName, detail: `"${project.name}" → "${name}"` });
+}
+
 /** Edits a project's unit number (and refreshes the auto name if it was
  * the default "Building — Unit X" form). Logged for the audit trail. */
 export async function updateProjectUnitNumber(id: string, unitNumber: string | undefined, actorName: string): Promise<void> {

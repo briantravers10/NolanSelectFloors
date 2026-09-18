@@ -23,7 +23,8 @@ import {
 import { canManageQuickBooksDocuments, canViewJobFinancials, canViewLaborCost, canViewQuickBooks, getActingUser } from "@/lib/current-user";
 import { jobLaborSummary } from "@/lib/labor-cost";
 import { Card, PageHeader, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
-import { BidOwnership } from "@/components/BidOwnership";
+import { EditableTitle } from "@/components/projects/EditableTitle";
+import { canEdit } from "@/lib/permissions";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
 import { FinancialSummaryCard } from "@/components/quickbooks/FinancialSummaryCard";
@@ -107,6 +108,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   ]);
 
   const project = projects.find((p) => p.id === id);
+  const canEditProjects = await canEdit("projects");
   if (!project) notFound();
 
   const building = buildings.find((b) => b.id === project.building_id);
@@ -155,16 +157,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div>
-      <PageHeader
-        title={project.name}
-        subtitle={building ? `${building.name} · ${client?.name ?? ""}` : undefined}
-        action={
-          <div className="flex flex-wrap gap-1.5 justify-end">
-            <StatusBadge status={project.pipeline_stage} />
-            <StatusBadge status={project.bid_status} />
-          </div>
-        }
-      />
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+        <div>
+          <EditableTitle projectId={project.id} name={project.name} canEdit={canEditProjects} />
+          {building && <p className="text-sm text-slate-500 mt-0.5">{building.name} · {client?.name ?? ""}</p>}
+        </div>
+        <div className="flex flex-wrap gap-1.5 justify-end">
+          <StatusBadge status={project.pipeline_stage} />
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <Stat label="Project Value" value={formatCurrency(costing.projectValue)} />
@@ -200,8 +201,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <span className="text-xs text-slate-400">Can move forward or backward — e.g. to undo an accidental advance.</span>
             </form>
           </Card>
-
-          <BidOwnership project={project} officeUsers={officeUsers} actingUser={actingUser} />
 
           <Card className="p-4">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Crew Requirements</h2>
