@@ -7,6 +7,7 @@ import {
   listClientCompanies,
   listCrewRequirements,
   listEmployees,
+  listEmployeeSkills,
   listMaterialRateItems,
   listOfficeUsers,
   listPricingFormulaComponents,
@@ -24,6 +25,9 @@ import { canManageQuickBooksDocuments, canViewJobFinancials, canViewLaborCost, c
 import { jobLaborSummary } from "@/lib/labor-cost";
 import { Card, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { EditableTitle } from "@/components/projects/EditableTitle";
+import { CrewRequirementForm } from "@/components/projects/CrewRequirementForm";
+import { AddMaterialForm } from "@/components/projects/AddMaterialForm";
+import { isFileStorageConfigured, materialInvoiceUrl } from "@/lib/storage";
 import { canEdit } from "@/lib/permissions";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
@@ -39,11 +43,11 @@ import {
   isMissingDriver,
 } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
-import { PIPELINE_STAGES, STAFF_CAPABILITIES } from "@/lib/types";
+import { PIPELINE_STAGES } from "@/lib/types";
 import {
-  addCrewRequirementAction,
+  deleteCrewRequirementAction,
+  deleteProjectMaterialAction,
   addProjectDrawingAction,
-  addProjectMaterialAction,
   setPickupItemCostAction,
   addProjectNoteAction,
   addProjectPhotoAction,
@@ -64,6 +68,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     workTypes,
     assignments,
     employees,
+    employeeSkills,
     crewRequirements,
     materials,
     scheduleDays,
@@ -88,6 +93,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listProjectWorkTypes(),
     listScheduleAssignments(),
     listEmployees(),
+    listEmployeeSkills(),
     listCrewRequirements(),
     listProjectMaterials(),
     listProjectScheduleDays(),
@@ -147,6 +153,26 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   }
 
   const costing = computeProjectCosting(project, assignments, materials, id, pickupCostTotal);
+  const canEditMaterials = await canEdit("materials");
+  const canViewRates = canViewLaborCost(actingUser);
+  const storageConfigured = isFileStorageConfigured();
+  const supplierNames = [...new Set(materials.map((m) => m.supplier?.trim()).filter((x): x is string => Boolean(x)))].sort();
+  const invoiceUrls = new Map<string, string>();
+  for (const m of projectMaterialsList) {
+    if (m.invoice_path) {
+      const url = await materialInvoiceUrl(m.invoice_path);
+      if (url) invoiceUrls.set(m.id, url);
+    }
+  }
+  const skillsByEmployee = new Map<string, string[]>();
+  for (const sk of employeeSkills) skillsByEmployee.set(sk.employee_id, [...(skillsByEmployee.get(sk.employee_id) ?? []), sk.capability]);
+  const crewPicks = employees
+    .filter((e) => e.active)
+    .map((e) => ({ id: e.id, first_name: e.first_name, last_name: e.last_name, nickname: e.nickname, capabilities: skillsByEmployee.get(e.id) ?? [], dayRate: canViewRates ? e.day_rate ?? null : null }));
+  const crewEstimateTotal = projectCrewReqs.reduce((sum, r) => {
+    const perDay = (r.employee_ids ?? []).reduce((s2, eid) => s2 + (employeeById.get(eid)?.day_rate ?? 0), 0);
+    return sum + perDay * (r.estimated_days ?? 0);
+  }, 0);
   const canViewCost = canViewLaborCost(actingUser);
   const laborSummary = jobLaborSummary(id, actualLaborEntries, employees);
   const canQBView = canViewQuickBooks(actingUser);
@@ -169,7 +195,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <Stat label="Project Value" value={formatCurrency(costing.projectValue)} />
-        <Stat label="Labor Cost" value={formatCurrency(costing.laborCost)} />
+        <Stat label={laborSummary.rows.length > 0 ? "Labor Cost (actual hours)" : "Labor Cost (planned)"} value={formatCurrency(laborSummary.rows.length > 0 ? laborSummary.totalLaborCost : costing.laborCost)} />
         <Stat label="Total Cost" value={formatCurrency(costing.totalCost)} />
         <Stat label="Gross Margin" value={formatPercent(costing.grossMarginPct)} tone={costing.grossMarginPct !== null && costing.grossMarginPct < 20 ? "bad" : "good"} />
       </div>
@@ -203,41 +229,50 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           </Card>
 
           <Card className="p-4">
-            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Crew Requirements</h2>
-            <form action={addCrewRequirementAction.bind(null, project.id)} className="flex flex-wrap gap-2 mb-4 items-end">
-              <div>
-                <label className="block text-[11px] text-slate-500 uppercase mb-1">Role</label>
-                <select name="role" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
-                  {STAFF_CAPABILITIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 uppercase mb-1">Qty</label>
-                <input name="quantity" type="number" min={1} defaultValue={1} className="w-16 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 uppercase mb-1">Date (blank = every day)</label>
-                <input name="schedule_date" type="date" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              </div>
-              <Button type="submit">Add Requirement</Button>
-            </form>
+            <div className="flex items-baseline justify-between mb-1">
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Crew Estimate</h2>
+              {canViewRates && projectCrewReqs.length > 0 && (
+                <div className="text-sm text-slate-700">Estimated labor: <span className="font-semibold text-slate-900">{formatCurrency(crewEstimateTotal)}</span></div>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mb-3">Who you&apos;d send and for how long — their day rates give the labor number for the quote.</p>
+            {canEditProjects && <CrewRequirementForm projectId={project.id} employees={crewPicks} canViewRates={canViewRates} />}
             {projectCrewReqs.length === 0 ? (
-              <EmptyState message="No crew requirements defined yet." />
+              <EmptyState message="No crew estimated yet." />
             ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-slate-500 uppercase border-b border-slate-200">
-                    <th className="py-1.5">Role</th><th className="py-1.5">Qty</th><th className="py-1.5">Applies To</th>
+                    <th className="py-1.5">Role</th>
+                    <th className="py-1.5">Who</th>
+                    <th className="py-1.5 text-right">Days</th>
+                    {canViewRates && <th className="py-1.5 text-right">Per day</th>}
+                    {canViewRates && <th className="py-1.5 text-right">Estimate</th>}
+                    <th className="py-1.5" />
                   </tr>
                 </thead>
                 <tbody>
-                  {projectCrewReqs.map((r) => (
-                    <tr key={r.id} className="border-b border-slate-100 last:border-0">
-                      <td className="py-1.5">{r.role}</td>
-                      <td className="py-1.5">{r.quantity}</td>
-                      <td className="py-1.5">{r.schedule_date ?? "Every scheduled day"}</td>
-                    </tr>
-                  ))}
+                  {projectCrewReqs.map((r) => {
+                    const people = (r.employee_ids ?? []).map((eid) => employeeById.get(eid)).filter(Boolean);
+                    const perDay = people.reduce((sum, e) => sum + (e!.day_rate ?? 0), 0);
+                    const days = r.estimated_days ?? 0;
+                    return (
+                      <tr key={r.id} className="border-b border-slate-100 last:border-0 align-top">
+                        <td className="py-1.5">{r.quantity} × {r.role}{r.schedule_date ? <div className="text-[11px] text-slate-500">{r.schedule_date}</div> : null}</td>
+                        <td className="py-1.5 text-slate-700">{people.length ? people.map((e) => `${e!.first_name} ${e!.last_name}`).join(", ") : <span className="text-slate-400">nobody picked</span>}</td>
+                        <td className="py-1.5 text-right">{days || "—"}</td>
+                        {canViewRates && <td className="py-1.5 text-right tabular-nums">{formatCurrency(perDay)}</td>}
+                        {canViewRates && <td className="py-1.5 text-right tabular-nums font-medium">{formatCurrency(perDay * days)}</td>}
+                        <td className="py-1.5 text-right">
+                          {canEditProjects && (
+                            <form action={deleteCrewRequirementAction.bind(null, project.id, r.id)}>
+                              <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove">✕</button>
+                            </form>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -367,18 +402,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Materials</h2>
               <Link href="/materials" className="text-sm text-sky-600 hover:underline">All materials →</Link>
             </div>
-            <form action={addProjectMaterialAction.bind(null, project.id)} className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
-              <input name="description" placeholder="Description" required className="col-span-2 sm:col-span-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              <input name="quantity" type="number" step="0.01" defaultValue={1} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              <input name="unit" placeholder="unit" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              <input name="cost" type="number" step="0.01" placeholder="Cost $" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              <select name="status" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm">
-                <option>Needed</option><option>Quote Requested</option><option>Ordered</option><option>Partially Delivered</option><option>Delivered</option><option>Problem</option><option>Returned</option>
-              </select>
-              <input name="supplier" placeholder="Supplier" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              <input name="expected_delivery" type="date" className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-              <Button type="submit">Add Material</Button>
-            </form>
+            {canEditMaterials && <AddMaterialForm projectId={project.id} suppliers={supplierNames} storageConfigured={storageConfigured} />}
             {projectPickupItems.length > 0 && (
               <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-center justify-between mb-1.5">
@@ -415,22 +439,59 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               </div>
             )}
             {projectMaterialsList.length === 0 ? (
-              <EmptyState message="No materials tracked for this project yet." />
+              <EmptyState message="No materials added for this job yet." />
             ) : (
-              <div className="divide-y divide-slate-100">
-                {projectMaterialsList.map((m) => (
-                  <div key={m.id} className="py-2 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm text-slate-800">{m.description}</div>
-                      <div className="text-xs text-slate-500">{m.quantity} {m.unit} · {m.supplier ?? "—"}{m.expected_delivery ? ` · expected ${m.expected_delivery}` : ""}</div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm">{formatCurrency(m.cost)}</div>
-                      <StatusBadge status={m.status} />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500 uppercase border-b border-slate-200">
+                    <th className="py-1.5">Item</th>
+                    <th className="py-1.5 text-right">Units</th>
+                    <th className="py-1.5 text-right">Per unit</th>
+                    <th className="py-1.5 text-right">Total</th>
+                    <th className="py-1.5">Supplier</th>
+                    <th className="py-1.5">Date</th>
+                    <th className="py-1.5">Invoice</th>
+                    <th className="py-1.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectMaterialsList.map((m) => (
+                    <tr key={m.id} className="border-b border-slate-100 last:border-0">
+                      <td className="py-1.5 text-slate-800">{m.description}</td>
+                      <td className="py-1.5 text-right tabular-nums">{m.quantity}</td>
+                      <td className="py-1.5 text-right tabular-nums">{m.unit_price != null ? formatCurrency(m.unit_price) : "—"}</td>
+                      <td className="py-1.5 text-right tabular-nums font-medium">{formatCurrency(m.cost)}</td>
+                      <td className="py-1.5 text-slate-600">{m.supplier ?? "—"}</td>
+                      <td className="py-1.5 text-slate-600">{m.ordered_at ? m.ordered_at.slice(0, 10) : "—"}</td>
+                      <td className="py-1.5">
+                        {m.invoice_path ? (
+                          invoiceUrls.get(m.id) ? (
+                            <a href={invoiceUrls.get(m.id)!} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline text-xs">{m.invoice_name ?? "View"}</a>
+                          ) : (
+                            <span className="text-xs text-slate-400">{m.invoice_name ?? "attached"}</span>
+                          )
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 text-right">
+                        {canEditMaterials && (
+                          <form action={deleteProjectMaterialAction.bind(null, project.id, m.id)}>
+                            <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove">✕</button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-200">
+                    <td className="py-1.5 text-xs text-slate-600" colSpan={3}>Materials total (incl. schedule pickups)</td>
+                    <td className="py-1.5 text-right font-semibold tabular-nums">{formatCurrency(costing.materialCost)}</td>
+                    <td colSpan={4} />
+                  </tr>
+                </tfoot>
+              </table>
             )}
           </Card>
 

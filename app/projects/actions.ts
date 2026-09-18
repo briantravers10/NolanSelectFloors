@@ -7,6 +7,10 @@ import {
   createProjectDrawing,
   createProjectMaterial,
   createProjectNote,
+  deleteProjectCrewRequirement,
+  deleteProjectMaterial,
+  logMaterialAdded,
+  updateProjectMaterial,
   setSchedulePickupItemCost,
   updateProjectName,
   createPhotoRecord,
@@ -16,10 +20,10 @@ import {
   updateBidStatus,
   updateProjectPipelineStage,
 } from "@/lib/db";
-import { uploadProjectDrawing, uploadProjectPhoto } from "@/lib/storage";
+import { uploadMaterialInvoice, uploadProjectDrawing, uploadProjectPhoto } from "@/lib/storage";
 import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
-import type { BidStatus, MaterialStatus, PhotoCategory, PipelineStage, StaffCapability } from "@/lib/types";
+import type { BidStatus, PhotoCategory, PipelineStage, StaffCapability } from "@/lib/types";
 
 function revalidateProjectViews(id: string) {
   revalidatePath(`/projects/${id}`);
@@ -87,24 +91,64 @@ export async function addCrewRequirementAction(projectId: string, formData: Form
   const role = String(formData.get("role")) as StaffCapability;
   const quantity = Number(formData.get("quantity") ?? 1);
   const scheduleDate = String(formData.get("schedule_date") ?? "") || null;
-  await createProjectCrewRequirement({ project_id: projectId, role, quantity, schedule_date: scheduleDate });
+  const employee_ids = formData.getAll("employee_ids").map(String).filter(Boolean);
+  const daysRaw = String(formData.get("estimated_days") ?? "").trim();
+  const estimated_days = daysRaw ? Number(daysRaw) : null;
+  await createProjectCrewRequirement({ project_id: projectId, role, quantity, schedule_date: scheduleDate, employee_ids, estimated_days });
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function deleteCrewRequirementAction(projectId: string, id: string) {
+  if (!(await canEdit("projects"))) return;
+  await deleteProjectCrewRequirement(id);
   revalidatePath(`/projects/${projectId}`);
 }
 
 export async function addProjectMaterialAction(projectId: string, formData: FormData) {
   if (!(await canEdit("materials"))) return;
-  await createProjectMaterial({
+  const description = String(formData.get("description") ?? "").trim();
+  if (!description) return;
+  const quantity = Math.max(0, Number(formData.get("quantity") ?? 1) || 0);
+  const unitPriceRaw = String(formData.get("unit_price") ?? "").trim();
+  const unit_price = unitPriceRaw === "" ? null : Math.max(0, Number(unitPriceRaw) || 0);
+  const cost = Math.round(quantity * (unit_price ?? 0) * 100) / 100;
+  const orderedOn = String(formData.get("ordered_on") ?? "").trim();
+  const supplier = String(formData.get("supplier") ?? "").trim() || undefined;
+  const actingUser = await getActingUser();
+
+  const material = await createProjectMaterial({
     project_id: projectId,
-    description: String(formData.get("description") ?? ""),
-    quantity: Number(formData.get("quantity") ?? 1),
-    unit: String(formData.get("unit") ?? "unit"),
-    cost: Number(formData.get("cost") ?? 0),
-    status: (String(formData.get("status") ?? "Needed") as MaterialStatus),
-    supplier: String(formData.get("supplier") ?? "") || undefined,
-    expected_delivery: String(formData.get("expected_delivery") ?? "") || undefined,
+    description,
+    quantity,
+    unit: String(formData.get("unit") ?? "") || "unit",
+    unit_price,
+    cost,
+    status: orderedOn ? "Ordered" : "Needed",
+    supplier,
+    ordered_at: orderedOn ? new Date(orderedOn + "T12:00:00").toISOString() : undefined,
   });
+
+  // Optional invoice/receipt attachment — soft-fails if storage isn't set up.
+  const file = formData.get("invoice");
+  if (file instanceof File && file.size > 0) {
+    const up = await uploadMaterialInvoice(file, material.id);
+    if (!up.unavailable && up.storage_path) {
+      await updateProjectMaterial(material.id, { invoice_path: up.storage_path, invoice_name: file.name });
+    }
+  }
+  logMaterialAdded(projectId, description, quantity, cost, supplier, actingUser.fullName);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/materials");
+  revalidatePath("/reports");
+}
+
+export async function deleteProjectMaterialAction(projectId: string, id: string) {
+  if (!(await canEdit("materials"))) return;
+  const actingUser = await getActingUser();
+  await deleteProjectMaterial(id, actingUser.fullName);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/materials");
+  revalidatePath("/reports");
 }
 
 export async function addProjectTaskAction(projectId: string, formData: FormData) {

@@ -1,9 +1,11 @@
-import { listAgendaEventsForOwner, listClientCompanies } from "@/lib/db";
+import { listAgendaEventsForOwner, listClientCompanies, listOfficeUsers } from "@/lib/db";
+import Link from "next/link";
 import { getActingUser } from "@/lib/current-user";
 import { addDays, dayLabel, formatDateLong, isoDate, startOfWeek, todayIso } from "@/lib/dates";
 import { Card, PageHeader, EmptyState, Button } from "@/components/ui";
 import { createAgendaEventAction, deleteAgendaEventAction } from "./actions";
 import { ConnectGoogleCalendar } from "./ConnectGoogleCalendar";
+import { AgendaDoneToggle } from "@/components/agenda/AgendaDoneToggle";
 
 /**
  * Owner's Personal Agenda — his own meetings, site visits and personal
@@ -12,9 +14,16 @@ import { ConnectGoogleCalendar } from "./ConnectGoogleCalendar";
  * supabase/migrations/0008_owner_agenda.sql and README "Owner's Agenda &
  * Future Google Calendar Sync".
  */
-export default async function AgendaPage() {
+export default async function AgendaPage({ searchParams }: { searchParams: Promise<{ for?: string }> }) {
+  const { for: forParam } = await searchParams;
   const actingUser = await getActingUser();
-  const [events, clients] = await Promise.all([listAgendaEventsForOwner(actingUser.id), listClientCompanies()]);
+  const officeUsers = (await listOfficeUsers()).filter((u) => u.active);
+  // Whose agenda we're looking at: yours by default, or anyone's — so the
+  // office can fill in the boss's day for him.
+  const viewing = officeUsers.find((u) => u.id === forParam) ?? officeUsers.find((u) => u.id === actingUser.id);
+  const viewingId = viewing?.id ?? actingUser.id;
+  const viewingName = viewing?.full_name ?? actingUser.fullName;
+  const [events, clients] = await Promise.all([listAgendaEventsForOwner(viewingId), listClientCompanies()]);
   const clientById = new Map(clients.map((c) => [c.id, c]));
 
   const monday = startOfWeek(new Date());
@@ -23,7 +32,26 @@ export default async function AgendaPage() {
 
   return (
     <div>
-      <PageHeader title="My Agenda" subtitle={`${actingUser.fullName}'s personal schedule — separate from the crew/job Schedule.`} />
+      <PageHeader
+        title={viewingId === actingUser.id ? "My Agenda" : `${viewingName}'s Agenda`}
+        subtitle="Site visits, meetings, errands — separate from the crew/job Schedule. Tick items off as they're done; today's items also show on End of Day Review."
+        action={
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-slate-500">Viewing</span>
+            <div className="flex flex-wrap gap-1">
+              {officeUsers.map((u) => (
+                <Link
+                  key={u.id}
+                  href={`/agenda?for=${u.id}`}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${u.id === viewingId ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}
+                >
+                  {u.id === actingUser.id ? "Me" : u.full_name.split(" ")[0]}
+                </Link>
+              ))}
+            </div>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-4">
@@ -46,15 +74,19 @@ export default async function AgendaPage() {
                     {dayEvents.map((e) => {
                       const linkedName = e.related_id ? clientById.get(e.related_id)?.name : undefined;
                       return (
-                        <div key={e.id} className="py-2.5 flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium text-slate-800">{e.title}</div>
+                        <div key={e.id} className={`py-2.5 flex items-start justify-between gap-3 ${e.completed_at ? "opacity-60" : ""}`}>
+                          <AgendaDoneToggle id={e.id} done={Boolean(e.completed_at)} />
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-sm font-medium text-slate-800 ${e.completed_at ? "line-through" : ""}`}>{e.title}</div>
                             <div className="text-xs text-slate-500 mt-0.5">
                               {e.start_time ? `${e.start_time}${e.end_time ? `–${e.end_time}` : ""}` : "All day"}
                               {e.location ? ` · ${e.location}` : ""}
                               {linkedName ? ` · ${linkedName}` : ""}
                             </div>
                             {e.notes && <div className="text-xs text-slate-500 mt-0.5 italic">{e.notes}</div>}
+                            {e.created_by_name && e.created_by_name !== viewingName && (
+                              <div className="text-[11px] text-slate-400 mt-0.5">Added by {e.created_by_name}</div>
+                            )}
                             {e.source === "Google Calendar" && (
                               <span className="inline-block mt-1 text-[10px] uppercase tracking-wide bg-sky-100 text-sky-700 rounded-full px-2 py-0.5">
                                 Google Calendar
@@ -79,8 +111,16 @@ export default async function AgendaPage() {
 
         <div className="space-y-5">
           <Card className="p-4">
-            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">+ Add Event</h2>
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">+ Add to Agenda</h2>
             <form action={createAgendaEventAction} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Whose agenda</label>
+                <select name="owner_user_id" defaultValue={viewingId} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  {officeUsers.map((u) => (
+                    <option key={u.id} value={u.id}>{u.full_name}{u.id === actingUser.id ? " (me)" : ""}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Title</label>
                 <input name="title" required placeholder="e.g. Site visit, check-in call" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />

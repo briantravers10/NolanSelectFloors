@@ -1,6 +1,8 @@
 import Link from "next/link";
 import {
   listActualLaborEntries,
+  listAgendaEvents,
+  listOfficeUsers,
   listBuildingContacts,
   listBuildings,
   listClientCompanies,
@@ -21,6 +23,7 @@ import { formatCurrency } from "@/lib/calculations";
 import { addDays, dayLabel, formatDateShort, isoDate, todayIso } from "@/lib/dates";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { JobReviewCard } from "@/components/schedule/JobReviewCard";
+import { AgendaDoneToggle } from "@/components/agenda/AgendaDoneToggle";
 import { ConfirmDayForm } from "@/components/schedule/ConfirmDayForm";
 
 export default async function ReviewPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -28,7 +31,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const today = todayIso();
   const date = dateParam ?? today;
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, actualLaborEntries, confirmations, actingUser, pickupItems] =
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, actualLaborEntries, confirmations, actingUser, pickupItems, agendaEvents, officeUsers] =
     await Promise.all([
       listProjects(),
       listBuildings(),
@@ -43,10 +46,20 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
       listDailyScheduleConfirmations(),
       getActingUser(),
       listSchedulePickupItems(),
+      listAgendaEvents(),
+      listOfficeUsers(),
     ]);
 
   const rows = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems });
   const workingRows = rows.filter((r) => !r.weekendOff);
+  // Everyone's agenda items for the day, grouped by whose agenda.
+  const userName = new Map(officeUsers.map((u) => [u.id, u.full_name]));
+  const dayAgendaMap = new Map<string, typeof agendaEvents>();
+  for (const e of agendaEvents.filter((x) => x.event_date === date)) {
+    const name = userName.get(e.owner_user_id) ?? (e.owner_user_id === "owner" ? "Owner" : "Agenda");
+    dayAgendaMap.set(name, [...(dayAgendaMap.get(name) ?? []), e]);
+  }
+  const dayAgenda = [...dayAgendaMap.entries()].map(([n, items]) => [n, items.sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""))] as const);
   const confirmation = confirmations.find((c) => c.work_date === date);
   const canViewCost = canViewLaborCost(actingUser);
   const dayCost = dayLaborCostTotal(date, actualLaborEntries);
@@ -90,6 +103,35 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
           )}
         </div>
         <div className="space-y-4">
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Agenda — {dayLabel(date)}</h2>
+            {dayAgenda.length === 0 ? (
+              <p className="text-xs text-slate-500">Nothing on anyone&apos;s agenda for this day.</p>
+            ) : (
+              <div className="space-y-3">
+                {dayAgenda.map(([ownerName, items]) => (
+                  <div key={ownerName}>
+                    <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">{ownerName}</div>
+                    <div className="divide-y divide-slate-100">
+                      {items.map((e) => (
+                        <div key={e.id} className={`py-1.5 flex items-start gap-2 text-sm ${e.completed_at ? "opacity-60" : ""}`}>
+                          <AgendaDoneToggle id={e.id} done={Boolean(e.completed_at)} />
+                          <div className="min-w-0">
+                            <div className={`text-slate-800 ${e.completed_at ? "line-through" : ""}`}>{e.title}</div>
+                            <div className="text-xs text-slate-500">
+                              {e.start_time ? `${e.start_time}${e.end_time ? `–${e.end_time}` : ""}` : "All day"}
+                              {e.location ? ` · ${e.location}` : ""}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Link href="/agenda" className="mt-2 inline-block text-xs text-sky-600 hover:text-sky-800">Open agenda →</Link>
+          </Card>
           <ConfirmDayForm date={date} confirmation={confirmation} />
         </div>
       </div>

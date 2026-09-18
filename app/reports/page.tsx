@@ -7,14 +7,18 @@ import {
   listProjectMaterials,
   listProjects,
   listScheduleAssignments,
+  listActualLaborEntries,
+  listProjectScheduleDays,
+  listSchedulePickupItems,
 } from "@/lib/db";
 import { Card, PageHeader } from "@/components/ui";
 import { computeProjectCosting, formatCurrency, formatPercent, isActiveProjectStage, summarizeWeek } from "@/lib/calculations";
+import { computeActualLaborCosts } from "@/lib/labor-cost";
 import { addDays, isoDate, startOfWeek } from "@/lib/dates";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 
-const TABS = ["labor", "projects", "clients"] as const;
+const TABS = ["labor", "materials", "projects", "clients"] as const;
 type Tab = (typeof TABS)[number];
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -24,7 +28,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const { tab: tabParam } = await searchParams;
   const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "labor";
 
-  const [projects, buildings, clients, contacts, employees, assignments, projectMaterials] = await Promise.all([
+  const [projects, buildings, clients, contacts, employees, assignments, projectMaterials, actualEntries, scheduleDays, pickupItems] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -32,11 +36,14 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     listEmployees(),
     listScheduleAssignments(),
     listProjectMaterials(),
+    listActualLaborEntries(),
+    listProjectScheduleDays(),
+    listSchedulePickupItems(),
   ]);
 
   return (
     <div>
-      <PageHeader title="Reports" subtitle="Labor, project profitability, and client activity." />
+      <PageHeader title="Reports" subtitle="Labor, materials, project profitability, and client activity." />
       <div className="flex gap-2 mb-5">
         {TABS.map((t) => (
           <Link key={t} href={`/reports?tab=${t}`} className={`text-sm font-medium rounded-full px-4 py-1.5 border capitalize ${tab === t ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>
@@ -45,7 +52,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         ))}
       </div>
 
-      {tab === "labor" && <LaborReport assignments={assignments} employees={employees} projects={projects} buildings={buildings} />}
+      {tab === "labor" && <LaborReport assignments={assignments} employees={employees} projects={projects} buildings={buildings} actualEntries={actualEntries} />}
+      {tab === "materials" && <MaterialsReport projects={projects} buildings={buildings} projectMaterials={projectMaterials} scheduleDays={scheduleDays} pickupItems={pickupItems} />}
       {tab === "projects" && <ProjectsReport projects={projects} buildings={buildings} clients={clients} assignments={assignments} projectMaterials={projectMaterials} />}
       {tab === "clients" && <ClientsReport projects={projects} buildings={buildings} clients={clients} contacts={contacts} />}
     </div>
@@ -57,22 +65,29 @@ function LaborReport({
   employees,
   projects,
   buildings,
+  actualEntries,
 }: {
   assignments: Awaited<ReturnType<typeof listScheduleAssignments>>;
   employees: Awaited<ReturnType<typeof listEmployees>>;
   projects: Awaited<ReturnType<typeof listProjects>>;
   buildings: Awaited<ReturnType<typeof listBuildings>>;
+  actualEntries: Awaited<ReturnType<typeof listActualLaborEntries>>;
 }) {
   const monday = startOfWeek(new Date());
   const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));
   const week = summarizeWeek(assignments, weekDates);
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
 
+  // All-time labor by project / employee from ACTUAL hours logged on End
+  // of Day Review (the real spend), not the planned schedule cost.
   const byProject = new Map<string, number>();
   const byEmployee = new Map<string, number>();
-  for (const a of assignments) {
-    byProject.set(a.project_id, (byProject.get(a.project_id) ?? 0) + a.assignment_cost);
-    byEmployee.set(a.employee_id, (byEmployee.get(a.employee_id) ?? 0) + a.assignment_cost);
+  const entryById = new Map(actualEntries.map((e) => [e.id, e]));
+  for (const c of computeActualLaborCosts(actualEntries)) {
+    const e = entryById.get(c.entryId);
+    if (!e) continue;
+    byProject.set(e.project_id, (byProject.get(e.project_id) ?? 0) + c.cost);
+    byEmployee.set(e.employee_id, (byEmployee.get(e.employee_id) ?? 0) + c.cost);
   }
   const projectRows = Array.from(byProject.entries())
     .map(([id, cost]) => ({ project: projects.find((p) => p.id === id), cost }))
@@ -108,7 +123,7 @@ function LaborReport({
       </Card>
 
       <Card className="p-4">
-        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Labor Cost by Project (All Time)</h2>
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Labor Cost by Project (actual hours, all time)</h2>
         <table className="w-full text-sm">
           <tbody>
             {projectRows.map(({ project, cost }) => (
@@ -123,7 +138,7 @@ function LaborReport({
       </Card>
 
       <Card className="p-4">
-        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Labor Cost by Employee (All Time)</h2>
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Labor Cost by Employee (actual hours, all time)</h2>
         <table className="w-full text-sm">
           <tbody>
             {employeeRows.map(({ employee, cost }) => (
@@ -291,6 +306,115 @@ function ClientsReport({
             })}
           </tbody>
         </table>
+      </Card>
+    </div>
+  );
+}
+
+function MaterialsReport({
+  projects,
+  buildings,
+  projectMaterials,
+  scheduleDays,
+  pickupItems,
+}: {
+  projects: Awaited<ReturnType<typeof listProjects>>;
+  buildings: Awaited<ReturnType<typeof listBuildings>>;
+  projectMaterials: Awaited<ReturnType<typeof listProjectMaterials>>;
+  scheduleDays: Awaited<ReturnType<typeof listProjectScheduleDays>>;
+  pickupItems: Awaited<ReturnType<typeof listSchedulePickupItems>>;
+}) {
+  const buildingById = new Map(buildings.map((b) => [b.id, b]));
+  const projectById = new Map(projects.map((p) => [p.id, p]));
+  const dayProject = new Map(scheduleDays.map((d) => [d.id, d.project_id]));
+
+  // Every spend line: materials added on the job + priced schedule pickups.
+  const lines = [
+    ...projectMaterials.map((m) => ({ projectId: m.project_id, supplier: m.supplier?.trim() || "No supplier", cost: m.cost, date: m.ordered_at?.slice(0, 10) ?? m.created_at.slice(0, 10), description: m.description })),
+    ...pickupItems
+      .filter((i) => (i.cost ?? 0) > 0)
+      .map((i) => ({ projectId: dayProject.get(i.project_schedule_day_id) ?? "", supplier: "Schedule pickups", cost: i.cost ?? 0, date: i.created_at.slice(0, 10), description: i.description })),
+  ].filter((l) => l.projectId);
+
+  const bySupplier = new Map<string, { cost: number; count: number }>();
+  const byProject = new Map<string, number>();
+  for (const l of lines) {
+    const sup = bySupplier.get(l.supplier) ?? { cost: 0, count: 0 };
+    sup.cost += l.cost;
+    sup.count += 1;
+    bySupplier.set(l.supplier, sup);
+    byProject.set(l.projectId, (byProject.get(l.projectId) ?? 0) + l.cost);
+  }
+  const supplierRows = [...bySupplier.entries()].sort((a, b) => b[1].cost - a[1].cost);
+  const projectRows = [...byProject.entries()].map(([id, cost]) => ({ project: projectById.get(id), cost })).filter((r) => r.project).sort((a, b) => b.cost - a.cost);
+  const total = lines.reduce((s, l) => s + l.cost, 0);
+  const recent = [...lines].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 25);
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <Card className="p-4"><div className="text-xs text-slate-500 uppercase">Materials spend (all time)</div><div className="text-2xl font-semibold">{formatCurrency(total)}</div></Card>
+        <Card className="p-4"><div className="text-xs text-slate-500 uppercase">Suppliers used</div><div className="text-2xl font-semibold">{supplierRows.filter(([n]) => n !== "No supplier" && n !== "Schedule pickups").length}</div></Card>
+        <Card className="p-4"><div className="text-xs text-slate-500 uppercase">Lines recorded</div><div className="text-2xl font-semibold">{lines.length}</div></Card>
+      </div>
+
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Spend by Supplier</h2>
+        {supplierRows.length === 0 ? (
+          <p className="text-sm text-slate-500">No materials recorded yet. Add them on a job under Materials — with a supplier name to see it here.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <tbody>
+              {supplierRows.map(([name, v]) => (
+                <tr key={name} className="border-b border-slate-100 last:border-0">
+                  <td className="py-2">{name}</td>
+                  <td className="py-2 text-xs text-slate-500">{v.count} line{v.count === 1 ? "" : "s"}</td>
+                  <td className="py-2 text-right font-medium">{formatCurrency(v.cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Spend by Job</h2>
+        {projectRows.length === 0 ? (
+          <p className="text-sm text-slate-500">Nothing yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <tbody>
+              {projectRows.map(({ project, cost }) => (
+                <tr key={project!.id} className="border-b border-slate-100 last:border-0">
+                  <td className="py-2"><Link href={`/projects/${project!.id}`} className="text-sky-700 hover:underline">{project!.name}</Link></td>
+                  <td className="py-2 text-xs text-slate-500">{buildingById.get(project!.building_id)?.name}</td>
+                  <td className="py-2 text-right font-medium">{formatCurrency(cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Recent Purchases</h2>
+        {recent.length === 0 ? (
+          <p className="text-sm text-slate-500">Nothing yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <tbody>
+              {recent.map((l, i) => (
+                <tr key={i} className="border-b border-slate-100 last:border-0">
+                  <td className="py-1.5 text-xs text-slate-500 w-24">{l.date}</td>
+                  <td className="py-1.5">{l.description}</td>
+                  <td className="py-1.5 text-xs text-slate-500">{projectById.get(l.projectId)?.name}</td>
+                  <td className="py-1.5 text-xs text-slate-500">{l.supplier}</td>
+                  <td className="py-1.5 text-right font-medium">{formatCurrency(l.cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Card>
     </div>
   );

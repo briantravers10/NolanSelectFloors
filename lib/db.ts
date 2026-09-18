@@ -2076,11 +2076,24 @@ export async function deleteScheduleAssignment(id: string, actorName?: string): 
   }
 }
 
+export async function deleteProjectCrewRequirement(id: string): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("project_crew_requirements").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    store.projectCrewRequirements = store.projectCrewRequirements.filter((r) => r.id !== id);
+  }
+}
+
 export async function createProjectCrewRequirement(input: {
   project_id: string;
   schedule_date?: string | null;
   role: StaffCapability;
   quantity: number;
+  employee_ids?: string[];
+  estimated_days?: number | null;
 }): Promise<ProjectCrewRequirement> {
   const record: ProjectCrewRequirement = {
     id: randomUUID(),
@@ -2115,6 +2128,41 @@ export async function createProjectMaterial(input: Omit<ProjectMaterial, "id" | 
     getStore().projectMaterials.push(record);
   }
   return record;
+}
+
+/** Job-history line for a material purchase. */
+export async function logMaterialAdded(projectId: string, description: string, quantity: number, cost: number, supplier: string | undefined, actorName: string): Promise<void> {
+  logActivity({
+    action: "Added material",
+    related_type: "project",
+    related_id: projectId,
+    actor_name: actorName,
+    detail: `${quantity} × ${description}${supplier ? ` from ${supplier}` : ""} — $${cost.toFixed(2)}`,
+  });
+}
+
+export async function updateProjectMaterial(id: string, patch: Partial<Omit<ProjectMaterial, "id" | "company_id" | "project_id" | "created_at">>): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("project_materials").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const pm = getStore().projectMaterials.find((m) => m.id === id);
+    if (pm) Object.assign(pm, patch);
+  }
+}
+
+export async function deleteProjectMaterial(id: string, actorName?: string): Promise<void> {
+  const existing = (await listProjectMaterials()).find((m) => m.id === id);
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("project_materials").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore();
+    store.projectMaterials = store.projectMaterials.filter((m) => m.id !== id);
+  }
+  if (existing) logActivity({ action: "Removed material", related_type: "project", related_id: existing.project_id, actor_name: actorName, detail: existing.description });
 }
 
 export async function updateProjectMaterialStatus(id: string, status: ProjectMaterial["status"]): Promise<void> {
@@ -2564,6 +2612,7 @@ export async function createAgendaEvent(input: {
   related_type?: RelatedRecordType;
   related_id?: string;
   actorName?: string;
+  created_by_name?: string | null;
 }): Promise<AgendaEvent> {
   const now = new Date().toISOString();
   const record: AgendaEvent = {
@@ -2579,6 +2628,7 @@ export async function createAgendaEvent(input: {
     related_type: input.related_type ?? null,
     related_id: input.related_id ?? null,
     source: "Manual",
+    created_by_name: input.created_by_name ?? input.actorName ?? null,
     external_event_id: null,
     created_at: now,
     updated_at: now,
@@ -2615,6 +2665,20 @@ export async function updateAgendaEvent(
     if (entry) Object.assign(entry, patch, { updated_at: now });
   }
   logActivity({ action: "Edited agenda event", related_type: undefined, related_id: id, actor_name: actorName, detail: JSON.stringify(patch) });
+}
+
+export async function setAgendaEventCompleted(id: string, done: boolean, actorName?: string): Promise<void> {
+  const now = new Date().toISOString();
+  const patch = { completed_at: done ? now : null, updated_at: now };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("agenda_events").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const e = getStore().agendaEvents.find((x) => x.id === id);
+    if (e) Object.assign(e, patch);
+  }
+  logActivity({ action: done ? "Agenda item completed" : "Agenda item reopened", related_id: id, actor_name: actorName });
 }
 
 export async function deleteAgendaEvent(id: string, actorName?: string): Promise<void> {

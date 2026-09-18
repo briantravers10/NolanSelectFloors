@@ -513,6 +513,10 @@ export interface ProjectCrewRequirement {
   schedule_date?: string | null;
   role: StaffCapability;
   quantity: number;
+  // Estimating: the specific people pencilled in for this role (their
+  // day rates drive the labor estimate) and how many days.
+  employee_ids?: string[];
+  estimated_days?: number | null;
 }
 
 export interface ScheduleAssignment {
@@ -552,9 +556,15 @@ export interface ProjectMaterial {
   description: string;
   quantity: number;
   unit?: string;
+  // Price per unit; `cost` = quantity × unit_price (kept as the stored
+  // total so older rows and reports keep working).
+  unit_price?: number | null;
   cost: number;
   status: MaterialStatus;
   supplier?: string;
+  // Optional invoice/receipt file in Supabase Storage.
+  invoice_path?: string | null;
+  invoice_name?: string | null;
   ordered_at?: string;
   expected_delivery?: string;
   delivered_at?: string;
@@ -946,6 +956,10 @@ export interface AgendaEvent {
   related_type?: RelatedRecordType | null;
   related_id?: string | null;
   source: AgendaEventSource;
+  // Ticked off (from My Agenda or End of Day Review); who added it, so
+  // the office can fill the boss's agenda and he can see who asked.
+  completed_at?: string | null;
+  created_by_name?: string | null;
   /** Placeholder for a future Google Calendar event id, to prevent
    * duplicate sync inserts. Always null until real sync is built. */
   external_event_id?: string | null;

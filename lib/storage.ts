@@ -110,3 +110,32 @@ export async function uploadInvoiceFile(file: File, invoiceId: string): Promise<
 export function isFileStorageConfigured(): boolean {
   return getSupabaseClient() !== null;
 }
+
+const MATERIAL_INVOICE_BUCKET = process.env.SUPABASE_MATERIAL_INVOICES_BUCKET || "material-invoices";
+
+/** Invoice/receipt for a material line — same soft-fail pattern. */
+export async function uploadMaterialInvoice(file: File, projectMaterialId: string): Promise<PhotoUploadResult> {
+  const client = getSupabaseClient();
+  if (!client) return { unavailable: true, error: "File storage is not configured." };
+  try {
+    const path = `materials/${projectMaterialId}/${randomUUID()}-${file.name}`;
+    const arrayBuffer = await file.arrayBuffer();
+    const { error } = await client.storage.from(MATERIAL_INVOICE_BUCKET).upload(path, arrayBuffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+    if (error) return { unavailable: true, error: error.message };
+    return { storage_path: path, unavailable: false };
+  } catch (err) {
+    return { unavailable: true, error: err instanceof Error ? err.message : "Unknown storage error" };
+  }
+}
+
+/** Short-lived link to a stored material invoice (private bucket). */
+export async function materialInvoiceUrl(path: string): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data, error } = await client.storage.from(MATERIAL_INVOICE_BUCKET).createSignedUrl(path, 60 * 60);
+  if (error || !data) return null;
+  return data.signedUrl;
+}

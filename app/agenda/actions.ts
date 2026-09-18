@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createAgendaEvent, deleteAgendaEvent } from "@/lib/db";
+import { createAgendaEvent, deleteAgendaEvent, setAgendaEventCompleted } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { syncAgendaWithGoogleCalendar, type SyncResult } from "@/lib/google-calendar";
 import type { RelatedRecordType } from "@/lib/types";
@@ -18,8 +18,11 @@ export async function createAgendaEventAction(formData: FormData) {
   const related_id = String(formData.get("related_id") ?? "") || undefined;
 
   const actingUser = await getActingUser();
+  // Whose agenda: office staff can add straight onto the boss's.
+  const owner_user_id = String(formData.get("owner_user_id") ?? "") || actingUser.id;
   await createAgendaEvent({
-    owner_user_id: actingUser.id,
+    owner_user_id,
+    created_by_name: actingUser.fullName,
     title,
     event_date,
     start_time,
@@ -31,6 +34,16 @@ export async function createAgendaEventAction(formData: FormData) {
     actorName: actingUser.fullName,
   });
   revalidatePath("/agenda");
+  revalidatePath("/schedule/review");
+  revalidatePath("/dashboard");
+}
+
+export async function setAgendaCompletedAction(id: string, done: boolean) {
+  const actingUser = await getActingUser();
+  await setAgendaEventCompleted(id, done, actingUser.fullName);
+  revalidatePath("/agenda");
+  revalidatePath("/schedule/review");
+  revalidatePath("/dashboard");
 }
 
 export async function deleteAgendaEventAction(id: string) {
