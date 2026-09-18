@@ -25,7 +25,7 @@ import { Card, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { EditableTitle } from "@/components/projects/EditableTitle";
 import { CrewRequirementForm } from "@/components/projects/CrewRequirementForm";
 import { AddMaterialForm } from "@/components/projects/AddMaterialForm";
-import { isFileStorageConfigured, materialInvoiceUrl } from "@/lib/storage";
+import { drawingFileUrl, isFileStorageConfigured, materialInvoiceUrl } from "@/lib/storage";
 import { canEdit } from "@/lib/permissions";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
@@ -142,6 +142,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canViewRates = canViewLaborCost(actingUser);
   const storageConfigured = isFileStorageConfigured();
   const supplierNames = [...new Set(materials.map((m) => m.supplier?.trim()).filter((x): x is string => Boolean(x)))].sort();
+  const drawingUrls = new Map<string, string>();
+  for (const d of projectDrawings) {
+    if (d.file_reference && !d.storage_unavailable) {
+      const url = await drawingFileUrl(d.file_reference);
+      if (url) drawingUrls.set(d.id, url);
+    }
+  }
   const invoiceUrls = new Map<string, string>();
   for (const m of projectMaterialsList) {
     if (m.invoice_path) {
@@ -605,7 +612,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                           File storage isn&apos;t configured yet — this entry was saved without a file.
                         </div>
                       ) : (
-                        <div className="text-xs text-slate-500 mb-1">Stored at {d.file_reference}</div>
+                        drawingUrls.get(d.id) ? (
+                          <a href={drawingUrls.get(d.id)!} target="_blank" rel="noreferrer" className="inline-block text-xs text-sky-700 hover:underline mb-1">Open file ↗</a>
+                        ) : (
+                          <div className="text-xs text-slate-500 mb-1">Stored at {d.file_reference}</div>
+                        )
                       )}
                       {history.length > 0 && (
                         <details className="mt-1">

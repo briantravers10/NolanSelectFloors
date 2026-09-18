@@ -29,6 +29,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/materials", label: "Materials", icon: "box", sectionKey: "materials" },
   { href: "/pricing", label: "Pricing", icon: "chart", sectionKey: "pricing" },
   { href: "/invoices", label: "Invoices", icon: "clipboard", sectionKey: "invoices" },
+  // Drawings / invoices forwarded from the office Gmail, waiting to be filed.
+  { href: "/inbox", label: "Email Inbox", icon: "inbox", sectionKey: "projects" },
   { href: "/tasks", label: "Tasks", icon: "check", sectionKey: "tasks" },
   { href: "/new-business", label: "New Business", icon: "spark", sectionKey: "new_business" },
   { href: "/reports", label: "Reports", icon: "chart", sectionKey: "reports" },

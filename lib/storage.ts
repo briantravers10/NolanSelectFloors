@@ -133,9 +133,43 @@ export async function uploadMaterialInvoice(file: File, projectMaterialId: strin
 
 /** Short-lived link to a stored material invoice (private bucket). */
 export async function materialInvoiceUrl(path: string): Promise<string | null> {
+  return signedFileUrl(path, MATERIAL_INVOICE_BUCKET);
+}
+
+export async function drawingFileUrl(reference: string): Promise<string | null> {
+  return signedFileUrl(reference, DRAWINGS_BUCKET);
+}
+
+const INBOUND_BUCKET = "inbound-email";
+
+/** Stores an attachment pulled from an inbound email. */
+export async function uploadInboundAttachment(bytes: ArrayBuffer, filename: string, contentType: string | undefined, emailId: string): Promise<PhotoUploadResult> {
+  const client = getSupabaseClient();
+  if (!client) return { unavailable: true, error: "File storage is not configured." };
+  try {
+    const safe = filename.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120) || "attachment";
+    const path = `${emailId}/${randomUUID()}-${safe}`;
+    const { error } = await client.storage.from(INBOUND_BUCKET).upload(path, bytes, { contentType: contentType || "application/octet-stream", upsert: false });
+    if (error) return { unavailable: true, error: error.message };
+    return { storage_path: path, unavailable: false };
+  } catch (err) {
+    return { unavailable: true, error: err instanceof Error ? err.message : "Unknown storage error" };
+  }
+}
+
+/**
+ * Signed link for any stored file reference. Plain paths are assumed to
+ * be in `defaultBucket`; "bucket:path" references (used for files filed
+ * from email) name their own bucket.
+ */
+export async function signedFileUrl(reference: string, defaultBucket: string): Promise<string | null> {
   const client = getSupabaseClient();
   if (!client) return null;
-  const { data, error } = await client.storage.from(MATERIAL_INVOICE_BUCKET).createSignedUrl(path, 60 * 60);
+  const idx = reference.indexOf(":");
+  const hasBucketPrefix = idx > 0 && !reference.slice(0, idx).includes("/");
+  const bucket = hasBucketPrefix ? reference.slice(0, idx) : defaultBucket;
+  const path = hasBucketPrefix ? reference.slice(idx + 1) : reference;
+  const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 60 * 60);
   if (error || !data) return null;
   return data.signedUrl;
 }

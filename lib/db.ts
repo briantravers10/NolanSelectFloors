@@ -71,6 +71,8 @@ import type {
   TimeOffEntry,
   TimeOffType,
   WorkTypeRecord,
+  InboundEmail,
+  InboundKind,
 } from "./types";
 import { UNASSIGNED_CLIENT_NAME } from "./types";
 
@@ -3175,4 +3177,100 @@ export async function logQuickBooksSyncEvent(input: {
   } else {
     getStore().quickbooksSyncLog.unshift(record);
   }
+}
+
+
+// ---------------------------------------------------------------------
+// EMAIL INTAKE (drawings / invoices forwarded from Gmail)
+// ---------------------------------------------------------------------
+
+export async function listInboundEmails(): Promise<InboundEmail[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("inbound_emails").select("*").order("received_at", { ascending: false });
+    if (!error && data) return data as InboundEmail[];
+  }
+  return [...getStore().inboundEmails].sort((a, b) => b.received_at.localeCompare(a.received_at));
+}
+
+export async function createInboundEmail(input: Omit<InboundEmail, "id" | "company_id" | "created_at">): Promise<InboundEmail> {
+  const record: InboundEmail = { id: randomUUID(), company_id: getCurrentCompanyId(), created_at: new Date().toISOString(), ...input };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("inbound_emails").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().inboundEmails.push(record);
+  }
+  return record;
+}
+
+export async function updateInboundEmail(id: string, patch: Partial<Omit<InboundEmail, "id" | "company_id" | "created_at">>): Promise<void> {
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("inbound_emails").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const e = getStore().inboundEmails.find((x) => x.id === id);
+    if (e) Object.assign(e, patch);
+  }
+}
+
+/**
+ * Files an inbound email onto a job: drawings become Drawings entries
+ * (one per attachment), invoices become a Materials line with the file
+ * attached plus an Invoice record. Logged to the job's history.
+ */
+export async function fileInboundEmail(id: string, projectId: string, kind: InboundKind, actorName: string): Promise<void> {
+  const email = (await listInboundEmails()).find((e) => e.id === id);
+  if (!email) throw new Error("Email not found");
+  const now = new Date().toISOString();
+  const attachments = email.attachments.filter((a) => a.storage_path);
+  const label = email.subject?.trim() || attachments[0]?.filename || "Email attachment";
+  const sender = email.from_name?.trim() || email.from_email?.split("@")[0] || "email";
+
+  if (kind === "invoice") {
+    await createProjectMaterial({
+      project_id: projectId,
+      description: label,
+      quantity: 1,
+      unit: "unit",
+      unit_price: null,
+      cost: 0,
+      status: "Ordered",
+      supplier: email.from_name?.trim() || undefined,
+      ordered_at: email.received_at,
+      notes: `Invoice emailed by ${email.from_email ?? "unknown sender"}`,
+      invoice_path: attachments[0] ? `inbound-email:${attachments[0].storage_path}` : null,
+      invoice_name: attachments[0]?.filename ?? null,
+    });
+    await createInvoice({
+      supplier: email.from_name?.trim() || email.from_email || "Unknown supplier",
+      invoice_date: email.received_at.slice(0, 10),
+      related_project_id: projectId,
+      file_reference: attachments[0] ? `inbound-email:${attachments[0].storage_path}` : undefined,
+      notes: `From email: ${label}`,
+      status: "Received",
+      source: "Email Auto-Routed",
+    });
+  } else {
+    for (const a of attachments) {
+      await createProjectDrawing({
+        project_id: projectId,
+        drawing_name: a.filename.replace(/\.[a-z0-9]+$/i, ""),
+        file_reference: `inbound-email:${a.storage_path}`,
+        uploaded_by: `${sender} (email)`,
+        notes: label !== a.filename ? `From email: ${label}` : undefined,
+      });
+    }
+  }
+
+  await updateInboundEmail(id, { status: "filed", filed_project_id: projectId, filed_kind: kind, filed_by: actorName, filed_at: now });
+  logActivity({
+    action: kind === "invoice" ? "Invoice filed from email" : "Drawing filed from email",
+    related_type: "project",
+    related_id: projectId,
+    actor_name: actorName,
+    detail: `${label} — ${attachments.length} file${attachments.length === 1 ? "" : "s"} from ${email.from_email ?? "unknown"}`,
+  });
 }

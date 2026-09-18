@@ -1111,3 +1111,42 @@ export interface QuickBooksSyncLogEntry {
 /** Placeholder management company a Quick Job building is filed under when
  * the real company isn't known yet (see lib/db.ts getOrCreateUnassignedClient). */
 export const UNASSIGNED_CLIENT_NAME = "Unassigned — add management company later";
+
+// ---------------------------------------------------------------------
+// EMAIL INTAKE — drawings / invoices forwarded from the office Gmail to
+// the app's intake address (see app/api/inbound/resend/route.ts and
+// migration 0023). Auto-filed when the building/job match is certain,
+// otherwise held in the Unfiled tray at /inbox.
+// ---------------------------------------------------------------------
+export type InboundKind = "drawing" | "invoice" | "unknown";
+export type InboundStatus = "unfiled" | "filed" | "ignored";
+
+export interface InboundAttachment {
+  id: string;
+  filename: string;
+  content_type?: string;
+  size?: number;
+  storage_path?: string; // in bucket "inbound-email"
+}
+
+export interface InboundEmail {
+  id: string;
+  company_id: string;
+  provider_email_id: string;
+  from_email?: string | null;
+  from_name?: string | null;
+  to_email?: string | null;
+  subject?: string | null;
+  text_preview?: string | null;
+  received_at: string;
+  kind: InboundKind;
+  status: InboundStatus;
+  suggested_building_id?: string | null;
+  suggested_project_id?: string | null;
+  filed_project_id?: string | null;
+  filed_kind?: string | null;
+  filed_by?: string | null;
+  filed_at?: string | null;
+  attachments: InboundAttachment[];
+  created_at: string;
+}

@@ -52,6 +52,7 @@ import type {
   TimeOffEntry,
   User,
   WorkTypeRecord,
+  InboundEmail,
 } from "./types";
 
 // A fixed, valid UUID rather than a readable "co-1"-style id: this value is
@@ -1131,6 +1132,7 @@ export function buildSeedData() {
   // ---------------------------------------------------------------------
   const quickbooksConnections: QuickBooksConnection[] = [];
   const quickbooksCustomerMappings: QuickBooksCustomerMapping[] = [];
+  const inboundEmails: InboundEmail[] = [];
   const quickbooksDocuments: QuickBooksDocument[] = [];
   const quickbooksWebhookEvents: QuickBooksWebhookEvent[] = [];
   const quickbooksSyncLog: QuickBooksSyncLogEntry[] = [];
@@ -1248,6 +1250,7 @@ export function buildSeedData() {
     dailyScheduleConfirmations,
     quickbooksConnections,
     quickbooksCustomerMappings,
+    inboundEmails,
     quickbooksDocuments,
     quickbooksWebhookEvents,
     quickbooksSyncLog,
