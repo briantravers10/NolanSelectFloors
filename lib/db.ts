@@ -2102,6 +2102,8 @@ export async function createProjectCrewRequirement(input: {
     schedule_date: input.schedule_date ?? null,
     role: input.role,
     quantity: input.quantity,
+    employee_ids: input.employee_ids ?? [],
+    estimated_days: input.estimated_days ?? null,
   };
   const client = sb();
   if (client) {

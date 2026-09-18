@@ -40,7 +40,6 @@ import {
   computeProjectCosting,
   formatCurrency,
   formatPercent,
-  isMissingDriver,
 } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
 import { PIPELINE_STAGES } from "@/lib/types";
@@ -290,7 +289,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 {scheduledDates.map((date) => {
                   const dayAssignments = projectAssignments.filter((a) => a.schedule_date === date);
                   const crewComparison = compareCrewForProjectDate(crewRequirements, assignments, id, date);
-                  const missingDriver = isMissingDriver(project, assignments, employees, id, date);
                   const dayCost = dayAssignments.reduce((s, a) => s + a.assignment_cost, 0);
                   return (
                     <div key={date} className="border border-slate-100 rounded-lg p-3">
@@ -314,7 +312,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                             {c.complete ? "✓" : "⚠"} {c.role} {c.assigned}/{c.required}
                           </span>
                         ))}
-                        {missingDriver && <span className="text-[11px] rounded px-1.5 py-0.5 bg-rose-50 text-rose-700 font-medium">⚠ NO DRIVER ASSIGNED</span>}
                       </div>
                     </div>
                   );
