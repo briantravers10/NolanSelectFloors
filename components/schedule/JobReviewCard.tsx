@@ -12,20 +12,23 @@ import { saveJobHoursAction, setReviewJobStatusAction } from "@/app/schedule/act
  * END OF DAY REVIEW — one card per job on the day:
  *   • Status dropdown: still going / completed today (drives the schedule
  *     carry-over and the project's stage, same as Schedule Type).
- *   • Who worked + hours each, prefilled from the schedule's crew (8 hrs),
- *     with anyone extra addable. Saving writes actual_labor_entries — the
- *     real basis for labor cost. The estimate column is a quick guide:
- *     hourly = hours × rate, daily = daily rate × hours ÷ 8. Final costing
- *     (lib/labor-cost.ts) splits a daily rate across every job that person
- *     did that day, so the two can differ slightly when someone works two
- *     jobs in one day.
+ *   • Who worked + hours each, prefilled from the schedule's crew (8 hrs,
+ *     or 8 split across their jobs when someone is double-booked), with
+ *     anyone extra addable. Saving writes actual_labor_entries — the real
+ *     basis for labor cost. The estimate column is a quick guide:
+ *     hourly = hours × rate, daily = daily rate × hours ÷ 8, never more
+ *     than one day rate. Final costing (lib/labor-cost.ts) splits a daily
+ *     rate across every job that person did that day — a person is paid
+ *     one day rate per day no matter how many jobs they were on; the hours
+ *     here only decide how that cost is shared between the jobs.
  */
 type PayInfo = { pay_type: "daily" | "hourly"; daily_rate?: number; hourly_rate?: number };
 
 function estimate(hours: number, pay?: PayInfo): number | null {
   if (!pay) return null;
   if (pay.pay_type === "hourly") return pay.hourly_rate ? Math.round(hours * pay.hourly_rate * 100) / 100 : null;
-  return pay.daily_rate ? Math.round(((pay.daily_rate * hours) / 8) * 100) / 100 : null;
+  // Day-rate people never earn more than one day rate in a day.
+  return pay.daily_rate ? Math.min(pay.daily_rate, Math.round(((pay.daily_rate * hours) / 8) * 100) / 100) : null;
 }
 
 export function JobReviewCard({
@@ -33,11 +36,14 @@ export function JobReviewCard({
   employees,
   entries,
   canViewCost,
+  jobsToday,
 }: {
   row: ScheduleJobRow;
   employees: Employee[];
   entries: ActualLaborEntry[]; // this project + date
   canViewCost: boolean;
+  /** How many jobs each person is on this day (across the whole schedule). */
+  jobsToday?: Record<string, number>;
 }) {
   const employeeById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   const entryByEmployee = useMemo(() => new Map(entries.map((e) => [e.employee_id, e])), [entries]);
@@ -50,9 +56,12 @@ export function JobReviewCard({
   }, [row.crew, entries]);
 
   const [ids, setIds] = useState<string[]>(initialIds);
+  const jobCount = (id: string) => Math.max(1, jobsToday?.[id] ?? 1);
   const [hours, setHours] = useState<Record<string, string>>(() => {
     const h: Record<string, string> = {};
-    for (const id of initialIds) h[id] = String(entryByEmployee.get(id)?.hours ?? 8);
+    // Double-booked people start with their 8 hours split across their jobs
+    // so the day rate is shared, not doubled.
+    for (const id of initialIds) h[id] = String(entryByEmployee.get(id)?.hours ?? 8 / jobCount(id));
     return h;
   });
   const [addId, setAddId] = useState("");
@@ -66,6 +75,7 @@ export function JobReviewCard({
   });
   const total = lines.reduce((s, l) => s + (l.est ?? 0), 0);
   const notListed = employees.filter((e) => !ids.includes(e.id));
+  const doubleBooked = lines.filter((l) => jobCount(l.id) > 1);
 
   return (
     <div className={`border-2 rounded-xl px-3 py-2.5 ${isComplete ? "border-emerald-400 bg-emerald-50" : SCHEDULE_COLOR_BLOCK_CLASSES[row.scheduleColor]}`}>
@@ -118,6 +128,11 @@ export function JobReviewCard({
                 <td className="py-1 pr-2 text-slate-900">
                   {l.emp ? employeeDisplayName(l.emp) : l.id}
                   {entryByEmployee.has(l.id) && <span className="ml-1.5 text-[10px] text-emerald-700">logged</span>}
+                  {jobCount(l.id) > 1 && (
+                    <span className="ml-1.5 text-[10px] font-medium text-amber-700" title="Paid one day rate for the day; hours only split it between jobs">
+                      on {jobCount(l.id)} jobs today
+                    </span>
+                  )}
                 </td>
                 <td className="py-1">
                   <input
@@ -157,6 +172,12 @@ export function JobReviewCard({
             </tfoot>
           )}
         </table>
+        {doubleBooked.length > 0 && (
+          <p className="mt-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+            {doubleBooked.map((l) => (l.emp ? employeeDisplayName(l.emp) : l.id)).join(", ")} {doubleBooked.length === 1 ? "is" : "are"} on more than one job today.
+            They&apos;re paid one day rate for the day no matter what — the hours here only decide how much of it this job carries.
+          </p>
+        )}
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <select value={addId} onChange={(e) => setAddId(e.target.value)} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm max-w-[240px]">

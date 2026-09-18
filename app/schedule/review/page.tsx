@@ -52,6 +52,10 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
 
   const rows = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems });
   const workingRows = rows.filter((r) => !r.weekendOff);
+  // How many jobs each person is on today — a double-booked person is paid
+  // one day rate, so the review cards split their hours instead of doubling.
+  const jobsToday: Record<string, number> = {};
+  for (const r of workingRows) for (const c of r.crew) jobsToday[c.employeeId] = (jobsToday[c.employeeId] ?? 0) + 1;
   // Everyone's agenda items for the day, grouped by whose agenda.
   const userName = new Map(officeUsers.map((u) => [u.id, u.full_name]));
   const dayAgendaMap = new Map<string, typeof agendaEvents>();
@@ -98,6 +102,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
                 employees={employees.filter((e) => e.active)}
                 entries={actualLaborEntries.filter((e) => e.project_id === row.projectId && e.work_date === date)}
                 canViewCost={canViewCost}
+                jobsToday={jobsToday}
               />
             ))
           )}

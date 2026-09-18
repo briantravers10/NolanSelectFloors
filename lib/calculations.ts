@@ -43,19 +43,57 @@ export function assignmentsForProject(assignments: ScheduleAssignment[], project
   return assignments.filter((a) => a.project_id === projectId);
 }
 
+/**
+ * PLANNED cost per assignment with the "one day rate per person per day"
+ * rule. A double-booked person (two jobs, same date) is still paid ONE
+ * day rate — never two — so their day's cost (the highest single
+ * assignment_cost that day, which covers a 1.5x day) is split evenly
+ * across the jobs they're on. The last share absorbs rounding so a
+ * person's shares always sum to exactly one day rate.
+ * Returns assignment id → that job's share of the person's day.
+ */
+export function plannedAssignmentShares(assignments: ScheduleAssignment[]): Map<string, number> {
+  const grouped = new Map<string, ScheduleAssignment[]>();
+  for (const a of assignments) {
+    const k = `${a.employee_id}__${a.schedule_date}`;
+    if (!grouped.has(k)) grouped.set(k, []);
+    grouped.get(k)!.push(a);
+  }
+  const shares = new Map<string, number>();
+  for (const group of grouped.values()) {
+    const dayPay = Math.max(0, ...group.map((a) => a.assignment_cost));
+    let allocated = 0;
+    group.forEach((a, i) => {
+      const isLast = i === group.length - 1;
+      const share = isLast ? round2(dayPay - allocated) : round2(dayPay / group.length);
+      allocated = round2(allocated + share);
+      shares.set(a.id, share);
+    });
+  }
+  return shares;
+}
+
+/** Sum of planned shares (one day rate per person per day) for a subset of assignments. */
+export function plannedCostOf(subset: ScheduleAssignment[], shares: Map<string, number>): number {
+  return round2(subset.reduce((sum, a) => sum + (shares.get(a.id) ?? a.assignment_cost), 0));
+}
+
 /** Daily man count + labor cost, broken into normal vs time-and-half. */
 export function summarizeDay(assignments: ScheduleAssignment[], date: string): DayLaborSummary {
   const dayAssignments = assignmentsForDate(assignments, date);
+  const shares = plannedAssignmentShares(dayAssignments);
   const normal = dayAssignments.filter((a) => !a.time_and_half);
   const overtime = dayAssignments.filter((a) => a.time_and_half);
+  // A double-booked person counts once: one man, one day rate.
+  const people = new Set(dayAssignments.map((a) => a.employee_id));
   return {
     date,
-    manCount: dayAssignments.length,
-    laborCost: round2(dayAssignments.reduce((sum, a) => sum + a.assignment_cost, 0)),
-    normalCost: round2(normal.reduce((sum, a) => sum + a.assignment_cost, 0)),
-    timeAndHalfCost: round2(overtime.reduce((sum, a) => sum + a.assignment_cost, 0)),
-    normalDays: normal.length,
-    timeAndHalfDays: overtime.length,
+    manCount: people.size,
+    laborCost: plannedCostOf(dayAssignments, shares),
+    normalCost: plannedCostOf(normal, shares),
+    timeAndHalfCost: plannedCostOf(overtime, shares),
+    normalDays: new Set(normal.map((a) => a.employee_id)).size,
+    timeAndHalfDays: new Set(overtime.map((a) => a.employee_id)).size,
   };
 }
 
@@ -77,9 +115,13 @@ export function summarizeWeek(assignments: ScheduleAssignment[], weekDates: stri
   };
 }
 
-/** Total labor cost for a project across every scheduled date. */
+/**
+ * Total planned labor cost for a project across every scheduled date.
+ * Pass ALL assignments (not just this project's) so a person who is on
+ * another job the same day only contributes their share of one day rate.
+ */
 export function projectLaborCost(assignments: ScheduleAssignment[], projectId: string): number {
-  return round2(assignmentsForProject(assignments, projectId).reduce((sum, a) => sum + a.assignment_cost, 0));
+  return plannedCostOf(assignmentsForProject(assignments, projectId), plannedAssignmentShares(assignments));
 }
 
 export interface CrewComparisonRow {

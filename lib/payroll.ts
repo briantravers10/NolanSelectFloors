@@ -36,6 +36,11 @@ const STANDARD_DAY_HOURS = 8;
  * A day with nothing logged but a schedule assignment counts as a
  * standard 8-hour day at the planned assignment cost, flagged so the
  * office knows it still needs confirming. Grouped by tax status.
+ *
+ * One person is only ever paid one day rate per day, however many jobs
+ * they were on: computeActualLaborCosts splits a day-rate person's single
+ * rate across their jobs by hours, and the schedule fallback takes one
+ * assignment's cost rather than summing them.
  */
 export function buildPayroll(weekDates: string[], employees: Employee[], entries: ActualLaborEntry[], assignments: ScheduleAssignment[]): PayrollGroup[] {
   const dateSet = new Set(weekDates);
@@ -57,7 +62,9 @@ export function buildPayroll(weekDates: string[], employees: Employee[], entries
       }
       const sched = weekAssignments.filter((a) => a.employee_id === emp.id && a.schedule_date === date);
       if (sched.length > 0) {
-        return { date, hours: STANDARD_DAY_HOURS, fromSchedule: true, pay: round2(sched.reduce((s, a) => s + a.assignment_cost, 0)) };
+        // Double-booked (two jobs, one day) still means ONE day rate — take
+        // the highest single assignment cost, never the sum.
+        return { date, hours: STANDARD_DAY_HOURS, fromSchedule: true, pay: round2(Math.max(0, ...sched.map((a) => a.assignment_cost))) };
       }
       return { date, hours: 0, fromSchedule: false, pay: 0 };
     });

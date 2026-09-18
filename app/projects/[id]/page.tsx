@@ -36,6 +36,8 @@ import { getQuickBooksConnection, listQuickBooksDocumentsForProject } from "@/li
 import {
   compareCrewForProjectDate,
   computeProjectCosting,
+  plannedAssignmentShares,
+  plannedCostOf,
   formatCurrency,
   formatPercent,
 } from "@/lib/calculations";
@@ -134,6 +136,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   }
 
   const costing = computeProjectCosting(project, assignments, materials, id);
+  // One day rate per person per day — a double-booked person's day is split
+  // between their jobs, so this project only carries its share.
+  const plannedShares = plannedAssignmentShares(assignments);
   const canEditMaterials = await canEdit("materials");
   const canViewRates = canViewLaborCost(actingUser);
   const storageConfigured = isFileStorageConfigured();
@@ -294,7 +299,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 {scheduledDates.map((date) => {
                   const dayAssignments = projectAssignments.filter((a) => a.schedule_date === date);
                   const crewComparison = compareCrewForProjectDate(crewRequirements, assignments, id, date);
-                  const dayCost = dayAssignments.reduce((s, a) => s + a.assignment_cost, 0);
+                  const dayCost = plannedCostOf(dayAssignments, plannedShares);
                   return (
                     <div key={date} className="border border-slate-100 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-1.5">

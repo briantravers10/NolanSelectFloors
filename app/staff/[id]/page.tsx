@@ -10,7 +10,7 @@ import {
   listTimeOffForEmployee,
 } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, EmailLink, Stat, EmptyState, Button } from "@/components/ui";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, plannedAssignmentShares, plannedCostOf } from "@/lib/calculations";
 import { employeeLaborHistory, payRateLabel } from "@/lib/labor-cost";
 import { canEditPayRates, canEditTimeOffAllowance, canViewLaborCost, canViewTimeOffAllowance, getActingUser } from "@/lib/current-user";
 import { addDays, dayLabel, formatDateLong, formatDateShort, isoDate, startOfWeek, todayIso } from "@/lib/dates";
@@ -56,7 +56,10 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
   const weekAssignments = assignments.filter((a) => a.employee_id === id && weekDates.includes(a.schedule_date));
   const normalDays = weekAssignments.filter((a) => !a.time_and_half).length;
   const otDays = weekAssignments.filter((a) => a.time_and_half).length;
-  const weeklyCost = weekAssignments.reduce((sum, a) => sum + a.assignment_cost, 0);
+  // One day rate per day even when double-booked: cost each assignment at
+  // its share of that day's single rate.
+  const plannedShares = plannedAssignmentShares(weekAssignments);
+  const weeklyCost = plannedCostOf(weekAssignments, plannedShares);
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
 
@@ -119,7 +122,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
                         return (
                           <Link key={a.id} href={`/projects/${a.project_id}`} className="flex items-center justify-between text-sm py-1 hover:text-sky-600">
                             <span>{building?.name}{project?.unit_number ? ` — Unit ${project.unit_number}` : ""} · {a.role_on_job}{a.time_and_half ? " (1.5x)" : ""}</span>
-                            <span className="text-slate-500">{formatCurrency(a.assignment_cost)}</span>
+                            <span className="text-slate-500">{formatCurrency(plannedShares.get(a.id) ?? a.assignment_cost)}</span>
                           </Link>
                         );
                       })}

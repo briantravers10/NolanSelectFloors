@@ -22,7 +22,7 @@ import type {
   SchedulePickupItem,
   WorkTypeRecord,
 } from "./types";
-import { round2 } from "./calculations";
+import { plannedAssignmentShares, plannedCostOf, round2 } from "./calculations";
 import { employeeDisplayName } from "./employee-name";
 import { jobLaborSummary } from "./labor-cost";
 import { isWeekend } from "./dates";
@@ -496,6 +496,7 @@ export function compileCompletedJobSummary(
   // actual_labor_entries via lib/labor-cost.ts — never manually entered.
   const laborCostSummary = jobLaborSummary(project.id, opts.actualLaborEntries, opts.employees);
   const laborCostByEmployee = new Map(laborCostSummary.rows.map((r) => [r.employee_id, r.totalCost]));
+  const plannedShares = plannedAssignmentShares(opts.assignments);
 
   const labor: CompletedJobEmployeeLabor[] = employeeIds.map((employeeId) => {
     const actualsForEmployee = projectActuals.filter((a) => a.employee_id === employeeId);
@@ -525,7 +526,9 @@ export function compileCompletedJobSummary(
       source: "planned-fallback",
       // Planned day-rate cost from the schedule, so the job still has a
       // labor figure until hours are confirmed on End of Day Review.
-      laborCost: round2(plannedForEmployee.reduce((sum, a) => sum + a.assignment_cost, 0)),
+      // One day rate per person per day: if they were also on another job
+      // that day, this job only carries its share (lib/calculations.ts).
+      laborCost: plannedCostOf(plannedForEmployee, plannedShares),
     };
   });
 
