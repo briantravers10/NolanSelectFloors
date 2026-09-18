@@ -565,6 +565,8 @@ export interface ProjectMaterial {
   // Optional invoice/receipt file in Supabase Storage.
   invoice_path?: string | null;
   invoice_name?: string | null;
+  // Set when this line was created from a schedule "item to collect".
+  pickup_item_id?: string | null;
   ordered_at?: string;
   expected_delivery?: string;
   delivered_at?: string;

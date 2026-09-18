@@ -108,18 +108,20 @@ export function ScheduleDayRowCard({ row, editableNotes = false }: { row: Schedu
             <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${MATERIALS_CLASSES[row.materialsStatus]}`}>
               Materials: {MATERIALS_DISPLAY_LABELS[row.materialsStatus]}
             </span>
-            {row.pickupItems.length > 0 && (
-              <span className="text-[11px] text-slate-800">
-                <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mr-1">Collect</span>
-                {row.pickupItems.map((item, i) => (
-                  <span key={item.id} className={item.status === "Collected" ? "line-through text-slate-500" : ""}>
-                    {i > 0 && ", "}
-                    {item.description}
-                  </span>
-                ))}
-              </span>
-            )}
           </div>
+          {row.pickupItems.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-yellow-400 bg-yellow-200 px-2 py-1">
+              <span className="text-[10px] font-bold text-yellow-900 uppercase tracking-wide">Collect / Order</span>
+              {row.pickupItems.map((item) => (
+                <span
+                  key={item.id}
+                  className={`rounded px-1.5 py-0.5 text-[12px] font-medium ${item.status === "Collected" ? "bg-white/60 text-slate-500 line-through" : "bg-white text-yellow-950 border border-yellow-500"}`}
+                >
+                  {item.description}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Right: notes in their own box (editable in place on Create/Edit) */}

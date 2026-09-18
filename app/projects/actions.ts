@@ -9,6 +9,7 @@ import {
   createProjectNote,
   deleteProjectCrewRequirement,
   deleteProjectMaterial,
+  listProjectMaterials,
   logMaterialAdded,
   updateProjectMaterial,
   setSchedulePickupItemCost,
@@ -275,4 +276,18 @@ export async function renameProjectAction(projectId: string, formData: FormData)
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
   revalidatePath("/schedule");
+}
+
+/** Inline price on a Materials line (e.g. an item collected off the schedule). */
+export async function setMaterialUnitPriceAction(projectId: string, materialId: string, formData: FormData) {
+  if (!(await canEdit("materials"))) return;
+  const raw = String(formData.get("unit_price") ?? "").trim();
+  const unit_price = raw === "" ? null : Math.max(0, Number(raw) || 0);
+  const material = (await listProjectMaterials()).find((m) => m.id === materialId);
+  if (!material) return;
+  const cost = Math.round((material.quantity || 1) * (unit_price ?? 0) * 100) / 100;
+  await updateProjectMaterial(materialId, { unit_price, cost });
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/materials");
+  revalidatePath("/reports");
 }

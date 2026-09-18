@@ -23,6 +23,7 @@ import {
   createScheduleAssignment,
   createQuickProject,
   createSchedulePickupItem,
+  ensureMaterialForPickup,
   createWorkType,
   deleteActualLaborEntry,
   deleteScheduleAssignment,
@@ -155,8 +156,11 @@ export async function addPickupItemAction(projectId: string, date: string, formD
   if (!projectId || !date || !description) return;
   const actingUser = await getActingUser();
   const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
-  await createSchedulePickupItem({ project_schedule_day_id: day.id, description, actorName: actingUser.fullName });
+  const item = await createSchedulePickupItem({ project_schedule_day_id: day.id, description, actorName: actingUser.fullName });
+  // Also a line in the job's Materials so a price can go on it later.
+  await ensureMaterialForPickup(item, projectId);
   revalidateSchedule(projectId);
+  revalidatePath("/materials");
 }
 
 export async function togglePickupItemStatusAction(id: string, projectId: string) {

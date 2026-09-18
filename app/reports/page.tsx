@@ -8,8 +8,6 @@ import {
   listProjects,
   listScheduleAssignments,
   listActualLaborEntries,
-  listProjectScheduleDays,
-  listSchedulePickupItems,
 } from "@/lib/db";
 import { Card, PageHeader } from "@/components/ui";
 import { computeProjectCosting, formatCurrency, formatPercent, isActiveProjectStage, summarizeWeek } from "@/lib/calculations";
@@ -28,7 +26,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const { tab: tabParam } = await searchParams;
   const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : "labor";
 
-  const [projects, buildings, clients, contacts, employees, assignments, projectMaterials, actualEntries, scheduleDays, pickupItems] = await Promise.all([
+  const [projects, buildings, clients, contacts, employees, assignments, projectMaterials, actualEntries] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -37,8 +35,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     listScheduleAssignments(),
     listProjectMaterials(),
     listActualLaborEntries(),
-    listProjectScheduleDays(),
-    listSchedulePickupItems(),
   ]);
 
   return (
@@ -53,7 +49,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       </div>
 
       {tab === "labor" && <LaborReport assignments={assignments} employees={employees} projects={projects} buildings={buildings} actualEntries={actualEntries} />}
-      {tab === "materials" && <MaterialsReport projects={projects} buildings={buildings} projectMaterials={projectMaterials} scheduleDays={scheduleDays} pickupItems={pickupItems} />}
+      {tab === "materials" && <MaterialsReport projects={projects} buildings={buildings} projectMaterials={projectMaterials} />}
       {tab === "projects" && <ProjectsReport projects={projects} buildings={buildings} clients={clients} assignments={assignments} projectMaterials={projectMaterials} />}
       {tab === "clients" && <ClientsReport projects={projects} buildings={buildings} clients={clients} contacts={contacts} />}
     </div>
@@ -315,25 +311,17 @@ function MaterialsReport({
   projects,
   buildings,
   projectMaterials,
-  scheduleDays,
-  pickupItems,
 }: {
   projects: Awaited<ReturnType<typeof listProjects>>;
   buildings: Awaited<ReturnType<typeof listBuildings>>;
   projectMaterials: Awaited<ReturnType<typeof listProjectMaterials>>;
-  scheduleDays: Awaited<ReturnType<typeof listProjectScheduleDays>>;
-  pickupItems: Awaited<ReturnType<typeof listSchedulePickupItems>>;
 }) {
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
-  const dayProject = new Map(scheduleDays.map((d) => [d.id, d.project_id]));
 
   // Every spend line: materials added on the job + priced schedule pickups.
   const lines = [
     ...projectMaterials.map((m) => ({ projectId: m.project_id, supplier: m.supplier?.trim() || "No supplier", cost: m.cost, date: m.ordered_at?.slice(0, 10) ?? m.created_at.slice(0, 10), description: m.description })),
-    ...pickupItems
-      .filter((i) => (i.cost ?? 0) > 0)
-      .map((i) => ({ projectId: dayProject.get(i.project_schedule_day_id) ?? "", supplier: "Schedule pickups", cost: i.cost ?? 0, date: i.created_at.slice(0, 10), description: i.description })),
   ].filter((l) => l.projectId);
 
   const bySupplier = new Map<string, { cost: number; count: number }>();

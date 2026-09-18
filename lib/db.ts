@@ -1092,6 +1092,27 @@ export async function createSchedulePickupItem(input: {
 /** Flips a pickup item between Needed and Collected — the checkbox-equivalent
  * toggle, only ever done from Create/Edit Schedule (never from the
  * read-only View Schedule, same convention as every other schedule field). */
+/** The Materials line that mirrors a schedule pickup item, if any. */
+async function materialForPickup(pickupItemId: string): Promise<ProjectMaterial | undefined> {
+  return (await listProjectMaterials()).find((m) => m.pickup_item_id === pickupItemId);
+}
+
+/** Creates the Materials line for a pickup item (no price yet). */
+export async function ensureMaterialForPickup(item: SchedulePickupItem, projectId: string): Promise<void> {
+  if (await materialForPickup(item.id)) return;
+  await createProjectMaterial({
+    project_id: projectId,
+    description: item.description,
+    quantity: 1,
+    unit: "unit",
+    unit_price: null,
+    cost: 0,
+    status: item.status === "Collected" ? "Delivered" : "Needed",
+    notes: "From the schedule (item to collect)",
+    pickup_item_id: item.id,
+  });
+}
+
 export async function toggleSchedulePickupItemStatus(id: string, actorName: string): Promise<SchedulePickupItem | undefined> {
   const items = await listSchedulePickupItems();
   const existing = items.find((i) => i.id === id);
@@ -1119,6 +1140,8 @@ export async function toggleSchedulePickupItemStatus(id: string, actorName: stri
 export async function deleteSchedulePickupItem(id: string, actorName: string): Promise<void> {
   const items = await listSchedulePickupItems();
   const existing = items.find((i) => i.id === id);
+  const mirrored = await materialForPickup(id);
+  if (mirrored && !mirrored.cost) await deleteProjectMaterial(mirrored.id);
   const client = sb();
   if (client) {
     const { error } = await client.from("schedule_pickup_items").delete().eq("id", id);

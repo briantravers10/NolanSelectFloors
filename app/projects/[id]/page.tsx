@@ -13,8 +13,6 @@ import {
   listPricingFormulaComponents,
   listPricingFormulas,
   listProjectMaterials,
-  listProjectScheduleDays,
-  listSchedulePickupItems,
   listProjectNotes,
   listProjects,
   listProjectWorkTypes,
@@ -47,7 +45,7 @@ import {
   deleteCrewRequirementAction,
   deleteProjectMaterialAction,
   addProjectDrawingAction,
-  setPickupItemCostAction,
+  setMaterialUnitPriceAction,
   addProjectNoteAction,
   addProjectPhotoAction,
   addProjectTaskAction,
@@ -70,8 +68,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     employeeSkills,
     crewRequirements,
     materials,
-    scheduleDays,
-    pickupItemsAll,
     tasks,
     notes,
     ,
@@ -95,8 +91,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listEmployeeSkills(),
     listCrewRequirements(),
     listProjectMaterials(),
-    listProjectScheduleDays(),
-    listSchedulePickupItems(),
     listTasks(),
     listProjectNotes(),
     listOfficeUsers(),
@@ -126,14 +120,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const scheduledDates = Array.from(new Set(projectAssignments.map((a) => a.schedule_date))).sort();
   const projectCrewReqs = crewRequirements.filter((r) => r.project_id === id);
   const projectMaterialsList = materials.filter((m) => m.project_id === id);
-  // Quick "Items to Order / Collect" added on the schedule for this job —
-  // listed here so a price can be put against them.
-  const dayById = new Map(scheduleDays.filter((d) => d.project_id === id).map((d) => [d.id, d]));
-  const projectPickupItems = pickupItemsAll
-    .filter((i) => dayById.has(i.project_schedule_day_id))
-    .map((i) => ({ ...i, date: dayById.get(i.project_schedule_day_id)!.schedule_date }))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at));
-  const pickupCostTotal = projectPickupItems.reduce((sum, i) => sum + (i.cost ?? 0), 0);
   const projectTasks = tasks.filter((t) => t.related_type === "project" && t.related_id === id);
   const projectNotes = notes.filter((n) => n.project_id === id);
   const employeeById = new Map(employees.map((e) => [e.id, e]));
@@ -151,7 +137,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     drawingsByName.get(key)!.push(d);
   }
 
-  const costing = computeProjectCosting(project, assignments, materials, id, pickupCostTotal);
+  const costing = computeProjectCosting(project, assignments, materials, id);
   const canEditMaterials = await canEdit("materials");
   const canViewRates = canViewLaborCost(actingUser);
   const storageConfigured = isFileStorageConfigured();
@@ -400,41 +386,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <Link href="/materials" className="text-sm text-sky-600 hover:underline">All materials →</Link>
             </div>
             {canEditMaterials && <AddMaterialForm projectId={project.id} suppliers={supplierNames} storageConfigured={storageConfigured} />}
-            {projectPickupItems.length > 0 && (
-              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Items to Order / Collect (from the schedule)</div>
-                  <div className="text-xs text-slate-600">Total {formatCurrency(pickupCostTotal)}</div>
-                </div>
-                <div className="divide-y divide-slate-200">
-                  {projectPickupItems.map((item) => (
-                    <div key={item.id} className="py-1.5 flex flex-wrap items-center gap-2 text-sm">
-                      <span className={`flex-1 min-w-[160px] ${item.status === "Collected" ? "line-through text-slate-500" : "text-slate-800"}`}>
-                        {item.description}
-                        <span className="ml-2 text-xs text-slate-500">{item.date}</span>
-                      </span>
-                      <span className={`text-xs font-medium ${item.status === "Collected" ? "text-emerald-700" : "text-amber-700"}`}>
-                        {item.status === "Collected" ? "✓ Collected" : "Needed"}
-                      </span>
-                      <form action={setPickupItemCostAction.bind(null, project.id, item.id)} className="flex items-center gap-1">
-                        <span className="text-slate-500 text-xs">$</span>
-                        <input
-                          name="cost"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          defaultValue={item.cost ?? ""}
-                          placeholder="0.00"
-                          className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm text-right"
-                        />
-                        <button type="submit" className="text-xs rounded-lg border border-slate-300 bg-white px-2 py-1 hover:bg-slate-100">Save</button>
-                      </form>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1.5">Prices here are included in the Materials cost below.</p>
-              </div>
-            )}
             {projectMaterialsList.length === 0 ? (
               <EmptyState message="No materials added for this job yet." />
             ) : (
@@ -454,9 +405,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <tbody>
                   {projectMaterialsList.map((m) => (
                     <tr key={m.id} className="border-b border-slate-100 last:border-0">
-                      <td className="py-1.5 text-slate-800">{m.description}</td>
+                      <td className="py-1.5 text-slate-800">
+                        {m.description}
+                        {m.pickup_item_id && <span className="ml-1.5 rounded bg-yellow-200 text-yellow-900 text-[10px] font-semibold px-1 py-0.5 align-middle">from schedule</span>}
+                      </td>
                       <td className="py-1.5 text-right tabular-nums">{m.quantity}</td>
-                      <td className="py-1.5 text-right tabular-nums">{m.unit_price != null ? formatCurrency(m.unit_price) : "—"}</td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {canEditMaterials ? (
+                          <form action={setMaterialUnitPriceAction.bind(null, project.id, m.id)} className="inline-flex items-center gap-1 justify-end">
+                            <span className="text-slate-400 text-xs">$</span>
+                            <input name="unit_price" type="number" step="0.01" min="0" defaultValue={m.unit_price ?? ""} placeholder="0.00" className="w-20 rounded-md border border-slate-300 px-1.5 py-0.5 text-sm text-right" />
+                            <button type="submit" className="text-[11px] rounded-md border border-slate-300 bg-white px-1.5 py-0.5 hover:bg-slate-100">Save</button>
+                          </form>
+                        ) : m.unit_price != null ? (
+                          formatCurrency(m.unit_price)
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="py-1.5 text-right tabular-nums font-medium">{formatCurrency(m.cost)}</td>
                       <td className="py-1.5 text-slate-600">{m.supplier ?? "—"}</td>
                       <td className="py-1.5 text-slate-600">{m.ordered_at ? m.ordered_at.slice(0, 10) : "—"}</td>
@@ -483,7 +449,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-slate-200">
-                    <td className="py-1.5 text-xs text-slate-600" colSpan={3}>Materials total (incl. schedule pickups)</td>
+                    <td className="py-1.5 text-xs text-slate-600" colSpan={3}>Materials total</td>
                     <td className="py-1.5 text-right font-semibold tabular-nums">{formatCurrency(costing.materialCost)}</td>
                     <td colSpan={4} />
                   </tr>
