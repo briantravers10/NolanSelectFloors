@@ -17,6 +17,7 @@ import {
   listContacts,
   listProjects,
   removeProjectFromSchedule,
+  setScheduleOrder,
   updateBuilding,
   updateContact,
   updateProjectUnitNumber,
@@ -515,4 +516,13 @@ export async function saveJobHoursAction(projectId: string, date: string, formDa
   revalidatePath("/reports");
   revalidatePath("/payroll");
   revalidatePath("/staff");
+}
+
+/** Drag-to-rearrange on Create/Edit Schedule (order within colour groups). */
+export async function reorderScheduleAction(date: string, orderedProjectIds: string[]) {
+  if (!(await canEdit("schedule"))) return;
+  const actingUser = await getActingUser();
+  await setScheduleOrder(date, orderedProjectIds.filter(Boolean), actingUser.fullName);
+  revalidateSchedule();
+  revalidatePath("/schedule/edit");
 }

@@ -858,6 +858,9 @@ export interface ProjectScheduleDay {
   job_status: ScheduleJobStatus;
   work_type_id?: string | null;
   notes?: string;
+  // Manual position within the colour group (drag to rearrange on
+  // Create/Edit Schedule). Colour priority always comes first.
+  sort_order?: number | null;
   created_by?: string;
   updated_by?: string;
   created_at: string;

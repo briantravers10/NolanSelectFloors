@@ -905,6 +905,7 @@ export async function getOrCreateProjectScheduleDay(projectId: string, date: str
     record.materials_status = prior.materials_status;
     record.work_type_id = prior.work_type_id;
     record.notes = prior.notes;
+    record.sort_order = prior.sort_order ?? null;
   }
   const client = sb();
   let saved: ProjectScheduleDay = record;
@@ -969,6 +970,22 @@ export async function removeProjectFromSchedule(projectId: string, date: string 
     actor_name: actorName,
     detail: date ? `Removed the ${date} entry` : `Removed every schedule entry (${dayIds.length} day${dayIds.length === 1 ? "" : "s"})`,
   });
+}
+
+/** Saves the drag order of a day's jobs: position within the list, per
+ * project. Creates the day row for carried-over jobs so the order sticks. */
+export async function setScheduleOrder(date: string, orderedProjectIds: string[], actorName: string): Promise<void> {
+  const client = sb();
+  for (const [index, projectId] of orderedProjectIds.entries()) {
+    const day = await getOrCreateProjectScheduleDay(projectId, date, actorName);
+    if (day.sort_order === index) continue;
+    if (client) {
+      const { error } = await client.from("project_schedule_days").update({ sort_order: index }).eq("id", day.id);
+      if (error) throw error;
+    } else {
+      day.sort_order = index;
+    }
+  }
 }
 
 type ScheduleDayPatch = Partial<

@@ -21,6 +21,7 @@ import { employeeDisplayName } from "@/lib/employee-name";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { ScheduleEditForm } from "@/components/schedule/ScheduleEditForm";
 import { ScheduleDayRowCard } from "@/components/schedule/ScheduleDayRowCard";
+import { DraggableTiles } from "@/components/schedule/DraggableTiles";
 import { QuickJobForm } from "@/components/schedule/QuickJobForm";
 import { PrintButton } from "@/components/PrintButton";
 
@@ -157,16 +158,18 @@ export default async function ScheduleEditPage({
               <EmptyState message="Nothing on the schedule for this day yet. Pick a job in the form, or use Quick Job for a small one-off." />
             </Card>
           ) : (
-            <div className="flex flex-col gap-2">
-              {rowsForDate.map((row) => {
-                const isSelected = row.projectId === selectedProjectId;
-                return (
-                  <div key={row.key} className={`rounded-xl ${isSelected ? "ring-2 ring-sky-400" : ""}`}>
+            <DraggableTiles
+              date={date}
+              items={rowsForDate.map((row) => ({
+                projectId: row.projectId,
+                color: row.weekendOff ? "off" : row.scheduleColor,
+                node: (
+                  <div className={`rounded-xl ${row.projectId === selectedProjectId ? "ring-2 ring-sky-400" : ""}`}>
                     <ScheduleDayRowCard row={row} editableNotes />
                   </div>
-                );
-              })}
-            </div>
+                ),
+              }))}
+            />
           )}
         </div>
 

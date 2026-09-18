@@ -45,12 +45,17 @@ export function scheduleColorPriority(color: ScheduleColor): number {
  * job's crew for the day where one exists, then alphabetically as a stable
  * final tiebreak.
  */
-export function sortScheduleDayRows<T extends { scheduleColor: ScheduleColor; earliestCallTime?: string | null; sortLabel?: string }>(
+export function sortScheduleDayRows<T extends { scheduleColor: ScheduleColor; earliestCallTime?: string | null; sortLabel?: string; sortOrder?: number | null }>(
   rows: T[]
 ): T[] {
   return [...rows].sort((a, b) => {
     const p = scheduleColorPriority(a.scheduleColor) - scheduleColorPriority(b.scheduleColor);
     if (p !== 0) return p;
+    // Manual drag order within the colour group; anything without one
+    // falls in after the ordered ones.
+    const oa = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+    const ob = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+    if (oa !== ob) return oa - ob;
     const ta = parseCallTimeMinutes(a.earliestCallTime);
     const tb = parseCallTimeMinutes(b.earliestCallTime);
     if (ta !== tb) return ta - tb;
@@ -216,6 +221,7 @@ export interface ScheduleJobRow {
   // until someone ticks "Working this Saturday", which creates the real
   // day row (and only then does crew / labor cost count for that day).
   weekendOff?: boolean;
+  sortOrder?: number | null;
   // "Items to Order / Collect" (build 8) — empty when the job/day has no
   // project_schedule_days row yet, or none were added.
   pickupItems: SchedulePickupItem[];
@@ -362,6 +368,7 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       earliestCallTime,
       carriedFrom,
       weekendOff: Boolean(carriedFrom) && isWeekend(date),
+      sortOrder: scheduleDay?.sort_order ?? null,
       pickupItems: scheduleDay ? pickupItems.filter((i) => i.project_schedule_day_id === scheduleDay.id) : [],
       qbDocuments: qbDocuments.filter((d) => d.project_id === projectId),
     });

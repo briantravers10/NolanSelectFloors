@@ -57,6 +57,9 @@ export function ScheduleEditForm({
       </p>
 
       <form action={saveScheduleEntryAction} className="space-y-5">
+        <Button type="submit" className="w-full justify-center">
+          Save to Schedule
+        </Button>
         <div>
           <label className="block text-sm font-semibold text-slate-800 mb-1.5">Date</label>
           <input
