@@ -244,7 +244,25 @@ export async function getDashboardData() {
     .sort((a, b) => (a.start_date! < b.start_date! ? -1 : 1))
     .map((p) => ({ project: p, building: buildingById.get(p.building_id) }));
 
+  // Completed jobs nobody has marked "Invoice Sent" on yet — shows on
+  // every dashboard until one person ticks it.
+  const invoicesToSend = projects
+    .filter((p) => p.pipeline_stage === "Complete" && !p.invoice_sent_at)
+    .map((p) => {
+      const building = buildings.find((b) => b.id === p.building_id);
+      const client = building ? clientCompanies.find((c) => c.id === building.client_company_id) : undefined;
+      return {
+        projectId: p.id,
+        name: `${building?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}`,
+        clientName: client?.name,
+        completedOn: p.project_completed_at?.slice(0, 10) ?? null,
+        value: p.project_value,
+      };
+    })
+    .sort((a, b) => (a.completedOn ?? "").localeCompare(b.completedOn ?? ""));
+
   return {
+    invoicesToSend,
     today,
     todaysJobs,
     totalJobs: todaysJobs.length,

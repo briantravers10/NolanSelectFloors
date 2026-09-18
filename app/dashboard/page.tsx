@@ -6,6 +6,8 @@ import { Card, PageHeader, Stat, StatusBadge, AlertPill, EmptyState } from "@/co
 import { Icon } from "@/components/Icon";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
+import { markInvoiceSentAction } from "./actions";
+import { Button } from "@/components/ui";
 
 export default async function DashboardPage() {
   const access = await requireSectionAccess("dashboard");
@@ -30,6 +32,35 @@ export default async function DashboardPage() {
           }
         />
       </div>
+
+      {data.invoicesToSend.length > 0 && (
+        <Card className="p-4 mb-5 border-amber-300 bg-amber-50">
+          <div className="flex items-center gap-2 mb-2">
+            <Icon name="alert" className="w-4 h-4 text-amber-700" />
+            <h2 className="text-sm font-semibold text-amber-900 uppercase tracking-wide">
+              Invoices to send — {data.invoicesToSend.length} completed {data.invoicesToSend.length === 1 ? "job" : "jobs"}
+            </h2>
+          </div>
+          <div className="divide-y divide-amber-200">
+            {data.invoicesToSend.map((j) => (
+              <div key={j.projectId} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <Link href={`/projects/${j.projectId}`} className="text-sm font-medium text-slate-900 hover:text-sky-700">{j.name}</Link>
+                  <div className="text-xs text-slate-600">
+                    {j.clientName ?? "No management company"}
+                    {j.completedOn ? ` · completed ${formatDateLong(j.completedOn)}` : ""}
+                    {j.value ? ` · ${formatCurrency(j.value)}` : ""}
+                  </div>
+                </div>
+                <form action={markInvoiceSentAction.bind(null, j.projectId, true)}>
+                  <Button type="submit" variant="secondary" className="text-xs py-1.5">✓ Invoice Sent</Button>
+                </form>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-amber-800 mt-2">Marking a job here clears it from everyone&apos;s dashboard. Undo from the job page if it was a mistake.</p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">

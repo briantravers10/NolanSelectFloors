@@ -1846,6 +1846,20 @@ function stampOnce(project: Project, field: keyof Project, iso: string) {
   if (!project[field]) (project as unknown as Record<string, unknown>)[field] = iso;
 }
 
+export async function setProjectInvoiceSent(id: string, sent: boolean, actorName: string): Promise<void> {
+  const now = new Date().toISOString();
+  const patch = { invoice_sent_at: sent ? now : null, invoice_sent_by: sent ? actorName : null, updated_at: now };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("projects").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const project = getStore().projects.find((p) => p.id === id);
+    if (project) Object.assign(project, patch);
+  }
+  logActivity({ action: sent ? "Invoice sent" : "Invoice marked not sent", related_type: "project", related_id: id, actor_name: actorName });
+}
+
 export async function updateProjectName(id: string, name: string, actorName: string): Promise<void> {
   const project = (await listProjects()).find((p) => p.id === id);
   if (!project) throw new Error("Project not found");

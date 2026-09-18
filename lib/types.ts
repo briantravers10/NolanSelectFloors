@@ -380,6 +380,10 @@ export interface Project {
   sent_to_crew_at?: string | null;
   project_started_at?: string | null;
   project_completed_at?: string | null;
+  // "Invoice Sent" — reminder on every dashboard for a completed job
+  // until someone marks it (migration 0025).
+  invoice_sent_at?: string | null;
+  invoice_sent_by?: string | null;
 }
 
 export interface OfficeUser {

@@ -26,6 +26,7 @@ import { CrewRequirementForm } from "@/components/projects/CrewRequirementForm";
 import { AddMaterialForm } from "@/components/projects/AddMaterialForm";
 import { drawingFileUrl, isFileStorageConfigured, materialInvoiceUrl } from "@/lib/storage";
 import { canEdit } from "@/lib/permissions";
+import { markInvoiceSentAction } from "@/app/dashboard/actions";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
 import { FinancialSummaryCard } from "@/components/quickbooks/FinancialSummaryCard";
@@ -175,8 +176,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <EditableTitle projectId={project.id} name={project.name} canEdit={canEditProjects} />
           {building && <p className="text-sm text-slate-500 mt-0.5">{building.name} · {client?.name ?? ""}</p>}
         </div>
-        <div className="flex flex-wrap gap-1.5 justify-end">
+        <div className="flex flex-wrap items-center gap-1.5 justify-end">
           <StatusBadge status={project.pipeline_stage} />
+          {project.pipeline_stage === "Complete" && (
+            project.invoice_sent_at ? (
+              <form action={markInvoiceSentAction.bind(null, project.id, false)} className="flex items-center gap-1.5">
+                <span className="inline-flex items-center rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-0.5 text-xs font-medium">
+                  Invoice sent{project.invoice_sent_by ? ` by ${project.invoice_sent_by}` : ""} · {formatDateLong(project.invoice_sent_at.slice(0, 10))}
+                </span>
+                {canEditProjects && <button type="submit" className="text-[11px] text-slate-500 hover:text-rose-700 underline">undo</button>}
+              </form>
+            ) : (
+              <form action={markInvoiceSentAction.bind(null, project.id, true)}>
+                <button type="submit" className="inline-flex items-center rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 text-xs font-medium hover:bg-amber-200">
+                  Invoice not sent yet — mark sent
+                </button>
+              </form>
+            )
+          )}
         </div>
       </div>
 
