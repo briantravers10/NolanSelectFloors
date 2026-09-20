@@ -6,21 +6,35 @@ import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
 import type { InboundKind } from "@/lib/types";
 
-function refresh(projectId?: string) {
+function refresh(projectId?: string | null) {
   revalidatePath("/inbox");
-  revalidatePath("/invoices");
   revalidatePath("/materials");
+  revalidatePath("/suppliers");
+  revalidatePath("/drawings");
+  revalidatePath("/reports");
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
 export async function fileInboundAction(id: string, formData: FormData) {
   if (!(await canEdit("projects"))) return;
-  const projectId = String(formData.get("project_id") ?? "");
+  const projectId = String(formData.get("project_id") ?? "").trim() || null;
   const kindRaw = String(formData.get("kind") ?? "");
   const kind: InboundKind = kindRaw === "invoice" ? "invoice" : "drawing";
-  if (!projectId) return;
+  if (kind === "drawing" && !projectId) return;
+  const amountRaw = String(formData.get("amount") ?? "").replace(/[$,\s]/g, "");
+  const amount = amountRaw === "" ? null : Number(amountRaw);
   const actingUser = await getActingUser();
-  await fileInboundEmail(id, projectId, kind, actingUser.fullName);
+  await fileInboundEmail(
+    id,
+    {
+      kind,
+      projectId,
+      supplier: String(formData.get("supplier") ?? "").trim() || undefined,
+      amount: amount != null && Number.isFinite(amount) ? amount : null,
+      invoiceDate: String(formData.get("invoice_date") ?? "").trim() || undefined,
+    },
+    actingUser.fullName
+  );
   refresh(projectId);
 }
 

@@ -319,19 +319,27 @@ function MaterialsReport({
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
 
-  // Every spend line: materials added on the job + priced schedule pickups.
-  const lines = [
-    ...projectMaterials.map((m) => ({ projectId: m.project_id, supplier: m.supplier?.trim() || "No supplier", cost: m.cost, date: m.ordered_at?.slice(0, 10) ?? m.created_at.slice(0, 10), description: m.description })),
-  ].filter((l) => l.projectId);
+  // Every spend line: materials added on a job, priced schedule pickups,
+  // and supplier-only invoices (no job). One record each, so the company
+  // total here is complete and nothing is counted twice.
+  const lines = projectMaterials.map((m) => ({
+    projectId: m.project_id,
+    supplier: m.supplier?.trim() || "No supplier",
+    cost: m.cost,
+    date: m.ordered_at?.slice(0, 10) ?? m.created_at.slice(0, 10),
+    description: m.description,
+  }));
 
   const bySupplier = new Map<string, { cost: number; count: number }>();
   const byProject = new Map<string, number>();
+  let unlinked = 0;
   for (const l of lines) {
     const sup = bySupplier.get(l.supplier) ?? { cost: 0, count: 0 };
     sup.cost += l.cost;
     sup.count += 1;
     bySupplier.set(l.supplier, sup);
-    byProject.set(l.projectId, (byProject.get(l.projectId) ?? 0) + l.cost);
+    if (l.projectId) byProject.set(l.projectId, (byProject.get(l.projectId) ?? 0) + l.cost);
+    else unlinked += l.cost;
   }
   const supplierRows = [...bySupplier.entries()].sort((a, b) => b[1].cost - a[1].cost);
   const projectRows = [...byProject.entries()].map(([id, cost]) => ({ project: projectById.get(id), cost })).filter((r) => r.project).sort((a, b) => b.cost - a.cost);
@@ -340,8 +348,9 @@ function MaterialsReport({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-4"><div className="text-xs text-slate-500 uppercase">Materials spend (all time)</div><div className="text-2xl font-semibold">{formatCurrency(total)}</div></Card>
+        <Card className="p-4"><div className="text-xs text-slate-500 uppercase">Not linked to a job</div><div className="text-2xl font-semibold">{formatCurrency(unlinked)}</div><Link href="/suppliers" className="text-xs text-sky-600 hover:underline">Suppliers →</Link></Card>
         <Card className="p-4"><div className="text-xs text-slate-500 uppercase">Suppliers used</div><div className="text-2xl font-semibold">{supplierRows.filter(([n]) => n !== "No supplier" && n !== "Schedule pickups").length}</div></Card>
         <Card className="p-4"><div className="text-xs text-slate-500 uppercase">Lines recorded</div><div className="text-2xl font-semibold">{lines.length}</div></Card>
       </div>
@@ -395,7 +404,7 @@ function MaterialsReport({
                 <tr key={i} className="border-b border-slate-100 last:border-0">
                   <td className="py-1.5 text-xs text-slate-500 w-24">{l.date}</td>
                   <td className="py-1.5">{l.description}</td>
-                  <td className="py-1.5 text-xs text-slate-500">{projectById.get(l.projectId)?.name}</td>
+                  <td className="py-1.5 text-xs text-slate-500">{l.projectId ? projectById.get(l.projectId)?.name : <span className="text-amber-700">No job</span>}</td>
                   <td className="py-1.5 text-xs text-slate-500">{l.supplier}</td>
                   <td className="py-1.5 text-right font-medium">{formatCurrency(l.cost)}</td>
                 </tr>

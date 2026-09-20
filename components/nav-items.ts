@@ -27,6 +27,11 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/schedule", label: "Schedule", icon: "calendar", sectionKey: "schedule" },
   { href: "/staff", label: "Staff", icon: "users", sectionKey: "staff" },
   { href: "/materials", label: "Materials", icon: "box", sectionKey: "materials" },
+  // Spend by supplier — the same invoice/material lines as the job pages,
+  // plus supplier-only invoices not linked to any job. Gated with Materials.
+  { href: "/suppliers", label: "Suppliers", icon: "building-2", sectionKey: "materials" },
+  // Every drawing across every job in one searchable library.
+  { href: "/drawings", label: "Drawings", icon: "clipboard", sectionKey: "projects" },
   { href: "/pricing", label: "Pricing", icon: "chart", sectionKey: "pricing" },
   { href: "/invoices", label: "Invoices", icon: "clipboard", sectionKey: "invoices" },
   // Drawings / invoices forwarded from the office Gmail, waiting to be filed.

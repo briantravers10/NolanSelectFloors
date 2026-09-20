@@ -18,12 +18,12 @@ export default async function MaterialsPage() {
   const today = todayIso();
   const soon = isoDate(addDays(new Date(), 5));
   const activeMaterials = projectMaterials.filter((m) => {
-    const p = projectById.get(m.project_id);
+    const p = m.project_id ? projectById.get(m.project_id) : undefined;
     return p && isActiveProjectStage(p);
   });
 
   const warnings = activeMaterials.filter((m) => {
-    const p = projectById.get(m.project_id);
+    const p = m.project_id ? projectById.get(m.project_id) : undefined;
     if (!p?.start_date) return false;
     return p.start_date >= today && p.start_date <= soon && m.status !== "Delivered" && m.status !== "Returned";
   });
@@ -37,7 +37,7 @@ export default async function MaterialsPage() {
           <div className="text-sm font-semibold text-amber-800 mb-2">Delivery Warnings — jobs starting soon without delivered materials</div>
           <ul className="text-sm text-amber-800 space-y-1">
             {warnings.map((m) => {
-              const p = projectById.get(m.project_id);
+              const p = m.project_id ? projectById.get(m.project_id) : undefined;
               const b = p ? buildingById.get(p.building_id) : undefined;
               return (
                 <li key={m.id}>
@@ -82,7 +82,7 @@ export default async function MaterialsPage() {
                 <tr><td colSpan={6}><EmptyState message="No materials tracked yet." /></td></tr>
               )}
               {activeMaterials.map((m) => {
-                const p = projectById.get(m.project_id);
+                const p = m.project_id ? projectById.get(m.project_id) : undefined;
                 const b = p ? buildingById.get(p.building_id) : undefined;
                 return (
                   <tr key={m.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">

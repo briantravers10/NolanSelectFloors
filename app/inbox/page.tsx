@@ -1,12 +1,14 @@
 import Link from "next/link";
-import { listBuildings, listClientCompanies, listInboundEmails, listProjects } from "@/lib/db";
-import { Card, PageHeader, EmptyState, Button } from "@/components/ui";
+import { listBuildings, listClientCompanies, listInboundEmails, listProjectMaterials, listProjects } from "@/lib/db";
+import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
 import { isActiveProjectStage } from "@/lib/calculations";
 import { signedFileUrl } from "@/lib/storage";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
-import { fileInboundAction, ignoreInboundAction, reopenInboundAction } from "./actions";
+import { ignoreInboundAction, reopenInboundAction } from "./actions";
+import { FileInboundForm } from "@/components/inbox/FileInboundForm";
+import { supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
 
 /**
  * EMAIL INBOX — drawings and invoices forwarded from the office Gmail.
@@ -18,7 +20,15 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const access = await requireSectionAccess("projects");
   if (access === "none") return <AccessDenied section="Email Inbox" />;
   const { show } = await searchParams;
-  const [emails, projects, buildings, clients, editable] = await Promise.all([listInboundEmails(), listProjects(), listBuildings(), listClientCompanies(), canEdit("projects")]);
+  const [emails, projects, buildings, clients, editable, materials] = await Promise.all([listInboundEmails(), listProjects(), listBuildings(), listClientCompanies(), canEdit("projects"), listProjectMaterials()]);
+  const supplierNames = [...new Set(materials.map((m) => supplierKey(m)))].filter((n) => n !== NO_SUPPLIER).sort();
+  // Best guess at the supplier from the sender: display name, else the
+  // part of the domain before the dot ("orders@homedepotpro.com" → "homedepotpro").
+  const guessSupplier = (fromName?: string | null, fromEmail?: string | null) => {
+    if (fromName?.trim()) return fromName.trim();
+    const domain = fromEmail?.split("@")[1]?.split(".")[0];
+    return domain ? domain.charAt(0).toUpperCase() + domain.slice(1) : "";
+  };
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
@@ -93,20 +103,16 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     </div>
                   </div>
                   {editable && (
-                    <div className="flex flex-col gap-2 min-w-[280px]">
-                      <form action={fileInboundAction.bind(null, e.id)} className="flex flex-col gap-2">
-                        <select name="kind" defaultValue={e.kind === "unknown" ? "drawing" : e.kind} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm">
-                          <option value="drawing">File as Drawing</option>
-                          <option value="invoice">File as Invoice (Materials)</option>
-                        </select>
-                        <select name="project_id" required defaultValue={defaultProject} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm">
-                          <option value="" disabled>— Which job? —</option>
-                          {jobOptions.map((j) => (
-                            <option key={j.id} value={j.id}>{j.label}</option>
-                          ))}
-                        </select>
-                        <Button type="submit">File</Button>
-                      </form>
+                    <div className="flex flex-col gap-2 min-w-[300px]">
+                      <FileInboundForm
+                        emailId={e.id}
+                        initialKind={e.kind === "invoice" ? "invoice" : "drawing"}
+                        jobs={jobOptions}
+                        defaultProjectId={defaultProject}
+                        suppliers={supplierNames}
+                        defaultSupplier={guessSupplier(e.from_name, e.from_email)}
+                        defaultDate={e.received_at.slice(0, 10)}
+                      />
                       <form action={ignoreInboundAction.bind(null, e.id)} className="text-right">
                         <button type="submit" className="text-xs text-slate-500 hover:text-slate-800 underline">Not a drawing or invoice — ignore</button>
                       </form>
@@ -137,9 +143,11 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     {e.status === "filed" ? (
                       <>
                         <span className="rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5">{e.filed_kind === "invoice" ? "Invoice" : "Drawing"}</span>
-                        {e.filed_project_id && (
+                        {e.filed_project_id ? (
                           <Link href={`/projects/${e.filed_project_id}`} className="ml-2 text-sky-700 hover:underline">{jobName(e.filed_project_id)}</Link>
-                        )}
+                        ) : e.filed_kind === "invoice" ? (
+                          <Link href="/suppliers" className="ml-2 text-amber-800 hover:underline">Supplier only, no job</Link>
+                        ) : null}
                         <div className="text-slate-400 mt-0.5">by {e.filed_by}</div>
                       </>
                     ) : (

@@ -2269,7 +2269,7 @@ export async function deleteProjectMaterial(id: string, actorName?: string): Pro
     const store = getStore();
     store.projectMaterials = store.projectMaterials.filter((m) => m.id !== id);
   }
-  if (existing) logActivity({ action: "Removed material", related_type: "project", related_id: existing.project_id, actor_name: actorName, detail: existing.description });
+  if (existing) logActivity({ action: "Removed material", related_type: "project", related_id: existing.project_id ?? undefined, actor_name: actorName, detail: existing.description });
 }
 
 export async function updateProjectMaterialStatus(id: string, status: ProjectMaterial["status"]): Promise<void> {
@@ -3283,39 +3283,49 @@ export async function updateInboundEmail(id: string, patch: Partial<Omit<Inbound
  * (one per attachment), invoices become a Materials line with the file
  * attached plus an Invoice record. Logged to the job's history.
  */
-export async function fileInboundEmail(id: string, projectId: string, kind: InboundKind, actorName: string): Promise<void> {
+export interface FileInboundOptions {
+  kind: InboundKind;
+  /** Required for drawings; optional for invoices (supplier-only when empty). */
+  projectId?: string | null;
+  supplier?: string;
+  amount?: number | null;
+  invoiceDate?: string; // YYYY-MM-DD
+}
+
+/**
+ * Files a forwarded email. A drawing goes onto the job's Drawings; an
+ * invoice becomes ONE materials line (the single spend record) under the
+ * supplier, linked to a job only when one is given — never two records,
+ * so it is never costed twice.
+ */
+export async function fileInboundEmail(id: string, opts: FileInboundOptions, actorName: string): Promise<void> {
   const email = (await listInboundEmails()).find((e) => e.id === id);
   if (!email) throw new Error("Email not found");
   const now = new Date().toISOString();
   const attachments = email.attachments.filter((a) => a.storage_path);
   const label = email.subject?.trim() || attachments[0]?.filename || "Email attachment";
   const sender = email.from_name?.trim() || email.from_email?.split("@")[0] || "email";
+  const projectId = opts.projectId || null;
 
-  if (kind === "invoice") {
+  if (opts.kind === "invoice") {
+    const amount = opts.amount != null && Number.isFinite(opts.amount) ? Math.round(opts.amount * 100) / 100 : null;
+    const supplier = opts.supplier?.trim() || email.from_name?.trim() || undefined;
     await createProjectMaterial({
       project_id: projectId,
       description: label,
       quantity: 1,
-      unit: "unit",
-      unit_price: null,
-      cost: 0,
-      status: "Ordered",
-      supplier: email.from_name?.trim() || undefined,
-      ordered_at: email.received_at,
+      unit: "invoice",
+      unit_price: amount,
+      cost: amount ?? 0,
+      status: "Delivered",
+      supplier,
+      ordered_at: opts.invoiceDate ? new Date(opts.invoiceDate + "T12:00:00").toISOString() : email.received_at,
       notes: `Invoice emailed by ${email.from_email ?? "unknown sender"}`,
       invoice_path: attachments[0] ? `inbound-email:${attachments[0].storage_path}` : null,
       invoice_name: attachments[0]?.filename ?? null,
     });
-    await createInvoice({
-      supplier: email.from_name?.trim() || email.from_email || "Unknown supplier",
-      invoice_date: email.received_at.slice(0, 10),
-      related_project_id: projectId,
-      file_reference: attachments[0] ? `inbound-email:${attachments[0].storage_path}` : undefined,
-      notes: `From email: ${label}`,
-      status: "Received",
-      source: "Email Auto-Routed",
-    });
   } else {
+    if (!projectId) throw new Error("A drawing needs a job to file it on");
     for (const a of attachments) {
       await createProjectDrawing({
         project_id: projectId,
@@ -3327,12 +3337,32 @@ export async function fileInboundEmail(id: string, projectId: string, kind: Inbo
     }
   }
 
-  await updateInboundEmail(id, { status: "filed", filed_project_id: projectId, filed_kind: kind, filed_by: actorName, filed_at: now });
+  await updateInboundEmail(id, { status: "filed", filed_project_id: projectId, filed_kind: opts.kind, filed_by: actorName, filed_at: now });
   logActivity({
-    action: kind === "invoice" ? "Invoice filed from email" : "Drawing filed from email",
-    related_type: "project",
-    related_id: projectId,
+    action: opts.kind === "invoice" ? "Invoice filed from email" : "Drawing filed from email",
+    related_type: projectId ? "project" : undefined,
+    related_id: projectId ?? undefined,
     actor_name: actorName,
-    detail: `${label} — ${attachments.length} file${attachments.length === 1 ? "" : "s"} from ${email.from_email ?? "unknown"}`,
+    detail: `${label} — ${attachments.length} file${attachments.length === 1 ? "" : "s"} from ${email.from_email ?? "unknown"}${opts.kind === "invoice" && !projectId ? " (supplier only, no job)" : ""}`,
+  });
+}
+
+/** Link a materials/invoice line to a job (or unlink with null). Same record, so cost is never duplicated. */
+export async function linkMaterialToProject(id: string, projectId: string | null, actorName: string): Promise<void> {
+  const before = (await listProjectMaterials()).find((m) => m.id === id);
+  if (!before) throw new Error("Invoice line not found");
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("project_materials").update({ project_id: projectId }).eq("id", id);
+    if (error) throw error;
+  } else {
+    before.project_id = projectId;
+  }
+  logActivity({
+    action: projectId ? "Invoice linked to job" : "Invoice unlinked from job",
+    related_type: "project",
+    related_id: projectId ?? before.project_id ?? undefined,
+    actor_name: actorName,
+    detail: `${before.description}${before.supplier ? ` (${before.supplier})` : ""} — $${before.cost}`,
   });
 }

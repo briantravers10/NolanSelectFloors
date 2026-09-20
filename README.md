@@ -1007,6 +1007,28 @@ audited change in the app (crew assignments, status changes, etc.).
 - **Per-employee history** — `lib/labor-cost.ts#employeeLaborHistory`, shown
   on the staff profile page.
 
+## Suppliers & Drawings libraries
+
+**Suppliers** (`/suppliers`, `/suppliers/[name]`, gated with Materials):
+where the money went, by supplier. Built entirely from `project_materials`,
+the app's ONE spend record (a material added on a job, a priced schedule
+pickup, or an invoice filed from email / added on the Suppliers page).
+Migration 0027 makes `project_materials.project_id` nullable: a line with
+no job is a supplier-only invoice. It counts under its supplier and in
+the company materials total (Reports → Materials) but in no job's cost.
+"Link to a job" just sets `project_id` on the same row
+(`lib/db.ts linkMaterialToProject`), so a supplier total and a job total
+can both show an invoice without it ever being added twice. Filing an
+invoice from Email Inbox takes supplier / amount / date and an OPTIONAL
+job; it no longer also writes a row to the older `invoices` table.
+Helpers: `lib/suppliers.ts`.
+
+**Drawings** (`/drawings`, gated with Projects): every `project_drawings`
+row across every job in one searchable library (building, unit, name,
+sender, company; current versions by default). Same files as the job
+pages. Unfiled inbound emails with drawing-like attachments show at the
+top in amber with a link to file them from Email Inbox.
+
 ## Vacation & Sick Day Tracker (build 7)
 
 A simple, auditable day-off LOG for employees — see

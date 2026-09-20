@@ -551,7 +551,9 @@ export interface Material {
 export interface ProjectMaterial {
   id: string;
   company_id: string;
-  project_id: string;
+  // null = a supplier-only invoice not (yet) linked to a job. It counts
+  // under the supplier and in company materials spend, but in no job.
+  project_id: string | null;
   material_id?: string;
   description: string;
   quantity: number;

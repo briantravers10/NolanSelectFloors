@@ -135,7 +135,7 @@ export async function POST(request: Request) {
   // File automatically only when we know the job AND the kind, and at
   // least one file was actually stored.
   if (match.confident && match.projectId && kind !== "unknown" && attachments.some((a) => a.storage_path)) {
-    await fileInboundEmail(record.id, match.projectId, kind, "Email intake (auto)");
+    await fileInboundEmail(record.id, { kind, projectId: match.projectId, supplier: fromName ?? undefined }, "Email intake (auto)");
     return Response.json({ ok: true, filed: true, project: match.projectId });
   }
   return Response.json({ ok: true, filed: false });
