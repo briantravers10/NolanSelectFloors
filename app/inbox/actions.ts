@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { fileInboundEmail, updateInboundEmail } from "@/lib/db";
+import { fileInboundEmail, listInboundEmails, updateInboundEmail } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
 import type { InboundKind } from "@/lib/types";
@@ -48,4 +48,21 @@ export async function reopenInboundAction(id: string) {
   if (!(await canEdit("projects"))) return;
   await updateInboundEmail(id, { status: "unfiled" });
   refresh();
+}
+
+/**
+ * "Confirm all": files every automatically matched email exactly as the
+ * app suggested (its job, drawing vs invoice, supplier from the sender).
+ * Anything a person has doubts about should be confirmed one by one
+ * instead, where the job can be changed first.
+ */
+export async function confirmAllMatchedAction() {
+  if (!(await canEdit("projects"))) return;
+  const actingUser = await getActingUser();
+  const matched = (await listInboundEmails()).filter((e) => e.status === "matched" && e.suggested_project_id && e.kind !== "unknown");
+  for (const e of matched) {
+    await fileInboundEmail(e.id, { kind: e.kind, projectId: e.suggested_project_id, supplier: e.from_name?.trim() || undefined }, `${actingUser.fullName} (confirmed all)`);
+  }
+  refresh();
+  for (const e of matched) if (e.suggested_project_id) revalidatePath(`/projects/${e.suggested_project_id}`);
 }

@@ -1125,7 +1125,9 @@ export const UNASSIGNED_CLIENT_NAME = "Unassigned — add management company lat
 // otherwise held in the Unfiled tray at /inbox.
 // ---------------------------------------------------------------------
 export type InboundKind = "drawing" | "invoice" | "unknown";
-export type InboundStatus = "unfiled" | "filed" | "ignored";
+// "matched" = the app is confident which job it belongs to, but a person
+// still has to confirm before anything is filed.
+export type InboundStatus = "unfiled" | "matched" | "filed" | "ignored";
 
 export interface InboundAttachment {
   id: string;

@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import PostalMime from "postal-mime";
-import { createInboundEmail, fileInboundEmail, listBuildings, listInboundEmails, listProjects } from "@/lib/db";
+import { createInboundEmail, listBuildings, listInboundEmails, listProjects, updateInboundEmail } from "@/lib/db";
 import { uploadInboundAttachment } from "@/lib/storage";
 import { classifyInbound, matchInboundToJob } from "@/lib/inbound";
 import type { InboundAttachment } from "@/lib/types";
@@ -130,13 +130,14 @@ async function intake(inc: Incoming, buildings: Awaited<ReturnType<typeof listBu
     attachments,
   });
 
-  // File automatically only when we know the job AND the kind, and at
-  // least one file was actually stored.
+  // When we're sure which job it belongs to (and what it is), mark it
+  // "matched" — it shows at the top of Email Inbox with the job filled in
+  // and a Confirm button. Nothing is filed until a person confirms.
   if (match.confident && match.projectId && kind !== "unknown" && attachments.some((a) => a.storage_path)) {
-    await fileInboundEmail(record.id, { kind, projectId: match.projectId, supplier: fromName ?? undefined }, "Email intake (auto)");
-    return { filed: true, project: match.projectId };
+    await updateInboundEmail(record.id, { status: "matched" });
+    return { filed: false, matched: true, project: match.projectId };
   }
-  return { filed: false };
+  return { filed: false, matched: false };
 }
 
 /** Parse a .eml (an original email Gmail bundled with "Forward as attachment"). */
@@ -221,7 +222,7 @@ export async function POST(request: Request) {
     own.push({ id: a.id, filename, content_type: a.content_type, size: a.size, bytes });
   }
 
-  const results: { filed: boolean; project?: string }[] = [];
+  const results: { filed: boolean; matched: boolean; project?: string }[] = [];
   for (const inner of bundled) {
     if (inner.files.length === 0) continue; // an original with no attachment — nothing to file
     results.push(await intake(inner, buildings, projects));
@@ -235,5 +236,5 @@ export async function POST(request: Request) {
     results.push(await intake({ providerId: emailId, from: email.from, to, subject: email.subject, text, receivedAt, files: own }, buildings, projects));
   }
 
-  return Response.json({ ok: true, items: results.length, filed: results.filter((r) => r.filed).length, unpacked: bundled.length });
+  return Response.json({ ok: true, items: results.length, matched: results.filter((r) => r.matched).length, unpacked: bundled.length });
 }

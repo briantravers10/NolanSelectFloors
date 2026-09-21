@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listInboundEmails, listProjectMaterials, listProjects } from "@/lib/db";
-import { Card, PageHeader, EmptyState } from "@/components/ui";
+import { Card, PageHeader, EmptyState, Button } from "@/components/ui";
 import { daysBetween, formatDateLong, todayIso } from "@/lib/dates";
 import { isActiveProjectStage } from "@/lib/calculations";
 import { signedFileUrl } from "@/lib/storage";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
-import { ignoreInboundAction, reopenInboundAction } from "./actions";
+import { confirmAllMatchedAction, ignoreInboundAction, reopenInboundAction } from "./actions";
 import { FileInboundForm } from "@/components/inbox/FileInboundForm";
 import { supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
 
@@ -42,12 +42,13 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
+  const matched = emails.filter((e) => e.status === "matched");
   const unfiled = emails.filter((e) => e.status === "unfiled");
-  const done = emails.filter((e) => e.status !== "unfiled").slice(0, show === "all" ? undefined : 20);
+  const done = emails.filter((e) => e.status !== "unfiled" && e.status !== "matched").slice(0, show === "all" ? undefined : 20);
 
   // Signed download links (1 hour) for every stored attachment shown.
   const links = new Map<string, string>();
-  for (const e of [...unfiled, ...done]) {
+  for (const e of [...matched, ...unfiled, ...done]) {
     for (const a of e.attachments) {
       if (a.storage_path) {
         const url = await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email");
@@ -88,6 +89,68 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           </Card>
         );
       })()}
+
+      {matched.length > 0 && (
+        <div className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Matched automatically — {matched.length}</h2>
+              <p className="text-xs text-slate-500">The app is confident about these. Check the job, then Confirm. Change the job first if it&apos;s wrong.</p>
+            </div>
+            {editable && (
+              <form action={confirmAllMatchedAction}>
+                <Button type="submit">✓ Confirm all {matched.length}</Button>
+              </form>
+            )}
+          </div>
+          <div className="space-y-3">
+            {matched.map((e) => (
+              <Card key={e.id} className="p-4 border-emerald-200 bg-emerald-50/40">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900">{e.subject || "(no subject)"}</div>
+                    <div className="text-xs text-slate-500">
+                      From {e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email ?? "unknown"} · {formatDateLong(e.received_at.slice(0, 10))}
+                    </div>
+                    <div className="mt-1 text-xs">
+                      <span className="rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 font-medium">{e.kind === "invoice" ? "Invoice" : "Drawing"}</span>
+                      <span className="ml-2 text-slate-700">→ <span className="font-medium">{jobName(e.suggested_project_id) ?? "Unknown job"}</span></span>
+                    </div>
+                    {e.text_preview && <p className="text-xs text-slate-600 mt-1 line-clamp-2">{e.text_preview}</p>}
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {e.attachments.map((a) => {
+                        const url = links.get(`${e.id}:${a.id}`);
+                        return url ? (
+                          <a key={a.id} href={url} target="_blank" rel="noreferrer" className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-sky-700 hover:bg-slate-50">📎 {a.filename}</a>
+                        ) : (
+                          <span key={a.id} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-500">📎 {a.filename}</span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {editable && (
+                    <div className="flex flex-col gap-2 min-w-[300px]">
+                      <FileInboundForm
+                        emailId={e.id}
+                        initialKind={e.kind === "invoice" ? "invoice" : "drawing"}
+                        jobs={jobOptions}
+                        defaultProjectId={e.suggested_project_id ?? ""}
+                        suppliers={supplierNames}
+                        defaultSupplier={guessSupplier(e.from_name, e.from_email)}
+                        defaultDate={e.received_at.slice(0, 10)}
+                        submitLabel="✓ Confirm"
+                      />
+                      <form action={ignoreInboundAction.bind(null, e.id)} className="text-right">
+                        <button type="submit" className="text-xs text-slate-500 hover:text-slate-800 underline">Not a drawing or invoice — ignore</button>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
       <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Unfiled — {unfiled.length}</h2>
       {unfiled.length === 0 ? (

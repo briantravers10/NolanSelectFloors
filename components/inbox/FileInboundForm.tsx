@@ -23,6 +23,7 @@ export function FileInboundForm({
   suppliers,
   defaultSupplier,
   defaultDate,
+  submitLabel = "File",
 }: {
   emailId: string;
   initialKind: "drawing" | "invoice";
@@ -31,6 +32,7 @@ export function FileInboundForm({
   suppliers: string[];
   defaultSupplier: string;
   defaultDate: string;
+  submitLabel?: string;
 }) {
   const [kind, setKind] = useState<"drawing" | "invoice">(initialKind);
   const input = "rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm w-full";
@@ -80,7 +82,7 @@ export function FileInboundForm({
           <div className="text-[11px] text-slate-500 mt-1">Counted once: under the supplier always, and under the job only if you pick one. You can link it later from Suppliers.</div>
         )}
       </div>
-      <Button type="submit">File</Button>
+      <Button type="submit">{submitLabel}</Button>
     </form>
   );
 }

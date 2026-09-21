@@ -1053,6 +1053,11 @@ top in amber with a link to file them from Email Inbox.
   must add up to the total; the original line is replaced by the parts
   (`split_from_id` points back), so the supplier total is unchanged and
   nothing is counted twice.
+- **Matched, not auto-filed**: when the intake is confident about the job
+  and the kind, the email is marked `matched` (a plain-text status) and
+  shown at the top of Email Inbox with the job pre-filled and a Confirm
+  button; "Confirm all" files every matched item as suggested. Nothing is
+  filed without a person confirming.
 - **Forwarding health**: Email Inbox shows when the last email arrived;
   the dashboard warns when nothing has arrived for 7+ days (after at
   least one ever has), with what to check in Gmail.

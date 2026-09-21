@@ -53,7 +53,7 @@ export default async function DrawingsPage({ searchParams }: { searchParams: Pro
 
   // Drawings still waiting in Email Inbox (no building named in the email).
   const waiting = inbound
-    .filter((e) => e.status === "unfiled" && e.attachments.some((a) => a.storage_path && DRAWING_LIKE.test(a.filename)) && e.kind !== "invoice")
+    .filter((e) => (e.status === "unfiled" || e.status === "matched") && e.attachments.some((a) => a.storage_path && DRAWING_LIKE.test(a.filename)) && e.kind !== "invoice")
     .filter((e) => !q || `${e.subject ?? ""} ${e.from_email ?? ""} ${e.attachments.map((a) => a.filename).join(" ")}`.toLowerCase().includes(q.toLowerCase()))
     .filter(() => !company && !building);
 
