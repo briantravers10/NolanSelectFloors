@@ -7,7 +7,7 @@ import { canEdit } from "@/lib/permissions";
 
 /** "Invoice Sent" on a completed job — clears it from everyone's dashboard. */
 export async function markInvoiceSentAction(projectId: string, sent: boolean) {
-  if (!(await canEdit("projects")) && !(await canEdit("invoices"))) return;
+  if (!(await canEdit("projects"))) return;
   const actingUser = await getActingUser();
   await setProjectInvoiceSent(projectId, sent, actingUser.fullName);
   revalidatePath("/dashboard");

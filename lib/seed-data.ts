@@ -137,7 +137,7 @@ export function buildSeedData() {
     // sections, view-only on Company Setup / QuickBooks (connection
     // management itself stays Owner/Admin-only via the existing
     // access_role gate — see lib/current-user.ts canManageQuickBooksConnection).
-    ...(["dashboard", "clients", "buildings", "job_requests", "projects", "schedule", "staff", "materials", "pricing", "invoices", "tasks", "new_business", "reports"] as SectionKey[]).map(
+    ...(["dashboard", "clients", "buildings", "job_requests", "projects", "schedule", "staff", "materials", "pricing", "reports"] as SectionKey[]).map(
       (key) => sectionPermission("ou-2", key, "edit")
     ),
     sectionPermission("ou-2", "company_setup", "view"),

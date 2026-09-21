@@ -33,7 +33,6 @@ export const NAV_ITEMS: NavItem[] = [
   // Every drawing across every job in one searchable library.
   { href: "/drawings", label: "Drawings", icon: "clipboard", sectionKey: "projects" },
   { href: "/pricing", label: "Pricing", icon: "chart", sectionKey: "pricing" },
-  { href: "/invoices", label: "Invoices", icon: "clipboard", sectionKey: "invoices" },
   // Drawings / invoices forwarded from the office Gmail, waiting to be filed.
   { href: "/inbox", label: "Email Inbox", icon: "inbox", sectionKey: "projects" },
   { href: "/reports", label: "Reports", icon: "chart", sectionKey: "reports" },
