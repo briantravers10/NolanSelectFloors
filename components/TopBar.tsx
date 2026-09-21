@@ -3,29 +3,20 @@ import { SearchBox } from "./SearchBox";
 import { ActingUserSelector } from "./ActingUserSelector";
 import { getActingUser, listActingUserOptions } from "@/lib/current-user";
 import { getCurrentSession, isRealAuthConfigured } from "@/lib/auth";
-import { isOwnerActingUser } from "@/lib/permissions";
 import { signOutAction } from "@/app/login/actions";
 import { Button } from "./ui";
 import { BackButton } from "./BackButton";
 
 /**
- * Dev "acting as" selector visibility (build 12 — Activating Real Login,
- * step 6): once real auth is configured, identity is determined by the
- * real Supabase session, not this dev tool — so it's hidden for everyone
- * EXCEPT an is_owner user, for whom it stays available as the "preview as"
- * debugging override README "Activating Real Login" already called out
- * (rather than being removed outright). When real auth isn't configured,
- * nothing here changes: the selector always renders, unconditionally,
- * exactly as before.
+ * Once real login is on, who you are comes from your session — so the
+ * top bar just shows the signed-in name and Sign out. The dev "acting as"
+ * dropdown only appears when real auth isn't configured (local demo mode),
+ * where it is the only way to pick a persona.
  */
 export async function TopBar() {
   const realAuthConfigured = isRealAuthConfigured();
-  const [actingUser, options, session] = await Promise.all([
-    getActingUser(),
-    listActingUserOptions(),
-    realAuthConfigured ? getCurrentSession() : Promise.resolve(null),
-  ]);
-  const showActingUserSelector = !realAuthConfigured || (await isOwnerActingUser(actingUser));
+  const [actingUser, session] = await Promise.all([getActingUser(), realAuthConfigured ? getCurrentSession() : Promise.resolve(null)]);
+  const options = realAuthConfigured ? [] : await listActingUserOptions();
   const showSignOut = realAuthConfigured && session?.isRealAuth;
 
   return (
@@ -40,13 +31,18 @@ export async function TopBar() {
       <div className="flex-1 flex justify-end md:justify-start">
         <SearchBox />
       </div>
-      {showActingUserSelector && <ActingUserSelector options={options} current={actingUser} />}
+      {!realAuthConfigured && <ActingUserSelector options={options} current={actingUser} />}
       {showSignOut && (
-        <form action={signOutAction}>
-          <Button type="submit" variant="secondary" className="!py-1.5 !px-2.5 text-xs">
-            Sign out
-          </Button>
-        </form>
+        <div className="flex items-center gap-2">
+          <span className="hidden sm:inline text-xs text-slate-500">
+            Signed in as <span className="font-medium text-slate-800">{actingUser.fullName}</span>
+          </span>
+          <form action={signOutAction}>
+            <Button type="submit" variant="secondary" className="!py-1.5 !px-2.5 text-xs">
+              Sign out
+            </Button>
+          </form>
+        </div>
       )}
     </header>
   );
