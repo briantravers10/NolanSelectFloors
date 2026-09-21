@@ -155,7 +155,8 @@ export async function addProjectNoteAction(projectId: string, formData: FormData
   if (!(await canEdit("projects"))) return;
   const body = String(formData.get("body") ?? "");
   if (!body.trim()) return;
-  await createProjectNote({ project_id: projectId, author_name: "Brian Travers", body });
+  const actingUser = await getActingUser();
+  await createProjectNote({ project_id: projectId, author_name: actingUser.fullName, body });
   revalidatePath(`/projects/${projectId}`);
 }
 

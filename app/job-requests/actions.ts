@@ -13,7 +13,7 @@ import {
   updateJobRequestStatus,
   convertJobRequestToProject,
 } from "@/lib/db";
-import { getActingUser, getCurrentUser } from "@/lib/current-user";
+import { getActingUser } from "@/lib/current-user";
 import { getLastWorkedWithClient, type LastWorkedWithResult } from "@/lib/last-worked";
 import type { JobRequestStatus } from "@/lib/types";
 import { canEdit } from "@/lib/permissions";
@@ -51,7 +51,7 @@ export async function createJobRequestAction(formData: FormData) {
   const jr = await createJobRequest({ building_id, contact_id, unit_number, description, received_via });
 
   if (confirmed && overrideReason && existingMatches.length > 0) {
-    await logDuplicateBidOverride(jr.id, overrideReason, existingMatches, getCurrentUser().fullName);
+    await logDuplicateBidOverride(jr.id, overrideReason, existingMatches, (await getActingUser()).fullName);
   }
   revalidatePath("/job-requests");
   redirect(`/job-requests/${jr.id}`);
