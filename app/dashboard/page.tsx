@@ -33,6 +33,19 @@ export default async function DashboardPage() {
         />
       </div>
 
+      {data.emailIntake.staleDays !== null && data.emailIntake.staleDays >= 7 && (
+        <Card className="p-4 mb-5 border-rose-300 bg-rose-50">
+          <div className="flex items-center gap-2 mb-1">
+            <Icon name="alert" className="w-4 h-4 text-rose-700" />
+            <h2 className="text-sm font-semibold text-rose-900 uppercase tracking-wide">Email intake may have stopped</h2>
+          </div>
+          <p className="text-sm text-rose-900">
+            No forwarded email has reached the app in {data.emailIntake.staleDays} days. If drawings and invoices are still arriving in Gmail, the forwarding rule has probably been switched off or Google asked Aidan to re-verify it.
+            Check Gmail → Settings → Forwarding and POP/IMAP, and the filter under Filters and Blocked Addresses.
+          </p>
+        </Card>
+      )}
+
       {data.invoicesToSend.length > 0 && (
         <Card className="p-4 mb-5 border-amber-300 bg-amber-50">
           <div className="flex items-center gap-2 mb-2">

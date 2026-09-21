@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Card, Button, AlertPill } from "@/components/ui";
 import { isRealAuthConfigured } from "@/lib/auth";
-import { loginAction, setupPasswordAction } from "./actions";
+import { loginAction, setupPasswordAction, forgotPasswordAction } from "./actions";
 
 /**
  * Real email+password login page (build 12 — Activating Real Login), plus
@@ -35,6 +35,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const showLoginError = mode === "error" && realAuthConfigured;
   const showSetup = mode === "setup" && realAuthConfigured;
   const showReady = mode === "ready" && realAuthConfigured;
+  const showForgot = mode === "forgot" && realAuthConfigured;
   const setupError = showSetup && err ? (SETUP_ERRORS[err] ?? SETUP_ERRORS.server) : null;
 
   return (
@@ -60,6 +61,24 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               You&apos;ll pick who you&apos;re acting as from the &quot;Acting as&quot; selector in the top bar.
             </p>
           </div>
+        ) : showForgot ? (
+          <form action={forgotPasswordAction} className="space-y-3">
+            <h2 className="text-sm font-semibold text-slate-900">Forgot your password?</h2>
+            <p className="text-xs text-slate-500">Enter your work email and we&apos;ll send you a code to set a new one.</p>
+            {err === "email" && <AlertPill tone="bad">Enter your email address.</AlertPill>}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
+              <input name="email" type="email" required autoComplete="email" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </div>
+            <Button type="submit" className="w-full justify-center">
+              Send me a code
+            </Button>
+            <p className="text-xs text-slate-400 text-center pt-1">
+              <Link href="/login" className="text-sky-600 hover:underline">Back to sign in</Link>
+              {" · "}
+              <Link href="/reset-password" className="text-sky-600 hover:underline">I already have a code</Link>
+            </p>
+          </form>
         ) : showSetup ? (
           <form action={setupPasswordAction} className="space-y-3">
             <h2 className="text-sm font-semibold text-slate-900">Set up your password</h2>
@@ -114,6 +133,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
                 <Link href="/login?mode=setup" className="text-sky-600 font-medium hover:underline">
                   Set up your password
                 </Link>
+                <span className="block mt-1">
+                  <Link href="/login?mode=forgot" className="text-sky-600 hover:underline">Forgot your password?</Link>
+                </span>
               </p>
             ) : (
               <p className="text-xs text-slate-400 text-center pt-1">

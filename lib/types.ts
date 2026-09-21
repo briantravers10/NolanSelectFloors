@@ -567,6 +567,9 @@ export interface ProjectMaterial {
   invoice_name?: string | null;
   // Set when this line was created from a schedule "item to collect".
   pickup_item_id?: string | null;
+  // Set on each part when one invoice was split across jobs (points at
+  // the original line, which is removed once the parts exist).
+  split_from_id?: string | null;
   ordered_at?: string;
   expected_delivery?: string;
   delivered_at?: string;

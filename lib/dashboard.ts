@@ -10,6 +10,7 @@ import {
   listCrewRequirements,
   listScheduleAssignments,
   listTimeOffEntries,
+  listInboundEmails,
 } from "./db";
 import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
 import {
@@ -65,6 +66,7 @@ export async function getDashboardData() {
     assignments,
     projectMaterials,
     timeOffEntries,
+    inboundEmails,
   ] = await Promise.all([
     listBuildings(),
     listClientCompanies(),
@@ -77,6 +79,7 @@ export async function getDashboardData() {
     listScheduleAssignments(),
     listProjectMaterials(),
     listTimeOffEntries(),
+    listInboundEmails(),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -261,7 +264,16 @@ export async function getDashboardData() {
     })
     .sort((a, b) => (a.completedOn ?? "").localeCompare(b.completedOn ?? ""));
 
+  // Email intake health: warn when forwarded mail has stopped arriving.
+  // Only meaningful once at least one email has ever come in.
+  const lastInbound = inboundEmails.map((e) => e.received_at).sort().at(-1) ?? null;
+  const emailIntake = {
+    lastReceivedAt: lastInbound,
+    staleDays: lastInbound ? Math.floor((Date.now() - new Date(lastInbound).getTime()) / 86_400_000) : null,
+  };
+
   return {
+    emailIntake,
     invoicesToSend,
     today,
     todaysJobs,

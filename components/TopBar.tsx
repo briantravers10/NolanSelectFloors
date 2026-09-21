@@ -34,9 +34,9 @@ export async function TopBar() {
       {!realAuthConfigured && <ActingUserSelector options={options} current={actingUser} />}
       {showSignOut && (
         <div className="flex items-center gap-2">
-          <span className="hidden sm:inline text-xs text-slate-500">
+          <Link href="/account" className="hidden sm:inline text-xs text-slate-500 hover:text-sky-700" title="My account — change password">
             Signed in as <span className="font-medium text-slate-800">{actingUser.fullName}</span>
-          </span>
+          </Link>
           <form action={signOutAction}>
             <Button type="submit" variant="secondary" className="!py-1.5 !px-2.5 text-xs">
               Sign out

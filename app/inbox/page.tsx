@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listInboundEmails, listProjectMaterials, listProjects } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
-import { formatDateLong } from "@/lib/dates";
+import { daysBetween, formatDateLong, todayIso } from "@/lib/dates";
 import { isActiveProjectStage } from "@/lib/calculations";
 import { signedFileUrl } from "@/lib/storage";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
@@ -69,6 +69,25 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         title="Email Inbox"
         subtitle="Drawings and invoices forwarded from the office email. Anything the app couldn't match to a job on its own waits here for you to file."
       />
+
+      {(() => {
+        const last = emails.map((e) => e.received_at).sort().at(-1) ?? null;
+        const days = last ? Math.max(0, daysBetween(last.slice(0, 10), todayIso())) : null;
+        const stale = days !== null && days >= 7;
+        return (
+          <Card className={`p-3 mb-5 text-xs ${stale ? "border-rose-300 bg-rose-50 text-rose-900" : "text-slate-600"}`}>
+            <span className="font-semibold uppercase tracking-wide mr-2">Forwarding status</span>
+            {last ? (
+              <>
+                Last email arrived {formatDateLong(last.slice(0, 10))}{days !== null && days > 0 ? ` (${days} day${days === 1 ? "" : "s"} ago)` : " (today)"}.
+                {stale && " That's a while — if mail is still reaching Gmail, check that the forwarding filter is still on and Google hasn't asked Aidan to re-verify it."}
+              </>
+            ) : (
+              "Nothing has arrived yet. Emails with attachments sent to the office Gmail should show up here within a minute."
+            )}
+          </Card>
+        );
+      })()}
 
       <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Unfiled — {unfiled.length}</h2>
       {unfiled.length === 0 ? (

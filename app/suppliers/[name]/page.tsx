@@ -9,6 +9,7 @@ import { isFileStorageConfigured, materialInvoiceUrl } from "@/lib/storage";
 import { materialDate, summarizeSuppliers, supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
 import { AddSupplierInvoiceForm } from "@/components/suppliers/AddSupplierInvoiceForm";
 import { LinkToJobForm } from "@/components/suppliers/LinkToJobForm";
+import { SplitInvoiceForm } from "@/components/suppliers/SplitInvoiceForm";
 import { deleteSupplierInvoiceAction } from "../actions";
 
 /** One supplier: every invoice / materials line, newest first, with the job it's linked to (or a picker to link it). */
@@ -111,6 +112,8 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
                             {m.project_id && (
                               <Link href={`/projects/${m.project_id}`} className="text-xs text-sky-700 hover:underline">{jobLabel(m.project_id)} →</Link>
                             )}
+                            {m.cost > 0 && jobs.length > 1 && <SplitInvoiceForm materialId={m.id} total={m.cost} jobs={jobs} />}
+                            {m.split_from_id && <span className="text-[10px] text-slate-400">Part of a split invoice</span>}
                           </div>
                         ) : m.project_id ? (
                           <Link href={`/projects/${m.project_id}`} className="text-sky-700 hover:underline">{jobLabel(m.project_id)}</Link>

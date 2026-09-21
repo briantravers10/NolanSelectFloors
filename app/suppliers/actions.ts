@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createProjectMaterial, deleteProjectMaterial, linkMaterialToProject, logMaterialAdded, updateProjectMaterial } from "@/lib/db";
+import { createProjectMaterial, deleteProjectMaterial, linkMaterialToProject, listProjectMaterials, logMaterialAdded, updateProjectMaterial } from "@/lib/db";
 import { uploadMaterialInvoice } from "@/lib/storage";
 import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
@@ -68,4 +68,50 @@ export async function deleteSupplierInvoiceAction(materialId: string, projectId:
   const actingUser = await getActingUser();
   await deleteProjectMaterial(materialId, actingUser.fullName);
   refresh(projectId);
+}
+
+/**
+ * Split one invoice line across several jobs. The parts must add up to
+ * the original amount; the original is replaced by the parts (each with
+ * the same supplier, date and invoice file), so the supplier total is
+ * unchanged and no dollar is counted twice.
+ */
+export async function splitInvoiceAction(materialId: string, formData: FormData) {
+  if (!(await canEdit("materials"))) return;
+  const original = (await listProjectMaterials()).find((m) => m.id === materialId);
+  if (!original) return;
+  const count = Math.min(12, Math.max(2, Number(formData.get("parts") ?? 0) || 0));
+  const parts: { projectId: string; amount: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const projectId = String(formData.get(`job_${i}`) ?? "").trim();
+    const amount = Math.round((Number(String(formData.get(`amount_${i}`) ?? "").replace(/[$,\s]/g, "")) || 0) * 100) / 100;
+    if (!projectId || amount <= 0) return;
+    parts.push({ projectId, amount });
+  }
+  const sum = Math.round(parts.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+  if (Math.abs(sum - original.cost) > 0.005) return;
+
+  const actingUser = await getActingUser();
+  for (const [i, p] of parts.entries()) {
+    await createProjectMaterial({
+      project_id: p.projectId,
+      description: `${original.description} (part ${i + 1} of ${parts.length})`,
+      quantity: 1,
+      unit: "invoice",
+      unit_price: p.amount,
+      cost: p.amount,
+      status: original.status,
+      supplier: original.supplier,
+      ordered_at: original.ordered_at,
+      delivered_at: original.delivered_at,
+      invoice_path: original.invoice_path ?? null,
+      invoice_name: original.invoice_name ?? null,
+      notes: original.notes,
+      split_from_id: original.id,
+    });
+    logMaterialAdded(p.projectId, `${original.description} (split part)`, 1, p.amount, original.supplier, actingUser.fullName);
+  }
+  await deleteProjectMaterial(original.id, actingUser.fullName);
+  refresh(original.project_id);
+  for (const p of parts) revalidatePath(`/projects/${p.projectId}`);
 }

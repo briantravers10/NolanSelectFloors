@@ -5,6 +5,7 @@ import { isRealAuthConfigured } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getOfficeUserByEmail, getStaffSetupCode, updateOfficeUser } from "@/lib/db";
+import { sendEmail } from "@/lib/email";
 
 /**
  * Real Supabase Auth sign-in (build 12 — Activating Real Login).
@@ -130,4 +131,72 @@ export async function setupPasswordAction(formData: FormData) {
   const signIn = supabase ? await supabase.auth.signInWithPassword({ email: staff.email, password }) : null;
   if (!signIn || signIn.error) redirect("/login?mode=ready");
   redirect("/dashboard");
+}
+
+/**
+ * "Forgot password" — emails a 6-digit code to the staff member's address
+ * on file. The code comes from Supabase's recovery-link generator (Admin
+ * API) and is delivered through our own Resend domain, so no Supabase
+ * email settings are needed. Always lands on the same "check your email"
+ * page whether or not the address exists, so it can't be used to probe
+ * for accounts.
+ */
+export async function forgotPasswordAction(formData: FormData) {
+  if (!isRealAuthConfigured()) redirect("/login?mode=demo");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!email) redirect("/login?mode=forgot&err=email");
+
+  try {
+    const staff = await getOfficeUserByEmail(email);
+    const admin = getSupabaseAdminClient();
+    if (staff?.active && staff.auth_user_id && staff.email && admin) {
+      const { data, error } = await admin.auth.admin.generateLink({ type: "recovery", email: staff.email });
+      const code = data?.properties?.email_otp;
+      if (!error && code) {
+        await sendEmail(
+          staff.email,
+          "Your Nolan Select Floors password reset code",
+          `Hi ${staff.full_name.split(" ")[0]},\n\nYour password reset code is: ${code}\n\nEnter it on the reset page along with a new password. The code works for one hour. If you didn't ask for this, you can ignore this email.\n\n— Nolan Select Floors`
+        );
+      }
+    }
+  } catch {
+    // Same outcome either way — never reveal whether the email exists.
+  }
+  redirect(`/reset-password?email=${encodeURIComponent(email)}`);
+}
+
+/** Second half of "forgot password": code + new password → signed in. */
+export async function resetPasswordAction(formData: FormData) {
+  if (!isRealAuthConfigured()) redirect("/login?mode=demo");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const code = String(formData.get("code") ?? "").replace(/\s+/g, "");
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+  const back = `/reset-password?email=${encodeURIComponent(email)}`;
+  if (!email || !code) redirect(`${back}&err=invalid`);
+  if (password.length < 8) redirect(`${back}&err=weak`);
+  if (password !== confirm) redirect(`${back}&err=mismatch`);
+
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) redirect(`${back}&err=server`);
+  const verified = await supabase.auth.verifyOtp({ email, token: code, type: "recovery" });
+  if (verified.error || !verified.data.session) redirect(`${back}&err=invalid`);
+  const updated = await supabase.auth.updateUser({ password });
+  if (updated.error) redirect(`${back}&err=server`);
+  redirect("/dashboard?pw=changed");
+}
+
+/** Signed-in "Change password" (Account page). No email needed. */
+export async function changePasswordAction(formData: FormData) {
+  if (!isRealAuthConfigured()) redirect("/account?err=demo");
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+  if (password.length < 8) redirect("/account?err=weak");
+  if (password !== confirm) redirect("/account?err=mismatch");
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) redirect("/account?err=server");
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) redirect("/account?err=server");
+  redirect("/account?ok=1");
 }

@@ -63,7 +63,8 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // webhook's signature check) and are left alone here so those existing
   // mechanisms keep working unchanged; static assets are excluded by the
   // proxy.ts matcher already.
-  const isLoginPage = pathname === "/login";
+  // /reset-password is the "forgot my password" flow — reachable signed out.
+  const isLoginPage = pathname === "/login" || pathname === "/reset-password";
   const isApiRoute = pathname.startsWith("/api/");
 
   if (!user && !isLoginPage && !isApiRoute) {
@@ -74,14 +75,11 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     // only once at least one office_users row actually has a real
     // auth_user_id; until then, fall through to the dev "acting as"
     // mechanism so the very first account can be created at all.
-    const { data: anyRealAccount } = await supabase
-      .from("office_users")
-      .select("id")
-      .not("auth_user_id", "is", null)
-      .limit(1)
-      .maybeSingle();
+    // Row Level Security is on, so the anon key can't read office_users
+    // directly; this SECURITY DEFINER function answers yes/no only.
+    const { data: anyRealAccount } = await supabase.rpc("has_any_real_account");
 
-    if (anyRealAccount) {
+    if (anyRealAccount === true) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/login";
       return NextResponse.redirect(redirectUrl);

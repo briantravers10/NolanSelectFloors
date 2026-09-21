@@ -1029,6 +1029,34 @@ sender, company; current versions by default). Same files as the job
 pages. Unfiled inbound emails with drawing-like attachments show at the
 top in amber with a link to file them from Email Inbox.
 
+## Database lock-down, password recovery, bulk email import, split invoices
+
+- **Row Level Security is ON for every table** (migration 0028). The app
+  only ever reaches Postgres from the server with the service role key,
+  so nothing changed for it; the public anon key can no longer read or
+  write tables directly. The one anon-key read (the middleware's "does a
+  staff login exist yet?" bootstrap check) goes through the SECURITY
+  DEFINER function `has_any_real_account()`, which returns a boolean only.
+- **Forgot password** (`/login?mode=forgot` → `/reset-password`): the
+  Admin API's recovery-link generator provides a 6-digit code, delivered
+  through our own Resend domain (`lib/email.ts`), so no Supabase email
+  settings are involved. `/reset-password` verifies the code
+  (`auth.verifyOtp`, type recovery) and sets the new password. Signed-in
+  people change their own password at `/account`; Owner/Admins can still
+  set a temporary one from Staff Access.
+- **Bulk import of old mail**: Gmail's "Forward as attachment" bundles
+  each original email as a `.eml` file. The Resend webhook unpacks those
+  (`postal-mime`) into separate intake items, each with the ORIGINAL
+  sender, subject, date and attachments, so a batch of old drawings /
+  invoices files exactly like live mail.
+- **Split an invoice across jobs** (Suppliers → supplier page): the parts
+  must add up to the total; the original line is replaced by the parts
+  (`split_from_id` points back), so the supplier total is unchanged and
+  nothing is counted twice.
+- **Forwarding health**: Email Inbox shows when the last email arrived;
+  the dashboard warns when nothing has arrived for 7+ days (after at
+  least one ever has), with what to check in Gmail.
+
 ## Vacation & Sick Day Tracker (build 7)
 
 A simple, auditable day-off LOG for employees — see
