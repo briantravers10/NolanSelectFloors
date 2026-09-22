@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "./nav-items";
 import { Icon } from "./Icon";
+import { NavBadge } from "./NavBadge";
 import type { SectionAccessLevel, SectionKey } from "@/lib/types";
 
 /**
@@ -12,7 +13,15 @@ import type { SectionAccessLevel, SectionKey } from "@/lib/types";
  * A nav item whose sectionKey resolves to 'none' is hidden entirely, per
  * the client's ask that staff not even see sections they can't use.
  */
-export function Sidebar({ access, realAuthOn }: { access: Record<SectionKey, SectionAccessLevel>; realAuthOn: boolean }) {
+export function Sidebar({
+  access,
+  realAuthOn,
+  badgeCounts,
+}: {
+  access: Record<SectionKey, SectionAccessLevel>;
+  realAuthOn: boolean;
+  badgeCounts: Record<string, number>;
+}) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.sectionKey || access[item.sectionKey] !== "none");
   return (
@@ -48,7 +57,8 @@ export function Sidebar({ access, realAuthOn }: { access: Record<SectionKey, Sec
               }`}
             >
               <Icon name={item.icon} className="w-4.5 h-4.5 shrink-0" />
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              <NavBadge count={badgeCounts[item.href]} />
             </Link>
           );
         })}

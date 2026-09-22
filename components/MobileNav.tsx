@@ -5,10 +5,12 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { MOBILE_NAV_ITEMS, NAV_ITEMS } from "./nav-items";
 import { Icon } from "./Icon";
+import { NavBadge } from "./NavBadge";
 import type { SectionAccessLevel, SectionKey } from "@/lib/types";
 
-/** `access` (build 11) — see components/Sidebar.tsx for the write-up. */
-export function MobileNav({ access }: { access: Record<SectionKey, SectionAccessLevel> }) {
+/** `access` (build 11) — see components/Sidebar.tsx for the write-up.
+ * `badgeCounts` — see lib/nav-badges.ts. */
+export function MobileNav({ access, badgeCounts }: { access: Record<SectionKey, SectionAccessLevel>; badgeCounts: Record<string, number> }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreItems = NAV_ITEMS.filter((item) => !item.sectionKey || access[item.sectionKey] !== "none");
@@ -16,6 +18,10 @@ export function MobileNav({ access }: { access: Record<SectionKey, SectionAccess
     const navItem = NAV_ITEMS.find((n) => n.href === item.href);
     return item.href === "/more" || !navItem?.sectionKey || access[navItem.sectionKey] !== "none";
   });
+  // "More" tile badge — everything not already surfaced by its own bottom
+  // bar icon (Dashboard/Schedule/Projects/Staff), so nothing is double-counted.
+  const bottomHrefs = new Set(bottomItems.map((i) => i.href));
+  const moreBadgeTotal = moreItems.reduce((sum, item) => (bottomHrefs.has(item.href) ? sum : sum + (badgeCounts[item.href] ?? 0)), 0);
 
   return (
     <>
@@ -50,8 +56,13 @@ export function MobileNav({ access }: { access: Record<SectionKey, SectionAccess
                   key={item.href}
                   href={item.href}
                   onClick={() => setMoreOpen(false)}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 py-3 text-slate-700 active:bg-slate-50"
+                  className="relative flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 py-3 text-slate-700 active:bg-slate-50"
                 >
+                  {!!badgeCounts[item.href] && (
+                    <span className="absolute top-1.5 right-1.5">
+                      <NavBadge count={badgeCounts[item.href]} />
+                    </span>
+                  )}
                   <Icon name={item.icon} className="w-5 h-5" />
                   <span className="text-[11px] font-medium text-center leading-tight">{item.label}</span>
                 </Link>
@@ -72,8 +83,13 @@ export function MobileNav({ access }: { access: Record<SectionKey, SectionAccess
               <button
                 key={item.href}
                 onClick={() => setMoreOpen(true)}
-                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-slate-500"
+                className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-slate-500"
               >
+                {!!moreBadgeTotal && (
+                  <span className="absolute top-0.5 right-[calc(50%-1.5rem)]">
+                    <NavBadge count={moreBadgeTotal} />
+                  </span>
+                )}
                 <Icon name={item.icon} className="w-5 h-5" />
                 <span className="text-[10px] font-medium">{item.label}</span>
               </button>
@@ -83,8 +99,13 @@ export function MobileNav({ access }: { access: Record<SectionKey, SectionAccess
             <Link
               key={item.href}
               href={item.href}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 ${active ? "text-sky-600" : "text-slate-500"}`}
+              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 ${active ? "text-sky-600" : "text-slate-500"}`}
             >
+              {!!badgeCounts[item.href] && (
+                <span className="absolute top-0.5 right-[calc(50%-1.5rem)]">
+                  <NavBadge count={badgeCounts[item.href]} />
+                </span>
+              )}
               <Icon name={item.icon} className="w-5 h-5" />
               <span className="text-[10px] font-medium">{item.label}</span>
             </Link>

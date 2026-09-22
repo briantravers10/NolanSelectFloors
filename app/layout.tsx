@@ -8,6 +8,7 @@ import { AssistantPanel } from "@/components/assistant/AssistantPanel";
 import { getActingUser } from "@/lib/current-user";
 import { getAllSectionAccess } from "@/lib/permissions";
 import { isRealAuthConfigured } from "@/lib/auth";
+import { getNavBadgeCounts } from "@/lib/nav-badges";
 
 export const metadata: Metadata = {
   title: "Nolan Select Floors — Operations",
@@ -37,17 +38,21 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   // "Permissions & Staff Access".
   const access = await getAllSectionAccess(await getActingUser());
   const realAuthOn = isRealAuthConfigured();
+  // Sidebar "needs attention" badge counts — see lib/nav-badges.ts. Never
+  // blocks the shell from rendering: a failure here (e.g. Supabase hiccup)
+  // just means no badges this load, not a broken page.
+  const badgeCounts = await getNavBadgeCounts().catch(() => ({}) as Record<string, number>);
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
         <div className="flex min-h-dvh">
-          <Sidebar access={access} realAuthOn={realAuthOn} />
+          <Sidebar access={access} realAuthOn={realAuthOn} badgeCounts={badgeCounts} />
           <div className="flex-1 flex flex-col min-w-0">
             <TopBar />
             <main className="flex-1 px-4 md:px-6 py-5 pb-24 md:pb-8 max-w-[1400px] w-full mx-auto">{children}</main>
           </div>
         </div>
-        <MobileNav access={access} />
+        <MobileNav access={access} badgeCounts={badgeCounts} />
         <AssistantPanel />
       </body>
     </html>
