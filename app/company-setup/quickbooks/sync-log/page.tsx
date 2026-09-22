@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listProjects, listQuickBooksSyncLog } from "@/lib/db";
 import { canViewQuickBooksSyncLog, getActingUser } from "@/lib/current-user";
 import { Card, PageHeader, EmptyState, StatusBadge } from "@/components/ui";
+import { formatJobNumber } from "@/lib/calculations";
 
 /** Admin-only Sync Log view — every meaningful QuickBooks action
  * (connected, disconnected, customer linked/created, estimate/invoice
@@ -52,7 +53,13 @@ export default async function QuickBooksSyncLogPage() {
                   <td className="py-1.5">
                     {entry.project_id ? (
                       <Link href={`/projects/${entry.project_id}`} className="text-sky-600 hover:underline">
-                        {projectById.get(entry.project_id)?.name ?? entry.project_id}
+                        {projectById.get(entry.project_id) ? (
+                          <>
+                            <span className="font-mono">{formatJobNumber(projectById.get(entry.project_id)!.job_number)}</span> {projectById.get(entry.project_id)!.name}
+                          </>
+                        ) : (
+                          entry.project_id
+                        )}
                       </Link>
                     ) : (
                       "—"

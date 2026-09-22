@@ -16,6 +16,7 @@ import { buildScheduleJobRows } from "@/lib/schedule";
 import { addDays, dayLabel, formatDateShort, isoDate, startOfWeek, todayIso } from "@/lib/dates";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { PrintButton } from "@/components/PrintButton";
+import { formatJobNumber } from "@/lib/calculations";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 
@@ -50,6 +51,7 @@ export default async function WeeklySummaryPage({ searchParams }: { searchParams
   // One entry per job worked this week, with the days it was on.
   type Entry = {
     projectId: string;
+    jobNumber: number;
     name: string;
     address?: string;
     clientId: string;
@@ -70,6 +72,7 @@ export default async function WeeklySummaryPage({ searchParams }: { searchParams
       const building = buildings.find((b) => b.id === row.project.building_id);
       const e = byProject.get(row.projectId) ?? {
         projectId: row.projectId,
+        jobNumber: row.project.job_number,
         name: `${row.buildingName ?? row.project.name}${row.unitNumber ? ` — Unit ${row.unitNumber}` : ""}`,
         address: row.address,
         clientId: building?.client_company_id ?? "",
@@ -156,7 +159,9 @@ export default async function WeeklySummaryPage({ searchParams }: { searchParams
                   .map((e) => (
                     <tr key={e.projectId} className="border-b border-slate-100 last:border-0 align-top">
                       <td className="py-2 pr-2">
-                        <Link href={`/projects/${e.projectId}`} className="font-medium text-sky-700 hover:underline break-words">{e.name}</Link>
+                        <Link href={`/projects/${e.projectId}`} className="font-medium text-sky-700 hover:underline break-words">
+                          <span className="font-mono text-xs text-slate-500">{formatJobNumber(e.jobNumber)}</span> {e.name}
+                        </Link>
                         {e.address && <div className="text-xs text-slate-500">{e.address}</div>}
                         {e.notes && <div className="text-xs text-slate-600 mt-0.5 line-clamp-2">{e.notes}</div>}
                       </td>

@@ -15,7 +15,7 @@ import { Card, PageHeader, StatusBadge, PhoneLink, Button } from "@/components/u
 import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { getActingUser } from "@/lib/current-user";
 import { formatDateLong } from "@/lib/dates";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber } from "@/lib/calculations";
 import { getLastWorkedWithClient } from "@/lib/last-worked";
 import { archiveJobRequestAction, convertToProjectAction, deleteJobRequestAction, saveJobRequestEstimateAction, startJobRequestAction, unarchiveJobRequestAction } from "../actions";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
@@ -115,7 +115,7 @@ export default async function JobRequestDetailPage({ params }: { params: Promise
                 Job created{jr.started_by_name ? ` by ${jr.started_by_name}` : ""}.{" "}
                 {linkedProject && (
                   <Link href={`/projects/${linkedProject.id}`} className="text-sky-700 font-medium hover:underline">
-                    Open the job →
+                    Open {formatJobNumber(linkedProject.job_number)} →
                   </Link>
                 )}
                 <p className="text-xs text-slate-500 mt-1">Add it to the schedule from Create / Edit Schedule; from there it runs like any other job.</p>

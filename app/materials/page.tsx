@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listProjectMaterials, listProjects } from "@/lib/db";
 import { Card, PageHeader, StatusBadge, EmptyState } from "@/components/ui";
-import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber, isActiveProjectStage } from "@/lib/calculations";
 import { addDays, isoDate, todayIso } from "@/lib/dates";
 import { MATERIAL_STATUSES } from "@/lib/types";
 import { requireSectionAccess } from "@/lib/permissions";
@@ -53,7 +53,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
               return (
                 <li key={m.id}>
                   <Link href={`/projects/${p?.id}`} className="hover:underline">
-                    {b?.name} ({p?.name}) starts {p?.start_date} — {m.description} still {m.status}
+                    {p && <span className="font-mono">{formatJobNumber(p.job_number)}</span>} {b?.name} ({p?.name}) starts {p?.start_date} — {m.description} still {m.status}
                   </Link>
                 </li>
               );
@@ -82,6 +82,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-500 uppercase tracking-wide border-b border-slate-200">
+                <th className="px-4 py-3">Job #</th>
                 <th className="px-4 py-3">Project</th>
                 <th className="px-4 py-3">Material</th>
                 <th className="px-4 py-3">Supplier</th>
@@ -92,13 +93,14 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
             </thead>
             <tbody>
               {filteredMaterials.length === 0 && (
-                <tr><td colSpan={6}><EmptyState message={q.trim() ? "No materials match that search." : "No materials tracked yet."} /></td></tr>
+                <tr><td colSpan={7}><EmptyState message={q.trim() ? "No materials match that search." : "No materials tracked yet."} /></td></tr>
               )}
               {filteredMaterials.map((m) => {
                 const p = m.project_id ? projectById.get(m.project_id) : undefined;
                 const b = p ? buildingById.get(p.building_id) : undefined;
                 return (
                   <tr key={m.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{p ? formatJobNumber(p.job_number) : "—"}</td>
                     <td className="px-4 py-3">
                       <Link href={`/projects/${p?.id}`} className="text-slate-900 hover:text-sky-600 font-medium">{b?.name}</Link>
                       <div className="text-xs text-slate-500">{p?.name}</div>

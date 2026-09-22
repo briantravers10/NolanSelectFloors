@@ -6,7 +6,7 @@ import { formatDateLong } from "@/lib/dates";
 import { canEdit } from "@/lib/permissions";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { deleteClientAction } from "../actions";
-import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber, isActiveProjectStage } from "@/lib/calculations";
 
 export default async function ClientDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ err?: string }> }) {
   const { id } = await params;
@@ -128,7 +128,10 @@ export default async function ClientDetailPage({ params, searchParams }: { param
                 {activeProjects.map((p) => (
                   <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded">
                     <div>
-                      <div className="text-sm font-medium text-slate-800">{buildingById.get(p.building_id)?.name} {p.unit_number && `— Unit ${p.unit_number}`}</div>
+                      <div className="text-sm font-medium text-slate-800 flex items-center gap-2">
+                        <span className="font-mono text-xs text-slate-500">{formatJobNumber(p.job_number)}</span>
+                        {buildingById.get(p.building_id)?.name} {p.unit_number && `— Unit ${p.unit_number}`}
+                      </div>
                       <div className="text-xs text-slate-500">{p.name}</div>
                     </div>
                     <div className="text-right">
@@ -150,7 +153,10 @@ export default async function ClientDetailPage({ params, searchParams }: { param
                 {previousProjects.map((p) => (
                   <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded">
                     <div>
-                      <div className="text-sm font-medium text-slate-800">{buildingById.get(p.building_id)?.name} {p.unit_number && `— Unit ${p.unit_number}`}</div>
+                      <div className="text-sm font-medium text-slate-800 flex items-center gap-2">
+                        <span className="font-mono text-xs text-slate-500">{formatJobNumber(p.job_number)}</span>
+                        {buildingById.get(p.building_id)?.name} {p.unit_number && `— Unit ${p.unit_number}`}
+                      </div>
                       <div className="text-xs text-slate-500">{p.name}</div>
                     </div>
                     <div className="text-right">

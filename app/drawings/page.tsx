@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listInboundEmails, listProjectDrawings, listProjects } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { formatDateShort } from "@/lib/dates";
+import { formatJobNumber } from "@/lib/calculations";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { drawingFileUrl, signedFileUrl } from "@/lib/storage";
@@ -163,7 +164,10 @@ export default async function DrawingsPage({ searchParams }: { searchParams: Pro
                   <div className="text-sm font-semibold text-slate-900 truncate" title={r.d.drawing_name}>
                     {r.d.drawing_name}{r.d.drawing_number ? ` (${r.d.drawing_number})` : ""}
                   </div>
-                  <Link href={`/projects/${r.d.project_id}`} className="block text-xs text-sky-700 hover:underline truncate">{r.jobName}</Link>
+                  <Link href={`/projects/${r.d.project_id}`} className="block text-xs text-sky-700 hover:underline truncate">
+                    {r.project && <span className="font-mono text-slate-500">{formatJobNumber(r.project.job_number)} </span>}
+                    {r.jobName}
+                  </Link>
                   <div className="text-[11px] text-slate-500 truncate">
                     {r.client?.name ?? "No company"} · v{r.d.version}{r.d.is_current_version ? "" : " (old)"} · {formatDateShort(r.d.uploaded_at.slice(0, 10))}
                   </div>

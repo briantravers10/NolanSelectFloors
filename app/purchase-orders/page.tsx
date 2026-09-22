@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listInboundEmails, listProjects } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
+import { formatJobNumber } from "@/lib/calculations";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { signedFileUrl } from "@/lib/storage";
@@ -74,7 +75,10 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
                   <td className="px-4 py-3">
                     {p ? (
                       <>
-                        <Link href={`/projects/${p.id}`} className="text-sky-700 hover:underline font-medium">{jobName} →</Link>
+                        <Link href={`/projects/${p.id}`} className="text-sky-700 hover:underline font-medium">
+                          <span className="font-mono text-xs text-slate-500 mr-1">{formatJobNumber(p.job_number)}</span>
+                          {jobName} →
+                        </Link>
                         <div className="text-xs text-slate-500">{c?.name ?? "No company"}</div>
                         <Link href={`/schedule/edit?project=${p.id}&date=${p.start_date ?? ""}`} className="text-xs text-sky-700 hover:underline">View on schedule</Link>
                       </>

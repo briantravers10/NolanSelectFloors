@@ -10,7 +10,7 @@ import {
   listTimeOffForEmployee,
 } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, EmailLink, Stat, EmptyState, Button } from "@/components/ui";
-import { formatCurrency, plannedAssignmentShares, plannedCostOf } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber, plannedAssignmentShares, plannedCostOf } from "@/lib/calculations";
 import { employeeLaborHistory, payRateLabel } from "@/lib/labor-cost";
 import { canEditPayRates, canEditTimeOffAllowance, canViewLaborCost, canViewTimeOffAllowance, getActingUser } from "@/lib/current-user";
 import { addDays, dayLabel, formatDateLong, formatDateShort, isoDate, startOfWeek, todayIso } from "@/lib/dates";
@@ -157,7 +157,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
                         const building = project ? buildingById.get(project.building_id) : undefined;
                         return (
                           <Link key={a.id} href={`/projects/${a.project_id}`} className="flex items-center justify-between text-sm py-1 hover:text-sky-600">
-                            <span>{building?.name}{project?.unit_number ? ` — Unit ${project.unit_number}` : ""} · {a.role_on_job}{a.time_and_half ? " (1.5x)" : ""}</span>
+                            <span>{project && <span className="font-mono text-xs text-slate-500 mr-1">{formatJobNumber(project.job_number)}</span>}{building?.name}{project?.unit_number ? ` — Unit ${project.unit_number}` : ""} · {a.role_on_job}{a.time_and_half ? " (1.5x)" : ""}</span>
                             <span className="text-slate-500">{formatCurrency(plannedShares.get(a.id) ?? a.assignment_cost)}</span>
                           </Link>
                         );

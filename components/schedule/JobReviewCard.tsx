@@ -6,6 +6,7 @@ import type { ScheduleJobRow } from "@/lib/schedule";
 import type { ActualLaborEntry, Employee } from "@/lib/types";
 import { employeeDisplayName } from "@/lib/employee-name";
 import { SCHEDULE_COLOR_BLOCK_CLASSES } from "./badges";
+import { formatJobNumber } from "@/lib/calculations";
 import { saveJobHoursAction, setReviewJobStatusAction } from "@/app/schedule/actions";
 
 /**
@@ -87,6 +88,7 @@ export function JobReviewCard({
       <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
           <div className="text-[15px] font-semibold text-slate-900 leading-tight">
+            <span className="font-mono text-xs text-slate-500">{formatJobNumber(row.project.job_number)}</span>{" "}
             {row.buildingName ?? "Unknown Building"}
             {row.unitNumber ? ` — Unit ${row.unitNumber}` : ""}
             <Link href={`/projects/${row.projectId}`} className="ml-2 text-xs font-medium text-sky-700 hover:underline">

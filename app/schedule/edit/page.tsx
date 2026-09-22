@@ -79,7 +79,7 @@ export default async function ScheduleEditPage({
     .map((p) => {
       const building = buildingById.get(p.building_id);
       const client = building ? clientById.get(building.client_company_id) : undefined;
-      const label = `${building?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}${client ? ` · ${client.name}` : ""}`;
+      const label = `#${p.job_number} — ${building?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}${client ? ` · ${client.name}` : ""}`;
       return { id: p.id, label };
     })
     .sort((a, b) => a.label.localeCompare(b.label));

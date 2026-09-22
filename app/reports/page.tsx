@@ -10,7 +10,7 @@ import {
   listActualLaborEntries,
 } from "@/lib/db";
 import { Card, PageHeader } from "@/components/ui";
-import { computeProjectCosting, formatCurrency, formatPercent, isActiveProjectStage, summarizeWeek } from "@/lib/calculations";
+import { computeProjectCosting, formatCurrency, formatJobNumber, formatPercent, isActiveProjectStage, summarizeWeek } from "@/lib/calculations";
 import { computeActualLaborCosts } from "@/lib/labor-cost";
 import { addDays, isoDate, startOfWeek } from "@/lib/dates";
 import { requireSectionAccess } from "@/lib/permissions";
@@ -207,6 +207,7 @@ function ProjectsReport({
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-500 uppercase border-b border-slate-200">
+                <th className="py-2 pr-3">Job #</th>
                 <th className="py-2 pr-3">Project</th>
                 <th className="py-2 pr-3 text-right">Value</th>
                 <th className="py-2 pr-3 text-right">Labor</th>
@@ -220,6 +221,7 @@ function ProjectsReport({
                 const costing = computeProjectCosting(p, assignments, projectMaterials, p.id);
                 return (
                   <tr key={p.id} className="border-b border-slate-100 last:border-0">
+                    <td className="py-2 pr-3 font-mono text-xs text-slate-500">{formatJobNumber(p.job_number)}</td>
                     <td className="py-2 pr-3">{p.name}</td>
                     <td className="py-2 pr-3 text-right">{formatCurrency(costing.projectValue)}</td>
                     <td className="py-2 pr-3 text-right">{formatCurrency(costing.laborCost)}</td>

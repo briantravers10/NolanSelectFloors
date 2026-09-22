@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listOfficeUsers, listProjects } from "@/lib/db";
 import { Card, EmptyState } from "@/components/ui";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber } from "@/lib/calculations";
 import { PIPELINE_STAGES } from "@/lib/types";
 import { movePipelineStageFormAction } from "./actions";
 
@@ -50,7 +50,7 @@ export async function Pipeline({ stageFilter }: { stageFilter?: string } = {}) {
                   <Card key={p.id} className="p-3">
                     <Link href={`/projects/${p.id}`} className="block hover:text-sky-600">
                       <div className="text-sm font-medium text-slate-900 truncate">
-                        {building?.name}
+                        <span className="font-mono text-xs text-slate-500">{formatJobNumber(p.job_number)}</span> {building?.name}
                         {p.unit_number && ` — ${p.unit_number}`}
                       </div>
                       <div className="text-xs text-slate-500 mb-1.5 truncate">{client?.name}</div>

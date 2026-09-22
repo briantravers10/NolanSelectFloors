@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ScheduleJobRow } from "@/lib/schedule";
 import { PhoneLink, EmailLink } from "@/components/ui";
+import { formatJobNumber } from "@/lib/calculations";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
 import { EditableNotes } from "./EditableNotes";
 import { isWeekend } from "@/lib/dates";
@@ -70,6 +71,7 @@ export function ScheduleDayRowCard({ row, editableNotes = false }: { row: Schedu
           <div className="flex flex-nowrap items-start justify-between gap-x-2">
             <div className="min-w-0">
               <div className="text-[15px] font-semibold text-slate-900 leading-tight truncate">
+                <span className="font-mono text-xs text-slate-500 font-normal">{formatJobNumber(row.project.job_number)}</span>{" "}
                 {row.buildingName ?? "Unknown Building"}
                 {row.unitNumber ? ` — Unit ${row.unitNumber}` : ""}
                 {row.address && <span className="text-slate-600 font-normal text-xs"> · {row.address}</span>}

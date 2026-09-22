@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { formatDateTime } from "@/lib/dates";
 import { listActivityLog, listEmployees, listProjects } from "@/lib/db";
 import { employeeDisplayName } from "@/lib/employee-name";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
+import { formatJobNumber } from "@/lib/calculations";
 import { isScheduleActivity } from "@/lib/schedule";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 
@@ -70,7 +72,14 @@ export default async function ScheduleHistoryPage({
               </div>
               <div className="text-xs text-slate-500 mt-0.5">
                 {a.actor_name ?? "Unknown"}
-                {a.related_type === "project" && projectById.get(a.related_id ?? "") ? ` · ${projectById.get(a.related_id ?? "")!.name}` : ""}
+                {a.related_type === "project" && projectById.get(a.related_id ?? "") && (
+                  <>
+                    {" · "}
+                    <Link href={`/projects/${a.related_id}`} className="hover:underline">
+                      <span className="font-mono">{formatJobNumber(projectById.get(a.related_id ?? "")!.job_number)}</span> {projectById.get(a.related_id ?? "")!.name}
+                    </Link>
+                  </>
+                )}
               </div>
               {a.detail && <div className="text-sm text-slate-700 mt-1">{a.detail}</div>}
             </div>

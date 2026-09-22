@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getProject } from "@/lib/db";
 import { getActingUser, canManageQuickBooksDocuments } from "@/lib/current-user";
 import { Card, PageHeader, Button, EmptyState } from "@/components/ui";
+import { formatJobNumber } from "@/lib/calculations";
 import { linkExistingQuickBooksDocumentAction } from "../actions";
 
 /** "Link Existing QuickBooks Estimate/Invoice" — structurally builds the
@@ -28,7 +29,7 @@ export default async function LinkQuickBooksDocumentPage({
 
   return (
     <div className="max-w-lg">
-      <PageHeader title="Link Existing QuickBooks Document" subtitle={`Job: ${project.name}`} />
+      <PageHeader title="Link Existing QuickBooks Document" subtitle={`Job ${formatJobNumber(project.job_number)}: ${project.name}`} />
       <div className="mb-4"><Link href={`/projects/${id}`} className="text-sm text-sky-600 hover:underline">← Back to job</Link></div>
 
       <Card className="p-4">

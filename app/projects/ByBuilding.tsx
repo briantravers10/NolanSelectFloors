@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listProjects } from "@/lib/db";
 import { Card, StatusBadge, EmptyState } from "@/components/ui";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber } from "@/lib/calculations";
 
 /**
  * "Jobs" view of the SAME project data as the List/Pipeline tabs — grouped
@@ -46,7 +46,7 @@ export async function ByBuilding({ stageFilter }: { stageFilter?: string } = {})
                 <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-slate-800 truncate">
-                      {p.unit_number ? `Unit ${p.unit_number}` : p.name}
+                      <span className="font-mono text-xs text-slate-500">{formatJobNumber(p.job_number)}</span> {p.unit_number ? `Unit ${p.unit_number}` : p.name}
                     </div>
                     <div className="text-xs text-slate-500 truncate">{p.name} · {p.start_date ?? "no start date"}</div>
                   </div>

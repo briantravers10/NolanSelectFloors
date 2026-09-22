@@ -13,6 +13,7 @@ import {
 } from "@/lib/db";
 import { buildScheduleJobRows } from "@/lib/schedule";
 import { dayLabel, formatDateLong, todayIso } from "@/lib/dates";
+import { formatJobNumber } from "@/lib/calculations";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { PrintButton } from "@/components/PrintButton";
@@ -67,7 +68,10 @@ export default async function PrintForJohnPage({ searchParams }: { searchParams:
                   <div className="flex items-baseline gap-3">
                     <span className="text-lg font-bold text-slate-500">{i + 1}.</span>
                     <div>
-                      <div className="text-2xl font-bold leading-tight">{row.buildingName ?? "Unknown building"}</div>
+                      <div className="text-2xl font-bold leading-tight">
+                        <span className="text-lg text-slate-500 font-mono mr-2">{formatJobNumber(row.project.job_number)}</span>
+                        {row.buildingName ?? "Unknown building"}
+                      </div>
                       {row.address && <div className="text-base text-slate-700">{row.address}</div>}
                     </div>
                   </div>

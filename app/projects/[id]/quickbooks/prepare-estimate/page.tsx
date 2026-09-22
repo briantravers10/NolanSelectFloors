@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getProject, listBuildings, listClientCompanies } from "@/lib/db";
 import { getActingUser, canManageQuickBooksDocuments } from "@/lib/current-user";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
+import { formatJobNumber } from "@/lib/calculations";
 import { DocumentReviewForm } from "@/components/quickbooks/DocumentReviewForm";
 import { createQuickBooksDocumentAction, getResolvedQBCustomerId } from "../actions";
 
@@ -47,7 +48,7 @@ export default async function PrepareEstimatePage({
         <DocumentReviewForm
           entityType="Estimate"
           customerName={client?.name ?? "—"}
-          jobName={project.name}
+          jobName={`${formatJobNumber(project.job_number)} — ${project.name}`}
           initialLineItems={[{ description: project.name, quantity: 1, rate: project.project_value, amount: project.project_value }]}
           action={createQuickBooksDocumentAction.bind(null, id, "Estimate")}
           errorMessage={error}

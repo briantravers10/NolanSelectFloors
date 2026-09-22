@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { CompletedJobSummary } from "@/lib/schedule";
 import type { FinancialSummary } from "@/lib/financials";
 import { Button, PhoneLink, StatusBadge } from "@/components/ui";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber } from "@/lib/calculations";
 import { formatDateShort } from "@/lib/dates";
 import { saveCompletionNotesAction } from "@/app/schedule/actions";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
@@ -28,7 +28,10 @@ export function CompletedJobCard({
     <div className="border border-slate-200 rounded-xl bg-white overflow-hidden">
       <button type="button" onClick={() => setOpen((v) => !v)} className="w-full text-left px-4 py-3 flex flex-wrap items-center gap-3 hover:bg-slate-50">
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-sm text-slate-900">{building?.name}{project.unit_number ? ` — Unit ${project.unit_number}` : ""}</div>
+          <div className="font-medium text-sm text-slate-900 flex items-center gap-2">
+            <span className="font-mono text-xs text-slate-500">{formatJobNumber(project.job_number)}</span>
+            {building?.name}{project.unit_number ? ` — Unit ${project.unit_number}` : ""}
+          </div>
           <div className="text-xs text-slate-500">{building?.address} · {client?.name}</div>
         </div>
         <div className="text-xs text-slate-500">{formatDateShort(summary.startDate)} – {formatDateShort(summary.completionDate)}</div>
