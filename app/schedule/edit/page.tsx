@@ -178,7 +178,27 @@ export default async function ScheduleEditPage({
         </div>
       </Card>
 
-      {/* 2. Day's schedule (left) + form (right, scrolls on its own) */}
+      {/* 2. Daily Driver Working Status — quick, one-time-per-day check, up
+          top so it's done first thing and out of the way. */}
+      {drivers.length > 0 && (
+        <Card className="p-3 mb-4">
+          <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">Drivers Working Today</h2>
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+            {drivers.map((d) => (
+              <div key={d.id} className="flex items-center gap-2 text-sm">
+                <span className="text-slate-800">{d.name}</span>
+                {d.onJobToday ? (
+                  <span className="text-[11px] text-slate-500">Already on a job today</span>
+                ) : (
+                  <DriverWorkingToggle employeeId={d.id} date={date} working={d.working} />
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* 3. Day's schedule (left) + form (right, scrolls on its own) */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-5 items-start">
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -229,7 +249,7 @@ export default async function ScheduleEditPage({
         </div>
       </div>
 
-      {/* 3. Not on the schedule — compact, at the bottom */}
+      {/* 4. Not on the schedule — compact, at the bottom */}
       <Card className="p-3 mt-5">
         <div className="flex items-baseline justify-between mb-1.5">
           <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Not on the schedule</h2>
@@ -256,25 +276,6 @@ export default async function ScheduleEditPage({
           </div>
         )}
       </Card>
-
-      {/* 4. Daily Driver Working Status */}
-      {drivers.length > 0 && (
-        <Card className="p-3 mt-3">
-          <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">Drivers Working Today</h2>
-          <div className="flex flex-col gap-1.5">
-            {drivers.map((d) => (
-              <div key={d.id} className="flex items-center justify-between gap-2 text-sm">
-                <span className="text-slate-800">{d.name}</span>
-                {d.onJobToday ? (
-                  <span className="text-[11px] text-slate-500">Already on a job today</span>
-                ) : (
-                  <DriverWorkingToggle employeeId={d.id} date={date} working={d.working} />
-                )}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
     </div>
   );
 }
