@@ -54,7 +54,7 @@ export function ActualHoursSection({
                   {t.entries.map((e) => (
                     <div key={e.id} className="flex items-center justify-between text-xs text-slate-500">
                       <span>
-                        {projectById.get(e.project_id)?.name ?? e.project_id} — {e.hours} hrs
+                        {e.project_id ? (projectById.get(e.project_id)?.name ?? e.project_id) : "Driver — no job assigned"} — {e.hours} hrs
                         {e.start_time && e.end_time ? ` (${e.start_time}–${e.end_time})` : ""}
                         {e.notes ? ` · ${e.notes}` : ""}
                       </span>

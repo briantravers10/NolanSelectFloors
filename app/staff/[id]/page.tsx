@@ -184,7 +184,11 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
                       </div>
                       {day.jobs.map((j, i) => (
                         <div key={i} className="flex items-center justify-between text-sm py-0.5">
-                          <Link href={`/projects/${j.projectId}`} className="hover:text-sky-600">{j.projectName}</Link>
+                          {j.projectId ? (
+                            <Link href={`/projects/${j.projectId}`} className="hover:text-sky-600">{j.projectName}</Link>
+                          ) : (
+                            <span className="text-slate-600">{j.projectName}</span>
+                          )}
                           <span className="text-slate-500">{j.hours} hrs · {formatCurrency(j.cost)}</span>
                         </div>
                       ))}

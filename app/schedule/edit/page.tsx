@@ -12,6 +12,7 @@ import {
   listTimeOffEntries,
   listWorkTypes,
   listProjectOutboundInvoices,
+  listActualLaborEntriesForDate,
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
@@ -25,6 +26,7 @@ import { ScrollToFormOnSmallScreens } from "@/components/schedule/ScrollToFormOn
 import { ScheduleDayRowCard } from "@/components/schedule/ScheduleDayRowCard";
 import { DraggableTiles } from "@/components/schedule/DraggableTiles";
 import { QuickJobForm } from "@/components/schedule/QuickJobForm";
+import { DriverWorkingToggle } from "@/components/schedule/DriverWorkingToggle";
 import { PrintButton } from "@/components/PrintButton";
 
 /**
@@ -43,7 +45,7 @@ export default async function ScheduleEditPage({
   const { project: projectParam, date: dateParam, qj, qj_building, qj_unit, qj_contact, qj_phone, qj_desc } = await searchParams;
   const date = dateParam ?? todayIso();
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems, outboundInvoices] = await Promise.all([
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems, outboundInvoices, dayLaborEntries] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -56,6 +58,7 @@ export default async function ScheduleEditPage({
     listTimeOffEntries(),
     listSchedulePickupItems(),
     listProjectOutboundInvoices(),
+    listActualLaborEntriesForDate(date),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -116,6 +119,23 @@ export default async function ScheduleEditPage({
       return { id: e.id, name: employeeDisplayName(e), offLabel: off ? timeOffWarningLabel(off.type) : null };
     })
     .sort((a, b) => (a.offLabel ? 1 : 0) - (b.offLabel ? 1 : 0) || a.name.localeCompare(b.name));
+
+  // Daily Driver Working Status — every active driver, whether or not
+  // they're on a job today. Marking one Working adds their day rate to
+  // payroll (lib/db.ts#setDriverWorkingDay) via the SAME actual_labor_entries
+  // row/rate-snapshot every other logged day uses — no job assignment, no
+  // separate payroll system. A driver already logged on a job today (any
+  // actual_labor_entries row for this date) is shown as already covered
+  // instead of an editable checkbox, so their day rate is never counted twice.
+  const drivers = activeEmployees
+    .filter((e) => e.is_driver)
+    .map((e) => {
+      const mine = dayLaborEntries.filter((entry) => entry.employee_id === e.id);
+      const onJobToday = mine.some((entry) => entry.project_id !== null);
+      const driverEntry = mine.find((entry) => entry.project_id === null);
+      return { id: e.id, name: employeeDisplayName(e), onJobToday, working: Boolean(driverEntry) };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const prevDate = isoDate(addDays(new Date(date + "T00:00:00"), -1));
   const nextDate = isoDate(addDays(new Date(date + "T00:00:00"), 1));
@@ -236,6 +256,25 @@ export default async function ScheduleEditPage({
           </div>
         )}
       </Card>
+
+      {/* 4. Daily Driver Working Status */}
+      {drivers.length > 0 && (
+        <Card className="p-3 mt-3">
+          <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">Drivers Working Today</h2>
+          <div className="flex flex-col gap-1.5">
+            {drivers.map((d) => (
+              <div key={d.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="text-slate-800">{d.name}</span>
+                {d.onJobToday ? (
+                  <span className="text-[11px] text-slate-500">Already on a job today</span>
+                ) : (
+                  <DriverWorkingToggle employeeId={d.id} date={date} working={d.working} />
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

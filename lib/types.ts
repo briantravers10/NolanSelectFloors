@@ -933,7 +933,11 @@ export interface ActualLaborEntry {
   id: string;
   company_id: string;
   employee_id: string;
-  project_id: string;
+  // Nullable for a "driver working day" entry (see lib/db.ts
+  // setDriverWorkingDay) — a driver's day rate counted for payroll without
+  // being tied to any specific job/crew list. Every other entry keeps a
+  // real project_id exactly as before.
+  project_id: string | null;
   work_date: string;
   hours: number;
   start_time?: string;

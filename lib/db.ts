@@ -1409,7 +1409,9 @@ export async function listActualLaborEntries(): Promise<ActualLaborEntry[]> {
 
 export async function createActualLaborEntry(input: {
   employee_id: string;
-  project_id: string;
+  // Nullable for a "driver working day" entry (no job) — see
+  // setDriverWorkingDay. Every normal call site keeps passing a real id.
+  project_id: string | null;
   work_date: string;
   hours: number;
   start_time?: string;
@@ -1452,9 +1454,55 @@ export async function createActualLaborEntry(input: {
     related_type: "employee",
     related_id: input.employee_id,
     actor_name: input.actorName,
-    detail: `${employee ? `${employee.first_name} ${employee.last_name}` : input.employee_id} — ${input.hours} hrs on ${input.work_date} (project ${input.project_id})`,
+    detail: `${employee ? `${employee.first_name} ${employee.last_name}` : input.employee_id} — ${input.hours} hrs on ${input.work_date}${input.project_id ? ` (project ${input.project_id})` : " (driver working day, no job)"}`,
   });
   return record;
+}
+
+/**
+ * DAILY DRIVER WORKING STATUS — a driver's day rate counted for payroll on
+ * a given date WITHOUT assigning them to any job's crew list. Reuses the
+ * existing actual_labor_entries table/cost pipeline (lib/labor-cost.ts,
+ * lib/payroll.ts) exactly as-is: a "driver day" is just an entry with
+ * project_id null, rate-snapshotted the same way every other entry is, so
+ * historical accuracy and the day/week payroll totals need no new code.
+ *
+ * Never creates a second base-pay entry for a day the employee already has
+ * ANY actual_labor_entries row on (e.g. they were logged on a job) — that
+ * day is already covered, so the checkbox is a no-op rather than doubling
+ * their pay. See listActualLaborEntriesForDate / the "Drivers Working
+ * Today" UI, which hides the checkbox entirely for that case.
+ */
+export async function setDriverWorkingDay(employeeId: string, workDate: string, working: boolean, actorName: string): Promise<void> {
+  const dayEntries = await listActualLaborEntriesForDate(workDate);
+  const mine = dayEntries.filter((e) => e.employee_id === employeeId);
+  const driverEntry = mine.find((e) => e.project_id === null);
+
+  if (working) {
+    if (mine.length > 0) return; // already has a base-pay entry for this date (driver day or a job) — no-op
+    await createActualLaborEntry({
+      employee_id: employeeId,
+      project_id: null,
+      work_date: workDate,
+      hours: 8,
+      notes: "Driver working day (no job assigned)",
+      actorName,
+    });
+  } else if (driverEntry) {
+    await deleteActualLaborEntry(driverEntry.id, actorName);
+  }
+}
+
+/** One day's actual_labor_entries — DB-filtered on work_date, used by the
+ * schedule day pages (View/Edit Schedule) instead of fetching every entry
+ * ever logged. */
+export async function listActualLaborEntriesForDate(date: string): Promise<ActualLaborEntry[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("actual_labor_entries").select("*").eq("work_date", date);
+    if (!error && data) return data as ActualLaborEntry[];
+  }
+  return getStore().actualLaborEntries.filter((e) => e.work_date === date);
 }
 
 export async function updateActualLaborEntry(

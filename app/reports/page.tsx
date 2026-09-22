@@ -82,7 +82,7 @@ function LaborReport({
   for (const c of computeActualLaborCosts(actualEntries)) {
     const e = entryById.get(c.entryId);
     if (!e) continue;
-    byProject.set(e.project_id, (byProject.get(e.project_id) ?? 0) + c.cost);
+    if (e.project_id) byProject.set(e.project_id, (byProject.get(e.project_id) ?? 0) + c.cost);
     byEmployee.set(e.employee_id, (byEmployee.get(e.employee_id) ?? 0) + c.cost);
   }
   const projectRows = Array.from(byProject.entries())

@@ -34,6 +34,7 @@ import {
   listOfficeUsers,
   createAgendaEvent,
   updateAgendaEvent,
+  setDriverWorkingDay,
 } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { resolveQuickJobBuilding } from "@/lib/quick-job";
@@ -344,6 +345,18 @@ export async function deleteActualLaborEntryAction(id: string) {
   const actingUser = await getActingUser();
   await deleteActualLaborEntry(id, actingUser.fullName);
   revalidateSchedule();
+}
+
+// ---------------------------------------------------------------------
+// Daily Driver Working Status
+// ---------------------------------------------------------------------
+
+export async function setDriverWorkingAction(employeeId: string, workDate: string, working: boolean) {
+  if (!(await canEdit("schedule"))) return;
+  const actingUser = await getActingUser();
+  await setDriverWorkingDay(employeeId, workDate, working, actingUser.fullName);
+  revalidateSchedule();
+  revalidatePath("/payroll");
 }
 
 // ---------------------------------------------------------------------

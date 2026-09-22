@@ -152,7 +152,7 @@ export function dayLaborCostTotal(date: string, entries: ActualLaborEntry[]): nu
 // ---------------------------------------------------------------------
 
 export interface EmployeeLaborHistoryJob {
-  projectId: string;
+  projectId: string | null;
   projectName: string;
   hours: number;
   cost: number;
@@ -185,7 +185,7 @@ export function employeeLaborHistory(
   const days: EmployeeLaborHistoryDay[] = Array.from(byDate.entries()).map(([date, dayEntries]) => {
     const jobs: EmployeeLaborHistoryJob[] = dayEntries.map((e) => ({
       projectId: e.project_id,
-      projectName: projectById.get(e.project_id)?.name ?? e.project_id,
+      projectName: e.project_id ? (projectById.get(e.project_id)?.name ?? e.project_id) : "Driver — no job assigned",
       hours: e.hours,
       cost: costByEntry.get(e.id) ?? 0,
     }));
