@@ -90,7 +90,6 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
                 <div className="flex flex-wrap items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="text-lg font-semibold text-slate-900">
-                      {d.meeting_time ? <span className="mr-2 rounded-md bg-amber-200 px-2 py-0.5 text-sm font-bold text-amber-950">{d.meeting_time}</span> : <span className="mr-2 text-sm text-slate-500">No time set</span>}
                       {b?.name ?? p?.name ?? "Unknown"}{p?.unit_number ? ` — Unit ${p.unit_number}` : ""}
                       {done && <span className="ml-2 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-medium">Done</span>}
                     </div>
@@ -111,16 +110,23 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
                       {p && <Link href={`/projects/${p.id}`} className="text-sky-700 hover:underline">View job →</Link>}
                       <Link href={`/schedule/edit?project=${d.project_id}&date=${d.schedule_date}`} className="text-sky-700 hover:underline">Full edit (attendees, colour) →</Link>
                     </div>
+                    {editable && (
+                      <div className="flex items-center gap-2 mt-3">
+                        <label htmlFor={`meeting-time-${d.id}`} className="text-xs font-medium text-slate-600">Time</label>
+                        <input id={`meeting-time-${d.id}`} form={`meeting-form-${d.id}`} type="time" name="meeting_time" defaultValue={d.meeting_time ?? ""} className={input} />
+                      </div>
+                    )}
+                    {!editable && (
+                      <div className="mt-3">
+                        {d.meeting_time ? <span className="rounded-md bg-amber-200 px-2 py-0.5 text-sm font-bold text-amber-950">{d.meeting_time}</span> : <span className="text-sm text-slate-500">No time set</span>}
+                      </div>
+                    )}
                   </div>
                   {editable && (
-                    <div className="flex flex-col gap-2 w-full sm:w-[320px] flex-none">
-                      <form action={updateMeetingAction.bind(null, d.id)} className="flex flex-col gap-1.5">
-                        <div className="flex items-center gap-2">
-                          <label className="text-xs font-medium text-slate-600 w-10">Time</label>
-                          <input type="time" name="meeting_time" defaultValue={d.meeting_time ?? ""} className={input} />
-                        </div>
-                        <textarea name="notes" defaultValue={d.notes ?? ""} rows={2} placeholder="Notes / what it's about" className={`${input} w-full`} />
-                        <Button type="submit" variant="secondary" className="text-xs py-1.5">Save</Button>
+                    <div className="flex flex-col gap-2 w-full sm:w-[420px] flex-none">
+                      <form id={`meeting-form-${d.id}`} action={updateMeetingAction.bind(null, d.id)} className="flex flex-col gap-1.5">
+                        <textarea name="notes" defaultValue={d.notes ?? ""} rows={5} placeholder="Notes / what it's about" className={`${input} w-full`} />
+                        <Button type="submit" className="text-xs py-1.5">Save</Button>
                       </form>
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <form action={setMeetingDoneAction.bind(null, d.id, !done)}>
