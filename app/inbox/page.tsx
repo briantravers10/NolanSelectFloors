@@ -113,7 +113,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                       From {e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email ?? "unknown"} · {formatDateLong(e.received_at.slice(0, 10))}
                     </div>
                     <div className="mt-1 text-xs">
-                      <span className="rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 font-medium">{e.kind === "invoice" ? "Invoice" : "Drawing"}</span>
+                      <span className="rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 font-medium">{e.kind === "invoice" ? "Invoice" : e.kind === "coi" ? "COI" : "Drawing"}</span>
                       <span className="ml-2 text-slate-700">→ <span className="font-medium">{jobName(e.suggested_project_id) ?? "Unknown job"}</span></span>
                     </div>
                     {e.text_preview && <p className="text-xs text-slate-600 mt-1 line-clamp-2">{e.text_preview}</p>}
@@ -132,7 +132,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     <div className="flex flex-col gap-2 min-w-[300px]">
                       <FileInboundForm
                         emailId={e.id}
-                        initialKind={e.kind === "invoice" ? "invoice" : "drawing"}
+                        initialKind={e.kind === "invoice" ? "invoice" : e.kind === "coi" ? "coi" : "drawing"}
                         jobs={jobOptions}
                         defaultProjectId={e.suggested_project_id ?? ""}
                         suppliers={supplierNames}
@@ -188,7 +188,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     <div className="flex flex-col gap-2 min-w-[300px]">
                       <FileInboundForm
                         emailId={e.id}
-                        initialKind={e.kind === "invoice" ? "invoice" : "drawing"}
+                        initialKind={e.kind === "invoice" ? "invoice" : e.kind === "coi" ? "coi" : "drawing"}
                         jobs={jobOptions}
                         defaultProjectId={defaultProject}
                         suppliers={supplierNames}
@@ -224,7 +224,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   <td className="py-2 px-2 text-xs">
                     {e.status === "filed" ? (
                       <>
-                        <span className="rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5">{e.filed_kind === "invoice" ? "Invoice" : "Drawing"}</span>
+                        <span className="rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5">{e.filed_kind === "invoice" ? "Invoice" : e.filed_kind === "coi" ? "COI" : "Drawing"}</span>
                         {e.filed_project_id ? (
                           <Link href={`/projects/${e.filed_project_id}`} className="ml-2 text-sky-700 hover:underline">{jobName(e.filed_project_id)}</Link>
                         ) : e.filed_kind === "invoice" ? (

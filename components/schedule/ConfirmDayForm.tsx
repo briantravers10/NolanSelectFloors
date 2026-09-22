@@ -1,6 +1,7 @@
 import type { DailyScheduleConfirmation } from "@/lib/types";
 import { Card, Button } from "@/components/ui";
 import { confirmDayAction } from "@/app/schedule/actions";
+import { formatDateTime } from "@/lib/dates";
 
 export function ConfirmDayForm({ date, confirmation }: { date: string; confirmation?: DailyScheduleConfirmation }) {
   return (
@@ -8,7 +9,7 @@ export function ConfirmDayForm({ date, confirmation }: { date: string; confirmat
       <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Confirm Day</h2>
       {confirmation && (
         <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-3">
-          Confirmed by {confirmation.confirmed_by} at {new Date(confirmation.confirmed_at).toLocaleString()}.
+          Confirmed by {confirmation.confirmed_by} at {formatDateTime(confirmation.confirmed_at)}.
           {" "}Confirming again just updates this — the day is never locked, and every later edit stays possible and gets logged.
         </div>
       )}

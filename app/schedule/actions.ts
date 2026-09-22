@@ -38,11 +38,14 @@ import {
   updateProjectScheduleDay,
   updateScheduleAssignmentCallTime,
   updateWorkType,
+  createTimeOffEntry,
+  listTimeOffEntries,
 } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
 import type { BuildingRegion, CoiStatus, ScheduleColor, ScheduleJobStatus, ScheduleMaterialsStatus, StaffCapability } from "@/lib/types";
-import { BUILDING_REGIONS } from "@/lib/types";
+import { BUILDING_REGIONS, TIME_OFF_TYPES } from "@/lib/types";
+import type { TimeOffType } from "@/lib/types";
 
 function revalidateSchedule(projectId?: string) {
   revalidatePath("/schedule");
@@ -511,7 +514,15 @@ export async function saveJobHoursAction(projectId: string, date: string, formDa
   const existing = (await listActualLaborEntries()).filter((e) => e.project_id === projectId && e.work_date === date);
   const byEmployee = new Map(existing.map((e) => [e.employee_id, e]));
 
+  const absent: { employeeId: string; type: TimeOffType }[] = [];
   for (const employeeId of listed) {
+    const absence = String(formData.get(`absence__${employeeId}`) ?? "");
+    if ((TIME_OFF_TYPES as readonly string[]).includes(absence)) {
+      absent.push({ employeeId, type: absence as TimeOffType });
+      const current = byEmployee.get(employeeId);
+      if (current) await deleteActualLaborEntry(current.id, actingUser.fullName);
+      continue;
+    }
     const hours = Number(formData.get(`hours__${employeeId}`) ?? 0) || 0;
     const current = byEmployee.get(employeeId);
     if (hours <= 0) {
@@ -532,13 +543,27 @@ export async function saveJobHoursAction(projectId: string, date: string, formDa
   // the day's crew too — otherwise they'd come straight back from the
   // schedule (and still be costed against this job).
   const scheduled = formData.getAll("scheduled_ids").map(String).filter(Boolean);
-  const removed = scheduled.filter((id) => !listed.includes(id));
+  const absentIds = new Set(absent.map((a) => a.employeeId));
+  const removed = scheduled.filter((id) => !listed.includes(id) || absentIds.has(id));
   if (removed.length > 0) {
     // Materialises a carried-forward day (copying its crew) so the
     // removal applies to this date only, not the day it was carried from.
     await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
     const dayCrew = (await listScheduleAssignments()).filter((a) => a.project_id === projectId && a.schedule_date === date && removed.includes(a.employee_id));
     for (const a of dayCrew) await deleteScheduleAssignment(a.id, actingUser.fullName);
+  }
+  // Absences: log the time off for that day (once) so Staff, Time Off
+  // Summary and payroll all agree; the crew removal above already took
+  // them off this job's cost.
+  if (absent.length > 0) {
+    const existing = await listTimeOffEntries();
+    for (const a of absent) {
+      const already = existing.some((t) => t.employee_id === a.employeeId && t.start_date <= date && t.end_date >= date);
+      if (!already) {
+        await createTimeOffEntry({ employee_id: a.employeeId, start_date: date, end_date: date, type: a.type, notes: "Marked on End of Day Review", actorName: actingUser.fullName });
+      }
+    }
+    revalidatePath("/staff/time-off");
   }
   revalidateSchedule(projectId);
   revalidatePath("/schedule/review");

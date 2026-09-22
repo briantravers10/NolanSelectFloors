@@ -20,6 +20,7 @@ import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
 import { employeeDisplayName } from "@/lib/employee-name";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { ScheduleEditForm } from "@/components/schedule/ScheduleEditForm";
+import { ScrollToFormOnSmallScreens } from "@/components/schedule/ScrollToFormOnSmallScreens";
 import { ScheduleDayRowCard } from "@/components/schedule/ScheduleDayRowCard";
 import { DraggableTiles } from "@/components/schedule/DraggableTiles";
 import { QuickJobForm } from "@/components/schedule/QuickJobForm";
@@ -129,6 +130,9 @@ export default async function ScheduleEditPage({
         </div>
         <div className="ml-auto flex-1 sm:flex-none min-w-[280px] flex justify-end gap-2">
           <PrintButton />
+          <Link href={`/schedule/print?date=${date}`} className="no-print inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            🖨 Print for John
+          </Link>
           <QuickJobForm
             date={date}
             buildings={quickBuildings}
@@ -159,6 +163,7 @@ export default async function ScheduleEditPage({
             </Card>
           ) : (
             <DraggableTiles
+              key={rowsForDate.map((r) => `${r.projectId}:${r.weekendOff ? "off" : r.scheduleColor}`).join("|")}
               date={date}
               items={rowsForDate.map((row) => ({
                 projectId: row.projectId,
@@ -173,7 +178,8 @@ export default async function ScheduleEditPage({
           )}
         </div>
 
-        <div className="xl:sticky xl:top-[4.5rem] xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto xl:pr-1">
+        <div id="schedule-edit-form" className="xl:sticky xl:top-[4.5rem] xl:max-h-[calc(100vh-5.5rem)] xl:overflow-y-auto xl:pr-1">
+          <ScrollToFormOnSmallScreens targetId="schedule-edit-form" when={selectedProjectId ?? ""} />
           <ScheduleEditForm
             key={`${selectedProjectId ?? "new"}-${date}`}
             date={date}

@@ -1062,6 +1062,40 @@ top in amber with a link to file them from Email Inbox.
   the dashboard warns when nothing has arrived for 7+ days (after at
   least one ever has), with what to check in Gmail.
 
+## COI intake, absences on review, grouped schedule, Print for John, invoice owners, office time zone
+
+- **COI from email**: `classifyInbound` recognises certificates of
+  insurance (words like "certificate of insurance", "ACORD", files named
+  COI_…). Confirming one in Email Inbox (`fileInboundEmail` kind `coi`)
+  stores the file on the project (`coi_file_reference` / name /
+  received_at, migration 0029) and marks COI **Approved** on the job's
+  schedule days from today on (`setProjectCoiFile`). The schedule tile's
+  COI badge links to `/projects/[id]/coi`, which redirects to a signed
+  URL for the file. Confirming is the approval.
+- **Absences on End of Day Review**: each person on a job card has an
+  Absent? dropdown (Sick / Vacation / Unpaid leave / Personal). Saving
+  logs a one-day `time_off_entries` row (if none exists), drops their
+  hours and takes them off that day's crew, so payroll and job cost stay
+  right without a trip to the Staff page.
+- **Schedule grouping**: within a colour band, rows sort by management
+  company, then building, then manual drag order — related jobs stack
+  together (`sortScheduleDayRows`).
+- **Print for John** (`/schedule/print?date=`): a large-type day sheet
+  with building, unit, staff, notes and items to collect only.
+- **Edit page**: the tile list resets its order when the server order or
+  a colour changes (DraggableTiles is keyed on it), so a job moves to its
+  new colour group right after saving; Edit links keep scroll position;
+  on phones the form scrolls into view when a job is picked.
+- **Dashboard for field staff**: dashboard defaults to view for anyone
+  without an explicit permission row; labor cost figures and the
+  Invoices-to-send card are hidden unless `canViewLaborCost`.
+- **Invoices to send**: assign the sender (`projects.invoice_assigned_to`,
+  office staff / owners) from the dashboard; button reads "Mark as Sent".
+- **Office time zone**: `instrumentation.ts` sets `process.env.TZ` to
+  America/New_York at server start (Vercel reserves the TZ env var), so
+  "today", week boundaries and timestamps follow the office;
+  `formatDateTime` renders timestamps in that zone explicitly.
+
 ## Vacation & Sick Day Tracker (build 7)
 
 A simple, auditable day-off LOG for employees — see

@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/dates";
 import { listActivityLog, listEmployees, listProjects } from "@/lib/db";
 import { employeeDisplayName } from "@/lib/employee-name";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
@@ -65,7 +66,7 @@ export default async function ScheduleHistoryPage({
             <div key={a.id} className="px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-medium text-slate-900">{a.action}</div>
-                <div className="text-xs text-slate-400 whitespace-nowrap">{new Date(a.created_at).toLocaleString()}</div>
+                <div className="text-xs text-slate-400 whitespace-nowrap">{formatDateTime(a.created_at)}</div>
               </div>
               <div className="text-xs text-slate-500 mt-0.5">
                 {a.actor_name ?? "Unknown"}

@@ -19,8 +19,8 @@ export async function fileInboundAction(id: string, formData: FormData) {
   if (!(await canEdit("projects"))) return;
   const projectId = String(formData.get("project_id") ?? "").trim() || null;
   const kindRaw = String(formData.get("kind") ?? "");
-  const kind: InboundKind = kindRaw === "invoice" ? "invoice" : "drawing";
-  if (kind === "drawing" && !projectId) return;
+  const kind: InboundKind = kindRaw === "invoice" ? "invoice" : kindRaw === "coi" ? "coi" : "drawing";
+  if (kind !== "invoice" && !projectId) return;
   const amountRaw = String(formData.get("amount") ?? "").replace(/[$,\s]/g, "");
   const amount = amountRaw === "" ? null : Number(amountRaw);
   const actingUser = await getActingUser();

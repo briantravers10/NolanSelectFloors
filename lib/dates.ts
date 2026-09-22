@@ -25,6 +25,15 @@ export function todayIso(): string {
   return isoDate(new Date());
 }
 
+/** Office time zone — see instrumentation.ts, which sets process.env.TZ to match. */
+export const OFFICE_TIME_ZONE = "America/New_York";
+
+/** A timestamp as the office sees it, e.g. "Mon, Sep 21, 4:02 PM". */
+export function formatDateTime(iso?: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-US", { timeZone: OFFICE_TIME_ZONE, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 export function formatDateLong(iso?: string): string {
   if (!iso) return "—";
   const d = new Date(iso + "T00:00:00");

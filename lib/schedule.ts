@@ -45,14 +45,23 @@ export function scheduleColorPriority(color: ScheduleColor): number {
  * job's crew for the day where one exists, then alphabetically as a stable
  * final tiebreak.
  */
-export function sortScheduleDayRows<T extends { scheduleColor: ScheduleColor; earliestCallTime?: string | null; sortLabel?: string; sortOrder?: number | null }>(
+export function sortScheduleDayRows<T extends { scheduleColor: ScheduleColor; earliestCallTime?: string | null; sortLabel?: string; sortOrder?: number | null; clientName?: string; buildingName?: string }>(
   rows: T[]
 ): T[] {
   return [...rows].sort((a, b) => {
     const p = scheduleColorPriority(a.scheduleColor) - scheduleColorPriority(b.scheduleColor);
     if (p !== 0) return p;
-    // Manual drag order within the colour group; anything without one
-    // falls in after the ordered ones.
+    // Inside a colour band, jobs for the same management company sit
+    // together, and within that the same building stacks together, so
+    // related jobs are easy to spot without hunting up and down the day.
+    const ca = (a.clientName ?? "\uffff").toLowerCase();
+    const cb = (b.clientName ?? "\uffff").toLowerCase();
+    if (ca !== cb) return ca.localeCompare(cb);
+    const ba = (a.buildingName ?? "").toLowerCase();
+    const bb = (b.buildingName ?? "").toLowerCase();
+    if (ba !== bb) return ba.localeCompare(bb);
+    // Manual drag order for jobs in the same building; anything without
+    // one falls in after the ordered ones.
     const oa = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
     const ob = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
     if (oa !== ob) return oa - ob;

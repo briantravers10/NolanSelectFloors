@@ -78,6 +78,7 @@ export function ScheduleDayRowCard({ row, editableNotes = false }: { row: Schedu
               </Link>
               <Link
                 href={`/schedule/edit?project=${row.projectId}&date=${row.date}`}
+                scroll={false}
                 className="rounded-md bg-white/80 border border-slate-300 px-2 py-0.5 font-medium text-slate-700 hover:bg-white"
               >
                 Edit
@@ -106,11 +107,25 @@ export function ScheduleDayRowCard({ row, editableNotes = false }: { row: Schedu
           </div>
 
           <div className="flex flex-wrap gap-1.5 items-center">
-            <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${
-              row.coiStatus === "Approved" ? "bg-emerald-100 text-emerald-800 border-emerald-400" : COI_CLASSES[row.coiStatus]
-            }`}>
-              COI: {COI_DISPLAY_LABELS[row.coiStatus]}
-            </span>
+            {row.project.coi_file_reference ? (
+              <a
+                href={`/projects/${row.projectId}/coi`}
+                target="_blank"
+                rel="noreferrer"
+                title={`Open the COI${row.project.coi_file_name ? ` (${row.project.coi_file_name})` : ""}`}
+                className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium underline decoration-dotted hover:brightness-95 ${
+                  row.coiStatus === "Approved" ? "bg-emerald-100 text-emerald-800 border-emerald-400" : COI_CLASSES[row.coiStatus]
+                }`}
+              >
+                COI: {COI_DISPLAY_LABELS[row.coiStatus]} 📎
+              </a>
+            ) : (
+              <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${
+                row.coiStatus === "Approved" ? "bg-emerald-100 text-emerald-800 border-emerald-400" : COI_CLASSES[row.coiStatus]
+              }`}>
+                COI: {COI_DISPLAY_LABELS[row.coiStatus]}
+              </span>
+            )}
             <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${MATERIALS_CLASSES[row.materialsStatus]}`}>
               Materials: {MATERIALS_DISPLAY_LABELS[row.materialsStatus]}
             </span>

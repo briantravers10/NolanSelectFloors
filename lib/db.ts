@@ -1891,6 +1891,50 @@ export async function setProjectInvoiceSent(id: string, sent: boolean, actorName
   logActivity({ action: sent ? "Invoice sent" : "Invoice marked not sent", related_type: "project", related_id: id, actor_name: actorName });
 }
 
+/** Who in the office is sending this job's invoice (null = unassigned). */
+export async function setProjectInvoiceAssignee(id: string, officeUserId: string | null, actorName: string): Promise<void> {
+  const patch = { invoice_assigned_to: officeUserId, updated_at: new Date().toISOString() };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("projects").update(patch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const project = getStore().projects.find((p) => p.id === id);
+    if (project) Object.assign(project, patch);
+  }
+  const who = officeUserId ? (await listOfficeUsers()).find((u) => u.id === officeUserId)?.full_name ?? officeUserId : "nobody";
+  logActivity({ action: "Invoice assigned", related_type: "project", related_id: id, actor_name: actorName, detail: `Invoice to be sent by ${who}` });
+}
+
+/**
+ * A certificate of insurance filed onto a job (from Email Inbox). Stores
+ * the file on the project and marks COI "Approved" on every schedule day
+ * for the job from today onward, so nobody has to flip it by hand. The
+ * person confirming it in Email Inbox is the approval.
+ */
+export async function setProjectCoiFile(projectId: string, fileReference: string, fileName: string, actorName: string): Promise<void> {
+  const now = new Date().toISOString();
+  const patch = { coi_file_reference: fileReference, coi_file_name: fileName, coi_received_at: now, updated_at: now };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("projects").update(patch).eq("id", projectId);
+    if (error) throw error;
+  } else {
+    const project = getStore().projects.find((p) => p.id === projectId);
+    if (project) Object.assign(project, patch);
+  }
+  const today = now.slice(0, 10);
+  const days = (await listProjectScheduleDays()).filter((d) => d.project_id === projectId && d.schedule_date >= today && d.coi_status !== "Approved");
+  for (const d of days) await updateProjectScheduleDay(d.id, { coi_status: "Approved" }, actorName);
+  // Make sure the job has at least one day row carrying the approval, so a
+  // carried-forward job shows Approved too.
+  if (days.length === 0) {
+    const latest = (await listProjectScheduleDays()).filter((d) => d.project_id === projectId).sort((a, b) => b.schedule_date.localeCompare(a.schedule_date))[0];
+    if (latest && latest.coi_status !== "Approved") await updateProjectScheduleDay(latest.id, { coi_status: "Approved" }, actorName);
+  }
+  logActivity({ action: "COI filed", related_type: "project", related_id: projectId, actor_name: actorName, detail: `${fileName} — COI marked Approved` });
+}
+
 export async function updateProjectName(id: string, name: string, actorName: string): Promise<void> {
   const project = (await listProjects()).find((p) => p.id === id);
   if (!project) throw new Error("Project not found");
@@ -3324,6 +3368,11 @@ export async function fileInboundEmail(id: string, opts: FileInboundOptions, act
       invoice_path: attachments[0] ? `inbound-email:${attachments[0].storage_path}` : null,
       invoice_name: attachments[0]?.filename ?? null,
     });
+  } else if (opts.kind === "coi") {
+    if (!projectId) throw new Error("A COI needs a job to file it on");
+    const file = attachments[0];
+    if (!file) throw new Error("No stored attachment to file as the COI");
+    await setProjectCoiFile(projectId, `inbound-email:${file.storage_path}`, file.filename, actorName);
   } else {
     if (!projectId) throw new Error("A drawing needs a job to file it on");
     for (const a of attachments) {
@@ -3339,7 +3388,7 @@ export async function fileInboundEmail(id: string, opts: FileInboundOptions, act
 
   await updateInboundEmail(id, { status: "filed", filed_project_id: projectId, filed_kind: opts.kind, filed_by: actorName, filed_at: now });
   logActivity({
-    action: opts.kind === "invoice" ? "Invoice filed from email" : "Drawing filed from email",
+    action: opts.kind === "invoice" ? "Invoice filed from email" : opts.kind === "coi" ? "COI filed from email" : "Drawing filed from email",
     related_type: projectId ? "project" : undefined,
     related_id: projectId ?? undefined,
     actor_name: actorName,

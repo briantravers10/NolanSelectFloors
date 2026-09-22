@@ -65,12 +65,16 @@ export function JobReviewCard({
     return h;
   });
   const [addId, setAddId] = useState("");
+  // Last-minute absences: marking someone sick / on vacation / unpaid
+  // leave here logs the time off, takes them off this day's crew and
+  // zeroes their hours — no need to go to the Staff page.
+  const [absence, setAbsence] = useState<Record<string, string>>({});
 
   const isComplete = row.jobStatus === "Complete";
   const isCancelled = row.jobStatus === "Cancelled";
   const lines = ids.map((id) => {
     const emp = employeeById.get(id);
-    const hrs = Number(hours[id] ?? 0) || 0;
+    const hrs = absence[id] ? 0 : Number(hours[id] ?? 0) || 0;
     const est = emp ? estimate(hrs, emp) : null;
     return { id, emp, hrs, est };
   });
@@ -132,6 +136,7 @@ export function JobReviewCard({
             <tr className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
               <th className="text-left py-0.5">Who worked</th>
               <th className="text-left py-0.5 w-24">Hours</th>
+              <th className="text-left py-0.5 w-32">Absent?</th>
               {canViewCost && <th className="text-right py-0.5 w-28">Est. labor</th>}
               <th className="w-8" />
             </tr>
@@ -139,7 +144,7 @@ export function JobReviewCard({
           <tbody>
             {lines.length === 0 && (
               <tr>
-                <td colSpan={4} className="py-1 text-slate-500 text-xs">Nobody listed yet — add who worked below.</td>
+                <td colSpan={5} className="py-1 text-slate-500 text-xs">Nobody listed yet — add who worked below.</td>
               </tr>
             )}
             {lines.map((l) => (
@@ -159,10 +164,26 @@ export function JobReviewCard({
                     name={`hours__${l.id}`}
                     step="0.25"
                     min="0"
-                    value={hours[l.id] ?? ""}
+                    value={absence[l.id] ? "0" : hours[l.id] ?? ""}
+                    disabled={Boolean(absence[l.id])}
                     onChange={(e) => setHours((h) => ({ ...h, [l.id]: e.target.value }))}
-                    className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"
+                    className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm disabled:bg-slate-100 disabled:text-slate-400"
                   />
+                </td>
+                <td className="py-1">
+                  <select
+                    name={`absence__${l.id}`}
+                    value={absence[l.id] ?? ""}
+                    onChange={(e) => setAbsence((a) => ({ ...a, [l.id]: e.target.value }))}
+                    aria-label={`Absence for ${l.emp ? employeeDisplayName(l.emp) : l.id}`}
+                    className={`rounded-md border px-1.5 py-1 text-xs ${absence[l.id] ? "border-rose-300 bg-rose-50 text-rose-900 font-medium" : "border-slate-300 bg-white text-slate-700"}`}
+                  >
+                    <option value="">Worked</option>
+                    <option value="Sick">Sick</option>
+                    <option value="Vacation">Vacation</option>
+                    <option value="Unpaid">Unpaid leave</option>
+                    <option value="Personal">Personal day</option>
+                  </select>
                 </td>
                 {canViewCost && (
                   <td className="py-1 text-right text-slate-800 tabular-nums">{l.est === null ? <span className="text-slate-400">no rate</span> : `$${l.est.toFixed(2)}`}</td>
@@ -184,7 +205,7 @@ export function JobReviewCard({
           {canViewCost && lines.length > 0 && (
             <tfoot>
               <tr className="border-t border-black/10">
-                <td className="py-1 text-xs text-slate-600" colSpan={2}>Estimated labor for this job today</td>
+                <td className="py-1 text-xs text-slate-600" colSpan={3}>Estimated labor for this job today</td>
                 <td className="py-1 text-right font-semibold text-slate-900 tabular-nums">${total.toFixed(2)}</td>
                 <td />
               </tr>

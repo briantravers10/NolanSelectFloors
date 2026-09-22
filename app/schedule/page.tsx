@@ -103,6 +103,11 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
 
         <PrintButton label="Print schedule" />
         {view === "day" && (
+          <Link href={`/schedule/print?date=${activeDate}`} className="no-print inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            🖨 Print for John
+          </Link>
+        )}
+        {view === "day" && (
           <div className="flex items-center gap-2">
             <Link href={`/schedule?view=day&date=${isoDate(addDays(new Date(activeDate + "T00:00:00"), -1))}`}><Button variant="secondary">← Prev Day</Button></Link>
             <Link href={`/schedule?view=day&date=${today}`}><Button variant="secondary">Today</Button></Link>

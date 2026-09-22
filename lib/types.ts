@@ -382,6 +382,13 @@ export interface Project {
   // until someone marks it (migration 0025).
   invoice_sent_at?: string | null;
   invoice_sent_by?: string | null;
+  // Office person responsible for sending the invoice (office_users.id).
+  invoice_assigned_to?: string | null;
+  // Certificate of insurance filed from email — the schedule's COI badge
+  // links to it.
+  coi_file_reference?: string | null;
+  coi_file_name?: string | null;
+  coi_received_at?: string | null;
 }
 
 export interface OfficeUser {
@@ -1124,7 +1131,7 @@ export const UNASSIGNED_CLIENT_NAME = "Unassigned — add management company lat
 // migration 0023). Auto-filed when the building/job match is certain,
 // otherwise held in the Unfiled tray at /inbox.
 // ---------------------------------------------------------------------
-export type InboundKind = "drawing" | "invoice" | "unknown";
+export type InboundKind = "drawing" | "invoice" | "coi" | "unknown";
 // "matched" = the app is confident which job it belongs to, but a person
 // still has to confirm before anything is filed.
 export type InboundStatus = "unfiled" | "matched" | "filed" | "ignored";

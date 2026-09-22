@@ -8,21 +8,32 @@ import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { markInvoiceSentAction } from "./actions";
 import { Button } from "@/components/ui";
+import { canViewLaborCost, getActingUser } from "@/lib/current-user";
+import { listOfficeUsers } from "@/lib/db";
+import { InvoiceAssigneeSelect } from "@/components/dashboard/InvoiceAssigneeSelect";
 
 export default async function DashboardPage() {
   const access = await requireSectionAccess("dashboard");
   if (access === "none") return <AccessDenied section="the Dashboard" />;
 
-  const data = await getDashboardData();
+  const [data, actingUser, officeUsers] = await Promise.all([getDashboardData(), getActingUser(), listOfficeUsers()]);
+  // Money stays with the office: labor cost and invoices are hidden from
+  // field staff, who still get jobs, man count and who's working.
+  const showMoney = canViewLaborCost(actingUser);
+  const senders = officeUsers
+    .filter((u) => u.active && (u.access_role === "office_staff" || u.access_role === "owner_admin"))
+    .map((u) => ({ id: u.id, name: u.full_name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const senderName = (id: string | null) => senders.find((s) => s.id === id)?.name;
 
   return (
     <div>
       <PageHeader title="Dashboard" subtitle={formatDateLong(data.today)} />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className={`grid grid-cols-2 ${showMoney ? "md:grid-cols-4" : "md:grid-cols-3"} gap-3 mb-6`}>
         <Stat label="Jobs Today" value={data.totalJobs} />
         <Stat label="Man Count Today" value={data.totalManCount} />
-        <Stat label="Labor Cost Today" value={formatCurrency(data.totalLaborCost)} />
+        {showMoney && <Stat label="Labor Cost Today" value={formatCurrency(data.totalLaborCost)} />}
         <Stat
           label="Staff Working / Available / Off"
           value={
@@ -46,7 +57,7 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {data.invoicesToSend.length > 0 && (
+      {showMoney && data.invoicesToSend.length > 0 && (
         <Card className="p-4 mb-5 border-amber-300 bg-amber-50">
           <div className="flex items-center gap-2 mb-2">
             <Icon name="alert" className="w-4 h-4 text-amber-700" />
@@ -63,11 +74,15 @@ export default async function DashboardPage() {
                     {j.clientName ?? "No management company"}
                     {j.completedOn ? ` · completed ${formatDateLong(j.completedOn)}` : ""}
                     {j.value ? ` · ${formatCurrency(j.value)}` : ""}
+                    {j.assignedTo && senderName(j.assignedTo) ? <span className="ml-1 font-medium text-amber-900">· {senderName(j.assignedTo)} is sending it</span> : null}
                   </div>
                 </div>
-                <form action={markInvoiceSentAction.bind(null, j.projectId, true)}>
-                  <Button type="submit" variant="secondary" className="text-xs py-1.5">✓ Invoice Sent</Button>
-                </form>
+                <div className="flex items-center gap-2">
+                  <InvoiceAssigneeSelect projectId={j.projectId} assignedTo={j.assignedTo} people={senders} />
+                  <form action={markInvoiceSentAction.bind(null, j.projectId, true)}>
+                    <Button type="submit" variant="secondary" className="text-xs py-1.5">Mark as Sent</Button>
+                  </form>
+                </div>
               </div>
             ))}
           </div>
@@ -106,7 +121,7 @@ export default async function DashboardPage() {
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
                       <span>{job.project.name}</span>
                       <span>Crew: {job.manCount}</span>
-                      <span>Labor: {formatCurrency(job.laborCost)}</span>
+                      {showMoney && <span>Labor: {formatCurrency(job.laborCost)}</span>}
                       {job.materialsWorstStatus && job.materialsWorstStatus !== "Delivered" && (
                         <span className="text-amber-600">Materials: {job.materialsWorstStatus}</span>
                       )}

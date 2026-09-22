@@ -260,6 +260,7 @@ export async function getDashboardData() {
         clientName: client?.name,
         completedOn: p.project_completed_at?.slice(0, 10) ?? null,
         value: p.project_value,
+        assignedTo: p.invoice_assigned_to ?? null,
       };
     })
     .sort((a, b) => (a.completedOn ?? "").localeCompare(b.completedOn ?? ""));

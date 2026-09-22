@@ -1,6 +1,7 @@
 import type { Building, Project, InboundKind } from "./types";
 import { isActiveProjectStage } from "./calculations";
 
+const COI_WORDS = ["certificate of insurance", "certificate of liability", "insurance certificate", "coi ", " coi", "coi_", "coi-", "acord", "certificate holder", "additional insured"];
 const INVOICE_WORDS = ["invoice", "receipt", "bill", "statement", "payment due", "amount due"];
 const DRAWING_WORDS = ["drawing", "drawings", "plan", "plans", "floor plan", "layout", "blueprint", "spec", "elevation", "cad"];
 const DRAWING_EXT = [".dwg", ".dxf", ".rvt", ".skp"];
@@ -11,8 +12,12 @@ export function classifyInbound(to: string | undefined, subject: string | undefi
   const addr = (to ?? "").toLowerCase();
   if (addr.startsWith("invoice")) return "invoice";
   if (addr.startsWith("drawing")) return "drawing";
-  const hay = `${subject ?? ""} ${text ?? ""}`.toLowerCase();
+  const hay = ` ${subject ?? ""} ${text ?? ""} `.toLowerCase();
   const names = filenames.map((f) => f.toLowerCase());
+  if (addr.startsWith("coi") || addr.startsWith("insurance")) return "coi";
+  // COI first: an insurance certificate email often also says "invoice"
+  // or "estimate" in passing.
+  if (COI_WORDS.some((w) => hay.includes(w)) || names.some((n) => /(^|[^a-z])coi([^a-z]|$)/.test(n) || n.includes("certificate") || n.includes("acord"))) return "coi";
   if (names.some((n) => DRAWING_EXT.some((e) => n.endsWith(e)))) return "drawing";
   if (INVOICE_WORDS.some((w) => hay.includes(w)) || names.some((n) => n.includes("invoice") || n.includes("receipt"))) return "invoice";
   if (DRAWING_WORDS.some((w) => hay.includes(w)) || names.some((n) => n.includes("plan") || n.includes("drawing"))) return "drawing";

@@ -26,7 +26,12 @@ export async function getSectionAccessFor(actingUser: ActingUser, sectionKey: Se
   const match = officeUsers.find((u) => u.id === actingUser.id);
   if (match?.is_owner) return "edit";
   const perms = await listSectionPermissions(actingUser.id);
-  return perms.find((p) => p.section_key === sectionKey)?.access_level ?? "none";
+  const explicit = perms.find((p) => p.section_key === sectionKey)?.access_level;
+  // Everyone with a login can at least see the dashboard (jobs, man
+  // count, who's working). The money on it is gated separately by
+  // canViewLaborCost, so this is safe for field staff.
+  if (!explicit && sectionKey === "dashboard") return "view";
+  return explicit ?? "none";
 }
 
 /** Same as getSectionAccessFor, but for the CURRENT acting user (the usual call site — same pattern as canViewLaborCost etc. in lib/current-user.ts). */
