@@ -34,6 +34,29 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return withPathnameHeader(request, NextResponse.next());
   }
 
+  const { pathname } = request.nextUrl;
+
+  // Route protection (step 4): any page other than /login requires a real
+  // session once real auth is configured. API routes have their own
+  // auth/secret handling (e.g. app/api/admin/seed, the QuickBooks
+  // webhook's signature check) and are left alone here so those existing
+  // mechanisms keep working unchanged; static assets are excluded by the
+  // proxy.ts matcher already.
+  // /reset-password is the "forgot my password" flow — reachable signed out.
+  const isLoginPage = pathname === "/login" || pathname === "/reset-password";
+  const isApiRoute = pathname.startsWith("/api/");
+
+  // Performance pass: API routes authenticate themselves (signature checks,
+  // secrets — see the comment above) and never rely on this middleware's
+  // redirect, so skip the Supabase Auth network round trip entirely for
+  // them. This does NOT weaken protection anywhere: every API route that
+  // needs auth already re-checks it itself, and this middleware's only job
+  // for non-API routes (refreshing the session cookie, redirecting to
+  // /login) is unchanged below.
+  if (isApiRoute) {
+    return withPathnameHeader(request, NextResponse.next());
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(url, anonKey, {
@@ -55,19 +78,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
-  // Route protection (step 4): any page other than /login requires a real
-  // session once real auth is configured. API routes have their own
-  // auth/secret handling (e.g. app/api/admin/seed, the QuickBooks
-  // webhook's signature check) and are left alone here so those existing
-  // mechanisms keep working unchanged; static assets are excluded by the
-  // proxy.ts matcher already.
-  // /reset-password is the "forgot my password" flow — reachable signed out.
-  const isLoginPage = pathname === "/login" || pathname === "/reset-password";
-  const isApiRoute = pathname.startsWith("/api/");
-
-  if (!user && !isLoginPage && !isApiRoute) {
+  if (!user && !isLoginPage) {
     // Bootstrap window: NSF_REAL_AUTH_ENABLED=true alone would otherwise
     // lock everyone out of every page — including Company Setup → Staff
     // Access, the ONE place an Owner/Admin can create the first real

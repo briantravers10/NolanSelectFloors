@@ -8,7 +8,8 @@
 // member per nav section (lib/types.ts SECTION_KEYS), set by the
 // Owner/Admin at /company-setup/staff-access. Secure by default — no row
 // for a (user, section) pair means 'none'.
-import { listOfficeUsers, listSectionPermissions } from "./db";
+import { cache } from "react";
+import { listOfficeUsersCached, listSectionPermissionsCached } from "./request-cache";
 import { getActingUser, OWNER_ACTING_ID, type ActingUser } from "./current-user";
 import { SECTION_KEYS, type SectionAccessLevel, type SectionKey } from "./types";
 
@@ -20,12 +21,12 @@ import { SECTION_KEYS, type SectionAccessLevel, type SectionKey } from "./types"
  * works. Everyone else defaults to 'none' until the Owner/Admin explicitly
  * grants access.
  */
-export async function getSectionAccessFor(actingUser: ActingUser, sectionKey: SectionKey): Promise<SectionAccessLevel> {
+async function resolveSectionAccessFor(actingUser: ActingUser, sectionKey: SectionKey): Promise<SectionAccessLevel> {
   if (actingUser.id === OWNER_ACTING_ID) return "edit";
-  const officeUsers = await listOfficeUsers();
+  const officeUsers = await listOfficeUsersCached();
   const match = officeUsers.find((u) => u.id === actingUser.id);
   if (match?.is_owner) return "edit";
-  const perms = await listSectionPermissions(actingUser.id);
+  const perms = await listSectionPermissionsCached(actingUser.id);
   const explicit = perms.find((p) => p.section_key === sectionKey)?.access_level;
   // Everyone with a login can at least see the dashboard (jobs, man
   // count, who's working). The money on it is gated separately by
@@ -33,6 +34,13 @@ export async function getSectionAccessFor(actingUser: ActingUser, sectionKey: Se
   if (!explicit && sectionKey === "dashboard") return "view";
   return explicit ?? "none";
 }
+
+// Request-scoped memoization: requireSectionAccess("x") and canEdit("x")
+// on the same page both resolve the same (actingUser, sectionKey) pair —
+// see e.g. /inbox and /meetings. getActingUser() is itself cached, so the
+// actingUser argument is a stable reference within one request, making
+// this safe to key on both arguments. Never persists across requests.
+export const getSectionAccessFor = cache(resolveSectionAccessFor);
 
 /** Same as getSectionAccessFor, but for the CURRENT acting user (the usual call site — same pattern as canViewLaborCost etc. in lib/current-user.ts). */
 export async function getSectionAccess(sectionKey: SectionKey): Promise<SectionAccessLevel> {
@@ -60,13 +68,13 @@ export async function getAllSectionAccess(actingUser: ActingUser): Promise<Recor
     for (const key of SECTION_KEYS) result[key] = "edit";
     return result;
   }
-  const officeUsers = await listOfficeUsers();
+  const officeUsers = await listOfficeUsersCached();
   const match = officeUsers.find((u) => u.id === actingUser.id);
   if (match?.is_owner) {
     for (const key of SECTION_KEYS) result[key] = "edit";
     return result;
   }
-  const perms = await listSectionPermissions(actingUser.id);
+  const perms = await listSectionPermissionsCached(actingUser.id);
   for (const p of perms) {
     if ((SECTION_KEYS as readonly string[]).includes(p.section_key)) result[p.section_key as SectionKey] = p.access_level;
   }
@@ -99,7 +107,7 @@ export async function isOwnerActingUser(actingUser?: ActingUser): Promise<boolea
   const user = actingUser ?? (await getActingUser());
   if (user.id === OWNER_ACTING_ID) return true;
   if (user.accessRole === "owner_admin") {
-    const officeUsers = await listOfficeUsers();
+    const officeUsers = await listOfficeUsersCached();
     const match = officeUsers.find((u) => u.id === user.id);
     // A plain owner_admin access_role (pay-rate visibility tier) does NOT
     // by itself grant is_owner-level staff-access management — only an

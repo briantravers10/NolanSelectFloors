@@ -18,9 +18,10 @@
 // file's real-session branch. Each direction is only ever exercised on one
 // side of the `isRealAuthConfigured()` branch, so there's no runtime
 // recursion — see the comment on getActingUser() in current-user.ts.
+import { cache } from "react";
 import { createSupabaseServerClient } from "./supabase/server";
 import { getSupabaseClient } from "./supabaseClient";
-import { getOfficeUserByAuthId, hasAnyRealAuthAccount } from "./db";
+import { getOfficeUserByAuthIdCached, hasAnyRealAuthAccountCached } from "./request-cache";
 import { getActingUser as getDevActingUser, getCurrentCompanyId, type ActingUser } from "./current-user";
 import type { OfficeUser } from "./types";
 
@@ -71,14 +72,14 @@ function officeUserToActingUser(u: OfficeUser): ActingUser {
  *      auth_user_id, but this is the honest "no matching staff account"
  *      state instead of silently defaulting to Owner or crashing).
  */
-export async function getCurrentSession(): Promise<Session | null> {
+async function resolveCurrentSession(): Promise<Session | null> {
   // Bootstrap window: until at least one office_users row has a real
   // account (auth_user_id set), treat real auth as not yet configured —
   // see lib/db.ts#hasAnyRealAuthAccount() and README "Activating Real
   // Login". Otherwise NSF_REAL_AUTH_ENABLED=true alone would lock
   // everyone out of Company Setup → Staff Access before the first real
   // account can ever be created.
-  if (!isRealAuthConfigured() || !(await hasAnyRealAuthAccount())) {
+  if (!isRealAuthConfigured() || !(await hasAnyRealAuthAccountCached())) {
     return { isRealAuth: false, companyId: getCurrentCompanyId(), user: await getDevActingUser() };
   }
 
@@ -90,8 +91,19 @@ export async function getCurrentSession(): Promise<Session | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const officeUser = await getOfficeUserByAuthId(user.id);
+  const officeUser = await getOfficeUserByAuthIdCached(user.id);
   if (!officeUser) return null; // real session, no matching staff account — see doc comment above.
 
   return { isRealAuth: true, companyId: officeUser.company_id, user: officeUserToActingUser(officeUser) };
 }
+
+/**
+ * Request-scoped memoization (performance pass): this is called several
+ * times per page (the root layout, the TopBar, and every getActingUser()
+ * in real-auth mode) — each call previously re-hit Supabase Auth's
+ * getUser() (a network round trip) plus office_users, every time. `cache()`
+ * collapses repeated calls within one request into a single resolution;
+ * it never persists across requests or users, so a stale/expired session
+ * is re-checked on every new request exactly as before.
+ */
+export const getCurrentSession = cache(resolveCurrentSession);

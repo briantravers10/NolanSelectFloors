@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { COMPANY_ID } from "./seed-data";
 import { getStore } from "./store";
@@ -18,14 +19,20 @@ import type { AccessRole, OfficeUser } from "./types";
 // itself imports getCurrentCompanyId from here) to avoid a circular
 // module dependency, so it duplicates the tiny Supabase-or-store read for
 // office_users. lib/db.ts's listOfficeUsers() is the one pages should use.
-async function readOfficeUsers(): Promise<OfficeUser[]> {
+// Request-scoped memoization (performance pass): this file's own
+// office_users read (kept separate from lib/db.ts's listOfficeUsers() for
+// the circular-import reason above) is called from hasAnyRealAuthAccount(),
+// listActingUserOptions(), and getActingUser()'s demo branch — several
+// times per page. cache() collapses those into one read per request; it
+// never persists across requests/users.
+const readOfficeUsers = cache(async (): Promise<OfficeUser[]> => {
   const client = getSupabaseClient();
   if (client) {
     const { data, error } = await client.from("office_users").select("*").order("full_name");
     if (!error && data) return data as OfficeUser[];
   }
   return getStore().officeUsers;
-}
+});
 
 /**
  * Bootstrap check (build 12): true once at least one office_users row has
@@ -36,9 +43,9 @@ async function readOfficeUsers(): Promise<OfficeUser[]> {
  * lib/supabase/middleware.ts fall back to the dev "acting as" mechanism
  * until this returns true, then real login is enforced everywhere.
  */
-async function hasAnyRealAuthAccount(): Promise<boolean> {
+const hasAnyRealAuthAccount = cache(async (): Promise<boolean> => {
   return (await readOfficeUsers()).some((u) => Boolean(u.auth_user_id));
-}
+});
 
 // Placeholder auth context. There is no login flow yet — the whole app
 // operates as this single company/user. When real auth (Supabase Auth +
@@ -132,7 +139,7 @@ function noMatchingAccountUser(): ActingUser {
  * mutually exclusive on the isRealAuthConfigured() check, so there's no
  * runtime recursion.
  */
-export async function getActingUser(): Promise<ActingUser> {
+async function resolveActingUser(): Promise<ActingUser> {
   if (isRealAuthConfigured() && (await hasAnyRealAuthAccount())) {
     const session = await getCurrentSession();
     return session ? session.user : noMatchingAccountUser();
@@ -146,6 +153,18 @@ export async function getActingUser(): Promise<ActingUser> {
   if (!match) return ownerActingUser();
   return { id: match.id, fullName: match.full_name, role: match.role, accessRole: match.access_role ?? "office_staff" };
 }
+
+// Request-scoped memoization (performance pass): getActingUser() is called
+// independently by the root layout, the TopBar, and every
+// requireSectionAccess()/canEdit() check on a page — 3-4+ times per page
+// load. Each call previously re-ran the whole chain above, including (in
+// real-auth mode) a Supabase Auth network round trip and multiple
+// office_users reads. cache() collapses all of that into a single
+// resolution per request. It does NOT persist across requests or share
+// data between users — every new request calls this fresh, so a changed
+// permission or a fresh login is always reflected on the very next
+// navigation, exactly as before.
+export const getActingUser = cache(resolveActingUser);
 
 // ---------------------------------------------------------------------
 // PAY RATE / LABOR COST VISIBILITY GATE — UI-level only (no real auth
