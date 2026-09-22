@@ -1505,6 +1505,61 @@ export async function listActualLaborEntriesForDate(date: string): Promise<Actua
   return getStore().actualLaborEntries.filter((e) => e.work_date === date);
 }
 
+// In-memory fallback for driver_working_defaults_seeded when Supabase isn't
+// configured — a plain module-level set is fine here (no historical data to
+// preserve in demo mode).
+const seededDriverDefaultDatesFallback = new Set<string>();
+
+/**
+ * Drivers Working Today is opt-OUT: every active driver is assumed working
+ * on a date until an office user unchecks them. Called once per date, the
+ * first time that day's schedule is viewed with edit access — auto-creates
+ * a driver-day actual_labor_entries row (project_id null, see
+ * setDriverWorkingDay) for every active driver, exactly like an explicit
+ * "Working" check would. A driver already logged on a job that date is
+ * left alone (they're already covered). Recorded in
+ * driver_working_defaults_seeded so it runs exactly once per date — an
+ * office user's later uncheck (which deletes that row) must stick, not get
+ * silently re-created the next time the page loads.
+ */
+export async function ensureDriverWorkingDefaults(date: string, actorName: string): Promise<void> {
+  const companyId = getCurrentCompanyId();
+  const client = sb();
+
+  if (client) {
+    const { data: existing, error: findError } = await client
+      .from("driver_working_defaults_seeded")
+      .select("work_date")
+      .eq("company_id", companyId)
+      .eq("work_date", date)
+      .maybeSingle();
+    if (!findError && existing) return;
+  } else {
+    if (seededDriverDefaultDatesFallback.has(`${companyId}__${date}`)) return;
+  }
+
+  const [employees, dayEntries] = await Promise.all([listEmployees(), listActualLaborEntriesForDate(date)]);
+  const alreadyCovered = new Set(dayEntries.map((e) => e.employee_id));
+  const drivers = employees.filter((e) => e.is_driver && e.active && !alreadyCovered.has(e.id));
+  for (const driver of drivers) {
+    await createActualLaborEntry({
+      employee_id: driver.id,
+      project_id: null,
+      work_date: date,
+      hours: 8,
+      notes: "Driver working day (no job assigned) — auto-selected by default",
+      actorName,
+    });
+  }
+
+  if (client) {
+    const { error } = await client.from("driver_working_defaults_seeded").insert({ company_id: companyId, work_date: date });
+    if (error && error.code !== "23505") throw error; // 23505 = already seeded by a concurrent request; harmless
+  } else {
+    seededDriverDefaultDatesFallback.add(`${companyId}__${date}`);
+  }
+}
+
 export async function updateActualLaborEntry(
   id: string,
   patch: { hours?: number; start_time?: string; end_time?: string; notes?: string },

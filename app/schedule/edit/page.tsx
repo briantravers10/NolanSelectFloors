@@ -13,6 +13,7 @@ import {
   listWorkTypes,
   listProjectOutboundInvoices,
   listActualLaborEntriesForDate,
+  ensureDriverWorkingDefaults,
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
@@ -20,6 +21,8 @@ import { buildScheduleJobRows } from "@/lib/schedule";
 import { addDays, dayLabel, formatDateShort, isoDate, todayIso } from "@/lib/dates";
 import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
 import { employeeDisplayName } from "@/lib/employee-name";
+import { getActingUser } from "@/lib/current-user";
+import { canEdit } from "@/lib/permissions";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { ScheduleEditForm } from "@/components/schedule/ScheduleEditForm";
 import { ScrollToFormOnSmallScreens } from "@/components/schedule/ScrollToFormOnSmallScreens";
@@ -44,6 +47,16 @@ export default async function ScheduleEditPage({
 }) {
   const { project: projectParam, date: dateParam, qj, qj_building, qj_unit, qj_contact, qj_phone, qj_desc } = await searchParams;
   const date = dateParam ?? todayIso();
+
+  // Drivers Working Today is opt-OUT: the first time this date is opened
+  // with edit access, every active driver is auto-marked working (see
+  // lib/db.ts#ensureDriverWorkingDefaults) — office staff only need to act
+  // to uncheck an exception. Must run before the actual-labor fetch below
+  // so the seeded rows show up immediately rather than on the next load.
+  if (await canEdit("schedule")) {
+    const actingUser = await getActingUser();
+    await ensureDriverWorkingDefaults(date, actingUser.fullName);
+  }
 
   const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems, outboundInvoices, dayLaborEntries] = await Promise.all([
     listProjects(),
