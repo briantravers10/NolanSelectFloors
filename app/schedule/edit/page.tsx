@@ -62,6 +62,15 @@ export default async function ScheduleEditPage({
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const activeEmployees = employees.filter((e) => e.active);
 
+  // Bug fix (production ReferenceError on this page): must be computed
+  // BEFORE jobOptions below, which reads it inside a filter callback.
+  // `||` short-circuiting meant this only threw "Cannot access
+  // 'selectedProjectId' before initialization" once the filter reached a
+  // project whose pipeline_stage IS "Complete" — i.e. intermittently,
+  // whenever any completed job existed anywhere in the company, not on
+  // every load, which is exactly what the production error log showed.
+  const selectedProjectId = projectParam && projects.some((p) => p.id === projectParam) ? projectParam : undefined;
+
   // Completed jobs are left out of the picker — EXCEPT the one being
   // edited. If it were missing, the browser would silently select the first
   // job in the list and Save would write this entry onto that other job.
@@ -88,7 +97,6 @@ export default async function ScheduleEditPage({
   const outboundInvoiceProjectIds = new Set(outboundInvoices.filter((i) => i.is_current).map((i) => i.project_id));
   const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, outboundInvoiceProjectIds });
 
-  const selectedProjectId = projectParam && projects.some((p) => p.id === projectParam) ? projectParam : undefined;
   // Prefill from the row as shown for this date — which, for a job carried
   // over from an earlier day, is that day's entry and crew — so editing a
   // continued job doesn't start from a blank form.
