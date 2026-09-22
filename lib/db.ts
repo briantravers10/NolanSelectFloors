@@ -791,6 +791,21 @@ export async function listMaterials(): Promise<Material[]> {
   return [...getStore().materials].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Just project_id + status for every material line, for the dashboard's
+ * "materials worst status" / "not delivered for jobs starting soon"
+ * checks — neither needs cost, descriptions, supplier, or invoice file
+ * info, so this selects two columns instead of every column of every row.
+ */
+export async function listProjectMaterialStatuses(): Promise<{ project_id: string | null; status: ProjectMaterial["status"] }[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("project_materials").select("project_id, status");
+    if (!error && data) return data as { project_id: string | null; status: ProjectMaterial["status"] }[];
+  }
+  return getStore().projectMaterials.map((m) => ({ project_id: m.project_id, status: m.status }));
+}
+
 export async function listProjectMaterials(options?: { projectId?: string }): Promise<ProjectMaterial[]> {
   const client = sb();
   if (client) {
@@ -3422,6 +3437,22 @@ export async function logQuickBooksSyncEvent(input: {
 // ---------------------------------------------------------------------
 // EMAIL INTAKE (drawings / invoices forwarded from Gmail)
 // ---------------------------------------------------------------------
+
+/**
+ * Just the newest received_at, for the dashboard's "email intake may have
+ * stopped" warning — that stat is the ONLY thing that warning needs, so
+ * this selects one column of one row instead of every column of every
+ * inbound email (bodies and attachment JSON included) the way
+ * listInboundEmails() does.
+ */
+export async function getLatestInboundEmailReceivedAt(): Promise<string | null> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("inbound_emails").select("received_at").order("received_at", { ascending: false }).limit(1).maybeSingle();
+    if (!error) return (data as { received_at: string } | null)?.received_at ?? null;
+  }
+  return getStore().inboundEmails.map((e) => e.received_at).sort().at(-1) ?? null;
+}
 
 export async function listInboundEmails(): Promise<InboundEmail[]> {
   const client = sb();

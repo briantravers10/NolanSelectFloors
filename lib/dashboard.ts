@@ -5,12 +5,12 @@ import {
   listEmployees,
   listEmployeeAvailability,
   listJobRequests,
-  listProjectMaterials,
+  listProjectMaterialStatuses,
   listProjects,
   listCrewRequirements,
   listScheduleAssignments,
   listTimeOffEntries,
-  listInboundEmails,
+  getLatestInboundEmailReceivedAt,
   listProjectScheduleDays,
 } from "./db";
 import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
@@ -67,7 +67,7 @@ export async function getDashboardData() {
     assignments,
     projectMaterials,
     timeOffEntries,
-    inboundEmails,
+    latestInboundReceivedAt,
     scheduleDays,
   ] = await Promise.all([
     listBuildings(),
@@ -79,9 +79,9 @@ export async function getDashboardData() {
     listProjects(),
     listCrewRequirements(),
     listScheduleAssignments(),
-    listProjectMaterials(),
+    listProjectMaterialStatuses(),
     listTimeOffEntries(),
-    listInboundEmails(),
+    getLatestInboundEmailReceivedAt(),
     listProjectScheduleDays(),
   ]);
 
@@ -283,7 +283,7 @@ export async function getDashboardData() {
 
   // Email intake health: warn when forwarded mail has stopped arriving.
   // Only meaningful once at least one email has ever come in.
-  const lastInbound = inboundEmails.map((e) => e.received_at).sort().at(-1) ?? null;
+  const lastInbound = latestInboundReceivedAt;
   const emailIntake = {
     lastReceivedAt: lastInbound,
     staleDays: lastInbound ? Math.floor((Date.now() - new Date(lastInbound).getTime()) / 86_400_000) : null,

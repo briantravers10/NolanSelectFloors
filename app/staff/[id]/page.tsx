@@ -26,7 +26,7 @@ function taxStatusLabel(status?: string) {
 import { AddTimeOffForm } from "@/components/staff/AddTimeOffForm";
 import { GiveAccessForm } from "@/components/staff/GiveAccessForm";
 import { isOwnerActingUser } from "@/lib/permissions";
-import { listOfficeUsers, listSectionPermissions } from "@/lib/db";
+import { listOfficeUsersCached, listSectionPermissionsCached } from "@/lib/request-cache";
 import { SECTION_LABELS } from "@/lib/types";
 import { DeleteStaffButton } from "@/components/staff/DeleteStaffButton";
 import { addTimeOffAction, deleteTimeOffAction, deleteStaffAction, setEmployeeActiveAction, updateEmployeeProfileAction, updateEmployeeNicknameAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
@@ -50,9 +50,9 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
   // App login for this person: an office_users row with their email or name.
   const fullName = `${employee.first_name} ${employee.last_name}`.trim().toLowerCase();
   const account = isOwner
-    ? (await listOfficeUsers()).find((u) => (employee.email && u.email?.toLowerCase() === employee.email.toLowerCase()) || u.full_name.trim().toLowerCase() === fullName)
+    ? (await listOfficeUsersCached()).find((u) => (employee.email && u.email?.toLowerCase() === employee.email.toLowerCase()) || u.full_name.trim().toLowerCase() === fullName)
     : undefined;
-  const accountPerms = account ? await listSectionPermissions(account.id) : [];
+  const accountPerms = account ? await listSectionPermissionsCached(account.id) : [];
   const canViewRates = canViewLaborCost(actingUser);
   const canEditRates = canEditPayRates(actingUser);
   const canViewAllowance = canViewTimeOffAllowance(actingUser);

@@ -9,14 +9,14 @@ import { AccessDenied } from "@/components/AccessDenied";
 import { markInvoiceSentAction } from "./actions";
 import { Button } from "@/components/ui";
 import { canViewLaborCost, getActingUser } from "@/lib/current-user";
-import { listOfficeUsers } from "@/lib/db";
+import { listOfficeUsersCached } from "@/lib/request-cache";
 import { InvoiceAssigneeSelect } from "@/components/dashboard/InvoiceAssigneeSelect";
 
 export default async function DashboardPage() {
   const access = await requireSectionAccess("dashboard");
   if (access === "none") return <AccessDenied section="the Dashboard" />;
 
-  const [data, actingUser, officeUsers] = await Promise.all([getDashboardData(), getActingUser(), listOfficeUsers()]);
+  const [data, actingUser, officeUsers] = await Promise.all([getDashboardData(), getActingUser(), listOfficeUsersCached()]);
   // Money stays with the office: labor cost and invoices are hidden from
   // field staff, who still get jobs, man count and who's working.
   const showMoney = canViewLaborCost(actingUser);
