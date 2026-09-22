@@ -204,8 +204,15 @@ export async function saveScheduleEntryAction(formData: FormData) {
   const actingUser = await getActingUser();
   const day = await getOrCreateProjectScheduleDay(project_id, schedule_date, actingUser.fullName);
 
-  // Unit number lives on the project, editable from here for convenience.
-  if (formData.has("unit_number")) {
+  // Editing an existing entry sends the id twice (locked field + hidden
+  // marker). If they ever disagree, something went wrong on the client —
+  // refuse rather than write one job's details onto another.
+  const editProjectId = String(formData.get("edit_project_id") ?? "");
+  if (editProjectId && editProjectId !== project_id) return;
+
+  // Unit number lives on the project, editable from here for convenience —
+  // only while editing that same job (never on a "new entry" save).
+  if (editProjectId && formData.has("unit_number")) {
     const unit = String(formData.get("unit_number") ?? "").trim() || undefined;
     const project = (await listProjects()).find((p) => p.id === project_id);
     if (project && (project.unit_number ?? undefined) !== unit) await updateProjectUnitNumber(project_id, unit, actingUser.fullName);

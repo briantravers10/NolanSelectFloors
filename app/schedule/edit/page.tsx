@@ -60,8 +60,11 @@ export default async function ScheduleEditPage({
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const activeEmployees = employees.filter((e) => e.active);
 
+  // Completed jobs are left out of the picker — EXCEPT the one being
+  // edited. If it were missing, the browser would silently select the first
+  // job in the list and Save would write this entry onto that other job.
   const jobOptions = [...projects]
-    .filter((p) => p.pipeline_stage !== "Complete")
+    .filter((p) => p.pipeline_stage !== "Complete" || p.id === selectedProjectId)
     .map((p) => {
       const building = buildingById.get(p.building_id);
       const client = building ? clientById.get(building.client_company_id) : undefined;

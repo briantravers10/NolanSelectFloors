@@ -74,16 +74,34 @@ export function ScheduleEditForm({
 
         <div>
           <label className="block text-sm font-semibold text-slate-800 mb-1.5">Job</label>
-          <select name="project_id" defaultValue={selectedProjectId ?? ""} required className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
-            <option value="" disabled>
-              — Select a job —
-            </option>
-            {jobOptions.map((j) => (
-              <option key={j.id} value={j.id}>
-                {j.label}
+          {isEditing ? (
+            <>
+              {/* Locked while editing: everything below is saved onto THIS
+                  job. A disabled select is not submitted, so the id rides
+                  in a hidden input; the server also checks the two agree. */}
+              <input type="hidden" name="project_id" value={selectedProjectId} />
+              <input type="hidden" name="edit_project_id" value={selectedProjectId} />
+              <select value={selectedProjectId} disabled aria-label="Job (locked while editing)" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+                {jobOptions.map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500 mt-1">To put a different job on this day, use &ldquo;+ New entry instead&rdquo; above the list.</p>
+            </>
+          ) : (
+            <select name="project_id" defaultValue="" required className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+              <option value="" disabled>
+                — Select a job —
               </option>
-            ))}
-          </select>
+              {jobOptions.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {isEditing && (
