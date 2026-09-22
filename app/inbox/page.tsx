@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listBuildings, listClientCompanies, listInboundEmails, listProjectMaterials, listProjects } from "@/lib/db";
+import { listBuildings, listClientCompanies, listInboundEmails, listProjectMaterials, listProjects, getNavSectionLastSeen, markNavSectionSeen } from "@/lib/db";
 import { Card, PageHeader, EmptyState, Button } from "@/components/ui";
 import { daysBetween, formatDateLong, todayIso } from "@/lib/dates";
 import { isActiveProjectStage } from "@/lib/calculations";
@@ -12,6 +12,10 @@ import { InboxFilingBlock } from "@/components/inbox/InboxFilingBlock";
 import type { FileKind } from "@/components/inbox/FileInboundForm";
 import { supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
 import { INBOUND_KIND_LABELS, UNASSIGNED_CLIENT_NAME, type InboundKind } from "@/lib/types";
+import { getActingUser } from "@/lib/current-user";
+import { NewPill } from "@/components/NewPill";
+
+const NAV_SECTION = "/inbox";
 
 /**
  * EMAIL INBOX — drawings and invoices forwarded from the office Gmail.
@@ -23,6 +27,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const access = await requireSectionAccess("projects");
   if (access === "none") return <AccessDenied section="Email Inbox" />;
   const { show } = await searchParams;
+  const actingUser = await getActingUser();
+  // Read BEFORE marking seen below, so this render can still tell which
+  // unfiled emails are new since the last visit.
+  const lastSeen = await getNavSectionLastSeen(actingUser.id, NAV_SECTION);
   const [emails, projects, buildings, clients, editable, materials] = await Promise.all([listInboundEmails(), listProjects(), listBuildings(), listClientCompanies(), canEdit("projects"), listProjectMaterials()]);
   const supplierNames = [...new Set(materials.map((m) => supplierKey(m)))].filter((n) => n !== NO_SUPPLIER).sort();
   // Best guess at the supplier from the sender: display name, else the
@@ -56,6 +64,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const matched = emails.filter((e) => e.status === "matched");
   const unfiled = emails.filter((e) => e.status === "unfiled");
   const done = emails.filter((e) => e.status !== "unfiled" && e.status !== "matched").slice(0, show === "all" ? undefined : 20);
+
+  // Opening this page marks it seen — the sidebar badge (unfiled count)
+  // and the "New" highlight below only reflect what's arrived since.
+  await markNavSectionSeen(actingUser.id, NAV_SECTION);
 
   // Signed download links (1 hour) for every stored attachment shown —
   // batched with bounded concurrency instead of one sequential await per
@@ -173,7 +185,10 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               <Card key={e.id} className="p-4 border-amber-200">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">{e.subject || "(no subject)"}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-sm font-semibold text-slate-900">{e.subject || "(no subject)"}</div>
+                      {(!lastSeen || e.received_at > lastSeen) && <NewPill />}
+                    </div>
                     <div className="text-xs text-slate-500">
                       From {e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email ?? "unknown"} · {formatDateLong(e.received_at.slice(0, 10))}
                       {suggestedBuilding && <span className="ml-2 text-sky-700">Looks like {suggestedBuilding.name}</span>}

@@ -8,6 +8,13 @@ const INVOICE_WORDS = ["invoice", "receipt", "bill", "statement", "payment due",
 const DRAWING_WORDS = ["drawing", "drawings", "plan", "plans", "floor plan", "layout", "blueprint", "spec", "elevation", "cad"];
 const DRAWING_EXT = [".dwg", ".dxf", ".rvt", ".skp"];
 
+/** File types treated as "a drawing arrived by email" — see app/drawings
+ * "waiting to be filed" tray. Deliberately excludes image types
+ * (png/jpg/jpeg/heic/tiff): in practice those are almost always a
+ * signature logo at the end of an email, not a floor plan, and were
+ * flooding that tray with useless matches. */
+export const DRAWING_ATTACHMENT_PATTERN = /\.(pdf|dwg|dxf|rvt|skp)$/i;
+
 /** Drawing or invoice? Address first (drawings@ / invoices@), then words
  * in the subject/body, then file types. */
 export function classifyInbound(to: string | undefined, subject: string | undefined, text: string | undefined, filenames: string[]): InboundKind {

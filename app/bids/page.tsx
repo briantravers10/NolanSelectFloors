@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listBuildings, listClientCompanies, listInboundEmails, listProjects } from "@/lib/db";
+import { listBuildings, listClientCompanies, listInboundEmails, listProjects, getNavSectionLastSeen, markNavSectionSeen } from "@/lib/db";
 import { Card, PageHeader, EmptyState, Button } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
 import { formatJobNumber } from "@/lib/calculations";
@@ -10,7 +10,10 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { setBidStatusAction, unfileInboundAction } from "@/app/inbox/actions";
 import { BID_EMAIL_STATUSES, type BidEmailStatus } from "@/lib/types";
 import { ListSearchBox } from "@/components/ListSearchBox";
+import { getActingUser } from "@/lib/current-user";
+import { NewPill } from "@/components/NewPill";
 
+const NAV_SECTION = "/bids";
 const STATUS_LABEL: Record<BidEmailStatus, string> = { open: "To price", quoted: "Quoted — waiting", won: "Won", lost: "Lost" };
 const STATUS_CLASS: Record<BidEmailStatus, string> = {
   open: "bg-amber-100 text-amber-900 border-amber-300",
@@ -28,7 +31,15 @@ export default async function BidsPage({ searchParams }: { searchParams: Promise
   const access = await requireSectionAccess("job_requests");
   if (access === "none") return <AccessDenied section="Bids" />;
   const { show, q = "" } = await searchParams;
+  const actingUser = await getActingUser();
+  // Read BEFORE marking seen below, so this render can still tell which
+  // bids are new since the last visit.
+  const lastSeen = await getNavSectionLastSeen(actingUser.id, NAV_SECTION);
   const [emails, projects, buildings, clients, editable] = await Promise.all([listInboundEmails(), listProjects(), listBuildings(), listClientCompanies(), canEdit("job_requests")]);
+  // Opening this page marks it seen — the sidebar badge (bids still
+  // needing a price) and the "New" highlight below only reflect what's
+  // arrived since.
+  await markNavSectionSeen(actingUser.id, NAV_SECTION);
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -77,6 +88,7 @@ export default async function BidsPage({ searchParams }: { searchParams: Promise
             const p = e.filed_project_id ? projectById.get(e.filed_project_id) : e.suggested_project_id ? projectById.get(e.suggested_project_id) : undefined;
             const b = p ? buildingById.get(p.building_id) : e.suggested_building_id ? buildingById.get(e.suggested_building_id) : undefined;
             const c = b ? clientById.get(b.client_company_id) : undefined;
+            const isNew = status === "open" && (!lastSeen || e.received_at > lastSeen);
             return (
               <Card key={e.id} className="p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -84,6 +96,7 @@ export default async function BidsPage({ searchParams }: { searchParams: Promise
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_CLASS[status]}`}>{STATUS_LABEL[status]}</span>
                       <div className="text-sm font-semibold text-slate-900">{e.subject || "(no subject)"}</div>
+                      {isNew && <NewPill />}
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
                       From {e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email ?? "unknown"} · {formatDateLong(e.received_at.slice(0, 10))} · filed by {e.filed_by}

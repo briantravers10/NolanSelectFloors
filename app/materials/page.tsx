@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listBuildings, listProjectMaterials, listProjects } from "@/lib/db";
+import { listBuildings, listProjectMaterials, listProjects, getNavSectionLastSeen, markNavSectionSeen } from "@/lib/db";
 import { Card, PageHeader, StatusBadge, EmptyState } from "@/components/ui";
 import { formatCurrency, formatJobNumber, isActiveProjectStage } from "@/lib/calculations";
 import { addDays, isoDate, todayIso } from "@/lib/dates";
@@ -7,13 +7,24 @@ import { MATERIAL_STATUSES } from "@/lib/types";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { ListSearchBox } from "@/components/ListSearchBox";
+import { getActingUser } from "@/lib/current-user";
+import { NewPill } from "@/components/NewPill";
+
+const NAV_SECTION = "/materials";
 
 export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const access = await requireSectionAccess("materials");
   if (access === "none") return <AccessDenied section="Materials" />;
   const { q = "" } = await searchParams;
 
+  const actingUser = await getActingUser();
+  // Read BEFORE marking seen below, so this render can still tell which
+  // delivery warnings are new since the last visit.
+  const lastSeen = await getNavSectionLastSeen(actingUser.id, NAV_SECTION);
   const [projectMaterials, projects, buildings] = await Promise.all([listProjectMaterials(), listProjects(), listBuildings()]);
+  // Opening this page marks it seen — the sidebar badge and "New"
+  // highlight below only reflect what's been logged since.
+  await markNavSectionSeen(actingUser.id, NAV_SECTION);
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
 
@@ -50,11 +61,13 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
             {warnings.map((m) => {
               const p = m.project_id ? projectById.get(m.project_id) : undefined;
               const b = p ? buildingById.get(p.building_id) : undefined;
+              const isNew = !lastSeen || m.created_at > lastSeen;
               return (
                 <li key={m.id}>
                   <Link href={`/projects/${p?.id}`} className="hover:underline">
                     {p && <span className="font-mono">{formatJobNumber(p.job_number)}</span>} {b?.name} ({p?.name}) starts {p?.start_date} — {m.description} still {m.status}
                   </Link>
+                  {isNew && <span className="ml-2 align-middle"><NewPill /></span>}
                 </li>
               );
             })}

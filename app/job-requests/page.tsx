@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listBuildings, listClientCompanies, listJobRequests } from "@/lib/db";
+import { listBuildings, listClientCompanies, listJobRequests, getNavSectionLastSeen, markNavSectionSeen } from "@/lib/db";
 import { Card, PageHeader, StatusBadge, LinkButton, EmptyState } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 import type { JobRequestStatus } from "@/lib/types";
@@ -9,7 +9,9 @@ import { daysBetween, todayIso } from "@/lib/dates";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { ListSearchBox } from "@/components/ListSearchBox";
+import { NewPill } from "@/components/NewPill";
 
+const NAV_SECTION = "/job-requests";
 const CLOSED: JobRequestStatus[] = ["Converted to Project", "Archived", "Declined", "Cancelled"];
 const isOpen = (s: JobRequestStatus) => !CLOSED.includes(s);
 // A job request open this long without resolution is flagged as overdue —
@@ -34,10 +36,17 @@ export default async function JobRequestsPage({ searchParams }: { searchParams: 
 }
 
 async function JobRequestsList({ filter, q }: { filter?: string; q: string }) {
-  const [jobRequests, buildings, clients, actingUser] = await Promise.all([listJobRequests(), listBuildings(), listClientCompanies(), getActingUser()]);
+  const actingUser = await getActingUser();
+  // Read BEFORE marking seen below, so this render can still tell which
+  // requests are new since the last visit.
+  const lastSeen = await getNavSectionLastSeen(actingUser.id, NAV_SECTION);
+  const [jobRequests, buildings, clients] = await Promise.all([listJobRequests(), listBuildings(), listClientCompanies()]);
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const today = todayIso();
+  // Opening this page marks it seen — the sidebar badge and "New"
+  // highlight below only reflect what's arrived/turned overdue since.
+  await markNavSectionSeen(actingUser.id, NAV_SECTION);
 
   const tab = filter === "mine" || filter === "created" || filter === "archived" ? filter : "open";
   let filtered = jobRequests
@@ -101,6 +110,7 @@ async function JobRequestsList({ filter, q }: { filter?: string; q: string }) {
               const ageDays = daysBetween(jr.received_at.slice(0, 10), today);
               const overdue = ageDays >= OVERDUE_DAYS && isOpen(jr.status);
               const displayStatus = jr.status === "Converted to Project" ? "Job Created" : jr.status;
+              const isNew = (!lastSeen || jr.received_at > lastSeen) && jr.status === "New Request";
               return (
                 <Link key={jr.id} href={`/job-requests/${jr.id}`} className="block px-4 py-3 hover:bg-slate-50">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -109,6 +119,7 @@ async function JobRequestsList({ filter, q }: { filter?: string; q: string }) {
                         <span className="text-sm font-medium text-slate-900 truncate">
                           {building?.name}{jr.unit_number && ` — ${jr.unit_number}`}
                         </span>
+                        {isNew && <NewPill />}
                         {overdue && <span className="text-[10px] font-semibold uppercase text-rose-700 bg-rose-50 rounded-full px-1.5 py-0.5 shrink-0">Overdue</span>}
                       </div>
                       <div className="text-xs text-slate-500">{client?.name}</div>

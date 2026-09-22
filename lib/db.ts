@@ -4044,3 +4044,57 @@ export async function searchDirectory(query: string, limit = 20): Promise<Direct
     projects: dedupeById([...jobNumberMatches, ...directProjects, ...projectsByBuilding]).slice(0, limit),
   };
 }
+
+// ---------------------------------------------------------------------
+// NAV BADGE "SEEN" STATE — see lib/nav-badges.ts. One row per (user,
+// section); visiting a section writes "now", and both the sidebar count
+// and a page's own "New" highlights are computed against the value from
+// BEFORE that write (each caller reads first, renders, then marks seen).
+// ---------------------------------------------------------------------
+
+const navBadgeSeenFallback = new Map<string, string>();
+
+/** Every section this user has ever "seen", keyed by NAV_ITEMS href. A
+ * section missing from the result has never been visited — callers treat
+ * that as "everything currently in it counts as new". */
+export async function listNavSectionsLastSeen(userKey: string): Promise<Record<string, string>> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("nav_badge_seen").select("section, last_seen_at").eq("user_key", userKey);
+    if (!error && data) return Object.fromEntries(data.map((r) => [r.section as string, r.last_seen_at as string]));
+    return {};
+  }
+  const prefix = `${userKey}__`;
+  const result: Record<string, string> = {};
+  for (const [key, value] of navBadgeSeenFallback) {
+    if (key.startsWith(prefix)) result[key.slice(prefix.length)] = value;
+  }
+  return result;
+}
+
+/** This user's last-seen timestamp for ONE section, or undefined if never
+ * visited. Used by pages that render their own "New" highlights (they need
+ * just their one section, read before they mark it seen). */
+export async function getNavSectionLastSeen(userKey: string, section: string): Promise<string | undefined> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("nav_badge_seen").select("last_seen_at").eq("user_key", userKey).eq("section", section).maybeSingle();
+    if (!error && data) return data.last_seen_at as string;
+    return undefined;
+  }
+  return navBadgeSeenFallback.get(`${userKey}__${section}`);
+}
+
+/** Marks a section seen right now — its sidebar badge clears, and nothing
+ * currently in it will show as "New" again unless something arrives after
+ * this call. */
+export async function markNavSectionSeen(userKey: string, section: string): Promise<void> {
+  const now = new Date().toISOString();
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("nav_badge_seen").upsert({ company_id: getCurrentCompanyId(), user_key: userKey, section, last_seen_at: now }, { onConflict: "company_id,user_key,section" });
+    if (error) throw error;
+  } else {
+    navBadgeSeenFallback.set(`${userKey}__${section}`, now);
+  }
+}

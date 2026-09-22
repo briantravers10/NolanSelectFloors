@@ -16,7 +16,6 @@ import {
 import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
 import {
   compareCrewForProjectDate,
-  findDoubleBookings,
   summarizeDay,
 } from "./calculations";
 import { addDays, isoDate, todayIso } from "./dates";
@@ -168,19 +167,9 @@ export async function getDashboardData() {
     }
   }
 
-  // Double-booked staff (this week)
-  const doubleBookings = findDoubleBookings(assignments);
-  for (const db of doubleBookings) {
-    const emp = employeeById.get(db.employee_id);
-    const names = db.project_ids
-      .map((pid) => projects.find((p) => p.id === pid)?.name ?? pid)
-      .join(" and ");
-    attention.push({
-      severity: "bad",
-      message: `${emp ? `${emp.first_name} ${emp.last_name}` : "An employee"} is double-booked on ${db.schedule_date}: ${names}`,
-      href: `/schedule?date=${db.schedule_date}`,
-    });
-  }
+  // Note: double-booking is NOT flagged here — staff are double-booked
+  // often enough (per the client) that surfacing every instance as an
+  // "attention required" item was just noise, not something to act on.
 
   // Scheduled during logged time off (Vacation & Sick Day Tracker, build 7)
   // — same "warn, don't block" pattern as double-booking above: this never

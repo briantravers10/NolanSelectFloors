@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listBuildings, listClientCompanies, listInboundEmails, listProjectDrawings, listProjects } from "@/lib/db";
+import { listBuildings, listClientCompanies, listInboundEmails, listProjectDrawings, listProjects, getNavSectionLastSeen, markNavSectionSeen } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { formatDateShort } from "@/lib/dates";
 import { formatJobNumber } from "@/lib/calculations";
@@ -7,15 +7,21 @@ import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { drawingFileUrl, signedFileUrl } from "@/lib/storage";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { DRAWING_ATTACHMENT_PATTERN as DRAWING_LIKE } from "@/lib/inbound";
+import { getActingUser } from "@/lib/current-user";
+import { NewPill } from "@/components/NewPill";
 
 /**
  * DRAWINGS — one library of every drawing across every job, so nobody has
  * to open jobs one by one to find a plan. Each card is the same file the
  * job page shows (current version only; older versions stay in the job's
  * history). Drawings that arrived by email without a building named sit
- * at the top, amber, until someone files them from Email Inbox.
+ * at the top, amber, until someone files them from Email Inbox. Image
+ * attachments (png/jpg/etc.) are deliberately never treated as drawings —
+ * see lib/inbound.ts DRAWING_ATTACHMENT_PATTERN — they're almost always
+ * just a signature logo.
  */
-const DRAWING_LIKE = /\.(pdf|dwg|dxf|rvt|skp|png|jpe?g|heic|tiff?)$/i;
+const NAV_SECTION = "/drawings";
 
 function fileLabel(reference?: string | null): string {
   if (!reference) return "File";
@@ -27,6 +33,11 @@ export default async function DrawingsPage({ searchParams }: { searchParams: Pro
   const access = await requireSectionAccess("projects");
   if (access === "none") return <AccessDenied section="Drawings" />;
   const { q = "", company = "", building = "", all } = await searchParams;
+
+  const actingUser = await getActingUser();
+  // Read BEFORE marking seen below, so this render can still tell which
+  // waiting items are new since the last visit.
+  const lastSeen = await getNavSectionLastSeen(actingUser.id, NAV_SECTION);
 
   const [drawings, projects, buildings, clients, inbound] = await Promise.all([listProjectDrawings(), listProjects(), listBuildings(), listClientCompanies(), listInboundEmails()]);
   const projectById = new Map(projects.map((p) => [p.id, p]));
@@ -58,6 +69,11 @@ export default async function DrawingsPage({ searchParams }: { searchParams: Pro
     .filter((e) => (e.status === "unfiled" || e.status === "matched") && e.attachments.some((a) => a.storage_path && DRAWING_LIKE.test(a.filename)) && e.kind !== "invoice")
     .filter((e) => !q || `${e.subject ?? ""} ${e.from_email ?? ""} ${e.attachments.map((a) => a.filename).join(" ")}`.toLowerCase().includes(q.toLowerCase()))
     .filter(() => !company && !building);
+
+  // Opening this page marks it seen — from here on, only drawings that
+  // arrive AFTER this point show the "New" highlight or count on the
+  // sidebar badge, rather than the whole waiting tray forever.
+  await markNavSectionSeen(actingUser.id, NAV_SECTION);
 
   // Signed URLs are independent storage calls — batched with bounded
   // concurrency instead of one sequential await per file (see the
@@ -125,11 +141,15 @@ export default async function DrawingsPage({ searchParams }: { searchParams: Pro
                 .filter((a) => a.storage_path && DRAWING_LIKE.test(a.filename))
                 .map((a) => {
                   const url = waitingUrls.get(`${e.id}:${a.id}`);
+                  const isNew = !lastSeen || e.received_at > lastSeen;
                   return (
                     <Card key={`${e.id}:${a.id}`} className="border-amber-300 bg-amber-50 overflow-hidden">
                       <div className="h-20 bg-amber-100 flex items-center justify-center text-[11px] font-bold text-amber-900">{fileLabel(a.filename)}</div>
                       <div className="p-3 space-y-1">
-                        <div className="text-sm font-semibold text-slate-900 truncate" title={a.filename}>{a.filename}</div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="text-sm font-semibold text-slate-900 truncate flex-1" title={a.filename}>{a.filename}</div>
+                          {isNew && <NewPill />}
+                        </div>
                         <div className="text-xs font-medium text-amber-900">Not filed to a job</div>
                         <div className="text-[11px] text-slate-500 truncate">From {e.from_email ?? "unknown"} · {formatDateShort(e.received_at.slice(0, 10))}</div>
                         <div className="flex gap-2 pt-1">

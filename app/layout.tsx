@@ -8,7 +8,7 @@ import { AssistantPanel } from "@/components/assistant/AssistantPanel";
 import { getActingUser } from "@/lib/current-user";
 import { getAllSectionAccess } from "@/lib/permissions";
 import { isRealAuthConfigured } from "@/lib/auth";
-import { getNavBadgeCounts } from "@/lib/nav-badges";
+import { getNavBadgeCounts, markLayoutNavSectionSeen } from "@/lib/nav-badges";
 
 export const metadata: Metadata = {
   title: "Nolan Select Floors — Operations",
@@ -38,6 +38,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   // "Permissions & Staff Access".
   const access = await getAllSectionAccess(await getActingUser());
   const realAuthOn = isRealAuthConfigured();
+  // Opening a section clears its own sidebar badge (see lib/nav-badges.ts)
+  // — done BEFORE computing badgeCounts below so the section you just
+  // opened shows 0 immediately, not on the next navigation. Sections with
+  // their own "New" highlight mark themselves seen on their own page
+  // instead (see LAYOUT_MARKS_SEEN_HREFS), so this is a no-op for those.
+  if (pathname) await markLayoutNavSectionSeen(pathname).catch(() => {});
   // Sidebar "needs attention" badge counts — see lib/nav-badges.ts. Never
   // blocks the shell from rendering: a failure here (e.g. Supabase hiccup)
   // just means no badges this load, not a broken page.
