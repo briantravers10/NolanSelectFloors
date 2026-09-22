@@ -87,8 +87,8 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
             const done = d.job_status === "Complete";
             return (
               <Card key={d.id} className={`p-4 border-amber-300 ${done ? "bg-slate-50 opacity-80" : "bg-amber-50"}`}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-1">
                     <div className="text-lg font-semibold text-slate-900">
                       {d.meeting_time ? <span className="mr-2 rounded-md bg-amber-200 px-2 py-0.5 text-sm font-bold text-amber-950">{d.meeting_time}</span> : <span className="mr-2 text-sm text-slate-500">No time set</span>}
                       {b?.name ?? p?.name ?? "Unknown"}{p?.unit_number ? ` — Unit ${p.unit_number}` : ""}
@@ -113,7 +113,7 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
                     </div>
                   </div>
                   {editable && (
-                    <div className="flex flex-col gap-2 min-w-[280px]">
+                    <div className="flex flex-col gap-2 w-full sm:w-[320px] flex-none">
                       <form action={updateMeetingAction.bind(null, d.id)} className="flex flex-col gap-1.5">
                         <div className="flex items-center gap-2">
                           <label className="text-xs font-medium text-slate-600 w-10">Time</label>
