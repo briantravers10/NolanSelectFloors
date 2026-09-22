@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   }
   for (const p of projects) {
     const building = buildingById.get(p.building_id);
-    results.push({ type: "Project", label: p.name, sublabel: building?.name, href: `/projects/${p.id}` });
+    results.push({ type: "Project", label: `#${p.job_number} — ${p.name}`, sublabel: building?.name, href: `/projects/${p.id}` });
   }
 
   return NextResponse.json({ results: results.slice(0, RESULT_LIMIT) });

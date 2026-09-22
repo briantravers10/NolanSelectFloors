@@ -39,6 +39,7 @@ import {
   plannedAssignmentShares,
   plannedCostOf,
   formatCurrency,
+  formatJobNumber,
   formatPercent,
 } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
@@ -192,7 +193,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
         <div>
-          <EditableTitle projectId={project.id} name={project.name} canEdit={canEditProjects} />
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-semibold text-slate-500">{formatJobNumber(project.job_number)}</span>
+            <EditableTitle projectId={project.id} name={project.name} canEdit={canEditProjects} />
+          </div>
           {building && <p className="text-sm text-slate-500 mt-0.5">{building.name} · {client?.name ?? ""}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-1.5 justify-end">

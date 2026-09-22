@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listProjects, listScheduleAssignments } from "@/lib/db";
 import { Card, PageHeader, StatusBadge } from "@/components/ui";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber } from "@/lib/calculations";
 import { PIPELINE_STAGES } from "@/lib/types";
 import { projectLaborCost } from "@/lib/calculations";
 import { Pipeline } from "./Pipeline";
@@ -88,6 +88,8 @@ async function ProjectsList({ stage, q }: { stage?: string; q: string }) {
     filtered = filtered.filter((p) => {
       const building = buildingById.get(p.building_id);
       const client = building ? clientById.get(building.client_company_id) : undefined;
+      const jobNumberNeedle = needle.replace(/^#/, "");
+      if (jobNumberNeedle && String(p.job_number) === jobNumberNeedle) return true;
       const hay = `${p.name} ${building?.name ?? ""} ${building?.address ?? ""} ${client?.name ?? ""} ${p.unit_number ?? ""}`.toLowerCase();
       return hay.includes(needle);
     });
@@ -96,12 +98,13 @@ async function ProjectsList({ stage, q }: { stage?: string; q: string }) {
 
   return (
     <div>
-      <ListSearchBox action="/projects" q={q} placeholder="Search by job, building, unit, or management company…" ariaLabel="Search projects" extraParams={{ stage }} />
+      <ListSearchBox action="/projects" q={q} placeholder="Search by job #, name, building, unit, or management company…" ariaLabel="Search projects" extraParams={{ stage }} />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-500 uppercase tracking-wide border-b border-slate-200">
+                <th className="px-4 py-3">Job #</th>
                 <th className="px-4 py-3">Project</th>
                 <th className="px-4 py-3">Building</th>
                 <th className="px-4 py-3">Management Co.</th>
@@ -113,13 +116,14 @@ async function ProjectsList({ stage, q }: { stage?: string; q: string }) {
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">No projects match that search.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-slate-500">No projects match that search.</td></tr>
               )}
               {filtered.map((p) => {
                 const building = buildingById.get(p.building_id);
                 const client = building ? clientById.get(building.client_company_id) : undefined;
                 return (
                   <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{formatJobNumber(p.job_number)}</td>
                     <td className="px-4 py-3">
                       <Link href={`/projects/${p.id}`} className="font-medium text-slate-900 hover:text-sky-600">
                         {p.name}

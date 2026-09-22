@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getDashboardData } from "@/lib/dashboard";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
 import { Card, PageHeader, Stat, StatusBadge, AlertPill, EmptyState } from "@/components/ui";
 import { Icon } from "@/components/Icon";
@@ -134,6 +134,7 @@ export default async function DashboardPage() {
                       <StatusBadge status={job.project.pipeline_stage} />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                      <span className="font-mono">{formatJobNumber(job.project.job_number)}</span>
                       <span>{job.project.name}</span>
                       <span>Crew: {job.manCount}</span>
                       {showMoney && <span>Labor: {formatCurrency(job.laborCost)}</span>}
@@ -164,7 +165,10 @@ export default async function DashboardPage() {
                 {data.upcomingProjects.map(({ project, building }) => (
                   <Link key={project.id} href={`/projects/${project.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded">
                     <div>
-                      <div className="text-sm font-medium text-slate-800">{building?.name} {project.unit_number && `— Unit ${project.unit_number}`}</div>
+                      <div className="text-sm font-medium text-slate-800 flex items-center gap-2">
+                        <span className="font-mono text-xs text-slate-500">{formatJobNumber(project.job_number)}</span>
+                        {building?.name} {project.unit_number && `— Unit ${project.unit_number}`}
+                      </div>
                       <div className="text-xs text-slate-500">{project.name}</div>
                     </div>
                     <div className="text-right">

@@ -71,6 +71,7 @@ import type {
   TaskStatus,
   TimeOffEntry,
   TimeOffType,
+  Unit,
   WorkTypeRecord,
   InboundEmail,
   InboundKind,
@@ -263,6 +264,73 @@ export async function getProject(id: string): Promise<Project | undefined> {
     if (!error) return (data as Project | null) ?? undefined;
   }
   return (await listProjects()).find((p) => p.id === id);
+}
+
+/**
+ * Look up a project by its permanent job number, with or without a
+ * leading "#" (search bar, direct-link, etc.). DB-filtered — never a
+ * full-table scan (0031_job_numbers_and_units.sql).
+ */
+export async function getProjectByJobNumber(jobNumberRaw: string): Promise<Project | undefined> {
+  const n = Number.parseInt(jobNumberRaw.trim().replace(/^#/, ""), 10);
+  if (!Number.isFinite(n)) return undefined;
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("projects").select("*").eq("job_number", n).maybeSingle();
+    if (!error) return (data as Project | null) ?? undefined;
+  }
+  return getStore().projects.find((p) => p.job_number === n);
+}
+
+/** All persistent units for one building (Building -> Unit -> Job history). */
+export async function listUnitsForBuilding(buildingId: string): Promise<Unit[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("units").select("*").eq("building_id", buildingId).order("unit_number");
+    if (!error && data) return data as Unit[];
+  }
+  return getStore().units.filter((u) => u.building_id === buildingId).sort((a, b) => a.unit_number.localeCompare(b.unit_number));
+}
+
+export async function getUnit(id: string): Promise<Unit | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("units").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as Unit | null) ?? undefined;
+  }
+  return getStore().units.find((u) => u.id === id);
+}
+
+/**
+ * Job History for a single unit — newest first, DB-filtered on unit_id
+ * (never a full projects fetch filtered in JS). Used by the Unit Job
+ * History screen and the "Previous work at this location" preview.
+ */
+export async function listProjectsByUnit(unitId: string): Promise<Project[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("projects").select("*").eq("unit_id", unitId).order("created_at", { ascending: false });
+    if (!error && data) return data as Project[];
+  }
+  return getStore()
+    .projects.filter((p) => p.unit_id === unitId)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+/**
+ * Job History for an entire building (all units plus building-level/
+ * common-area jobs with no unit) — newest first, DB-filtered on
+ * building_id. Used by the Building Job History screen.
+ */
+export async function listProjectsByBuilding(buildingId: string): Promise<Project[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("projects").select("*").eq("building_id", buildingId).order("created_at", { ascending: false });
+    if (!error && data) return data as Project[];
+  }
+  return getStore()
+    .projects.filter((p) => p.building_id === buildingId)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }
 
 export async function listOfficeUsers(): Promise<OfficeUser[]> {
@@ -1859,6 +1927,45 @@ export async function updateJobRequestStatus(id: string, status: JobRequestStatu
 }
 
 /**
+ * Finds or creates the persistent Unit for a (building, unit_number) pair,
+ * for every NEW project going forward — not just the one-time backfill.
+ * Returns undefined (never guesses) when unit_number is absent or names
+ * more than one unit (commas/ampersands/"and"/slash/semicolon), exactly
+ * the same rule used by 0031_job_numbers_and_units.sql, so a project
+ * created today behaves identically to one migrated from before.
+ */
+async function resolveUnitId(companyId: string, buildingId: string, unitNumber: string | undefined): Promise<string | undefined> {
+  const raw = unitNumber?.trim();
+  if (!raw || /[,&/;]/.test(raw) || /\band\b/i.test(raw)) return undefined;
+  const client = sb();
+  if (client) {
+    const { data: existing, error: findError } = await client.from("units").select("*").eq("building_id", buildingId).eq("unit_number", raw).maybeSingle();
+    if (!findError && existing) return (existing as Unit).id;
+    const { data: created, error: insertError } = await client
+      .from("units")
+      .insert({ company_id: companyId, building_id: buildingId, unit_number: raw })
+      .select()
+      .single();
+    if (!insertError && created) return (created as Unit).id;
+    return undefined;
+  }
+  const store = getStore();
+  const existing = store.units.find((u) => u.building_id === buildingId && u.unit_number === raw);
+  if (existing) return existing.id;
+  const unit: Unit = { id: randomUUID(), company_id: companyId, building_id: buildingId, unit_number: raw, created_at: new Date().toISOString() };
+  store.units.push(unit);
+  return unit.id;
+}
+
+/** In-memory fallback for the DB-sequence-backed job_number default — safe
+ * here because the seed store is a single in-process object, so there's no
+ * concurrent-write race to guard against the way there is in Postgres. */
+function nextJobNumberForStore(): number {
+  const projects = getStore().projects;
+  return projects.length ? Math.max(...projects.map((p) => p.job_number)) + 1 : 10001;
+}
+
+/**
  * Creates the project row for a job request exactly once — every later
  * lifecycle change (claiming the bid, sending it, scheduling, sending to
  * crew, starting/completing the work) updates this SAME row via the
@@ -1874,12 +1981,15 @@ async function insertProjectFromJobRequest(
   const store = getStore();
   const building = (await listBuildings()).find((b) => b.id === jr.building_id);
   const now = new Date().toISOString();
-  const project: Project = {
+  const companyId = getCurrentCompanyId();
+  const unitId = await resolveUnitId(companyId, jr.building_id, jr.unit_number);
+  const project: Omit<Project, "job_number"> = {
     id: randomUUID(),
-    company_id: getCurrentCompanyId(),
+    company_id: companyId,
     building_id: jr.building_id,
     job_request_id: jr.id,
     unit_number: jr.unit_number,
+    unit_id: unitId,
     name: overrides?.name ?? `${building?.name ?? "Building"}${jr.unit_number ? " — Unit " + jr.unit_number : ""}`,
     description: jr.description,
     project_value: overrides?.project_value ?? jr.estimate_amount ?? 0,
@@ -1895,17 +2005,23 @@ async function insertProjectFromJobRequest(
     bid_accepted_at: initialBidStatus === "Accepted" ? now : undefined,
   };
   const client = sb();
+  let saved: Project;
   if (client) {
-    const { error } = await client.from("projects").insert(project);
+    // job_number is never set by the app — the column default pulls it
+    // from project_job_number_seq atomically, so two near-simultaneous
+    // creations can never receive the same number.
+    const { data, error } = await client.from("projects").insert(project).select().single();
     if (error) throw error;
+    saved = data as Project;
     await client.from("job_requests").update({ status: "Converted to Project", converted_project_id: project.id, updated_at: now }).eq("id", jr.id);
   } else {
-    store.projects.push(project);
+    saved = { ...project, job_number: nextJobNumberForStore() };
+    store.projects.push(saved);
     jr.status = "Converted to Project";
     jr.converted_project_id = project.id;
     jr.updated_at = now;
   }
-  return project;
+  return saved;
 }
 
 /**
@@ -1924,11 +2040,14 @@ export async function createQuickProject(input: {
 }): Promise<Project> {
   const building = (await listBuildings()).find((b) => b.id === input.building_id);
   const now = new Date().toISOString();
-  const project: Project = {
+  const companyId = getCurrentCompanyId();
+  const unitId = await resolveUnitId(companyId, input.building_id, input.unit_number);
+  const project: Omit<Project, "job_number"> = {
     id: randomUUID(),
-    company_id: getCurrentCompanyId(),
+    company_id: companyId,
     building_id: input.building_id,
     unit_number: input.unit_number || undefined,
+    unit_id: unitId,
     name: `${building?.name ?? "Building"}${input.unit_number ? " — Unit " + input.unit_number : ""}`,
     description: input.description,
     project_value: 0,
@@ -1943,14 +2062,17 @@ export async function createQuickProject(input: {
     scheduled_at: now,
   };
   const client = sb();
+  let saved: Project;
   if (client) {
-    const { error } = await client.from("projects").insert(project);
+    const { data, error } = await client.from("projects").insert(project).select().single();
     if (error) throw error;
+    saved = data as Project;
   } else {
-    getStore().projects.push(project);
+    saved = { ...project, job_number: nextJobNumberForStore() };
+    getStore().projects.push(saved);
   }
-  logActivity({ action: "Created quick job", related_type: "project", related_id: project.id, actor_name: input.actorName, detail: `${project.name} — ${input.description}` });
-  return project;
+  logActivity({ action: `Job #${saved.job_number} created`, related_type: "project", related_id: saved.id, actor_name: input.actorName, detail: `${saved.name} — ${input.description}` });
+  return saved;
 }
 
 /**
@@ -1966,7 +2088,7 @@ export async function convertJobRequestToProject(
   const jr = (await listJobRequests()).find((j) => j.id === jobRequestId);
   if (!jr) throw new Error("Job request not found");
   const project = await insertProjectFromJobRequest(jr, overrides, "Bid Accepted", "Accepted");
-  logActivity({ action: "Converted job request to project", related_type: "project", related_id: project.id, detail: `From job request ${jobRequestId} — bid accepted` });
+  logActivity({ action: `Job #${project.job_number} created`, related_type: "project", related_id: project.id, detail: `Converted from job request ${jobRequestId} — bid accepted` });
   return project;
 }
 
@@ -1980,7 +2102,7 @@ export async function createBidFromJobRequest(jobRequestId: string): Promise<Pro
   const jr = (await listJobRequests()).find((j) => j.id === jobRequestId);
   if (!jr) throw new Error("Job request not found");
   const project = await insertProjectFromJobRequest(jr, undefined, "Bid Sent", "Unclaimed");
-  logActivity({ action: "Created bid", related_type: "project", related_id: project.id, detail: `From job request ${jobRequestId} — unclaimed, awaiting an estimator` });
+  logActivity({ action: `Job #${project.job_number} created`, related_type: "project", related_id: project.id, detail: `Bid from job request ${jobRequestId} — unclaimed, awaiting an estimator` });
   return project;
 }
 
@@ -3714,10 +3836,24 @@ function dedupeById<T extends { id: string }>(rows: T[]): T[] {
  * company (wave 2), then those buildings (direct + by-company) are used
  * to pull the projects that sit on any of them (wave 3).
  */
+// A job number search term: optional leading "#", then digits — e.g. "#10042"
+// or "10042". Distinguished from a plain numeric building/unit query by the
+// leading "#" OR by matching the 5-digit job-number range (>= 10000), so a
+// short numeric street address search isn't misread as a job number.
+function parseJobNumberQuery(q: string): number | undefined {
+  const m = /^#?(\d+)$/.exec(q);
+  if (!m) return undefined;
+  const n = Number.parseInt(m[1], 10);
+  if (!Number.isFinite(n)) return undefined;
+  if (!q.startsWith("#") && n < 10000) return undefined;
+  return n;
+}
+
 export async function searchDirectory(query: string, limit = 20): Promise<DirectorySearchResults> {
   const q = query.trim();
   const empty: DirectorySearchResults = { buildings: [], clientCompanies: [], contacts: [], employees: [], projects: [] };
   if (!q) return empty;
+  const jobNumber = parseJobNumberQuery(q);
 
   const client = sb();
   if (!client) {
@@ -3733,12 +3869,14 @@ export async function searchDirectory(query: string, limit = 20): Promise<Direct
     ]);
     const clientById = new Map(clientCompanies.map((c) => [c.id, c]));
     const buildingById = new Map(buildings.map((b) => [b.id, b]));
+    const jobNumberMatches = jobNumber !== undefined ? projects.filter((p) => p.job_number === jobNumber) : [];
+    const textMatches = projects.filter((p) => `${p.name} ${p.unit_number ?? ""} ${buildingById.get(p.building_id)?.name ?? ""}`.toLowerCase().includes(needle));
     return {
       buildings: buildings.filter((b) => `${b.name} ${b.address} ${b.city} ${clientById.get(b.client_company_id)?.name ?? ""}`.toLowerCase().includes(needle)).slice(0, limit),
       clientCompanies: clientCompanies.filter((c) => `${c.name} ${c.email ?? ""} ${c.phone ?? ""}`.toLowerCase().includes(needle)).slice(0, limit),
       contacts: contacts.filter((c) => `${c.first_name} ${c.last_name} ${c.email ?? ""} ${c.phone ?? ""} ${clientById.get(c.client_company_id ?? "")?.name ?? ""}`.toLowerCase().includes(needle)).slice(0, limit),
       employees: employees.filter((e) => `${e.first_name} ${e.last_name} ${e.phone ?? ""} ${e.title}`.toLowerCase().includes(needle)).slice(0, limit),
-      projects: projects.filter((p) => `${p.name} ${p.unit_number ?? ""} ${buildingById.get(p.building_id)?.name ?? ""}`.toLowerCase().includes(needle)).slice(0, limit),
+      projects: dedupeById([...jobNumberMatches, ...textMatches]).slice(0, limit),
     };
   }
 
@@ -3758,13 +3896,23 @@ export async function searchDirectory(query: string, limit = 20): Promise<Direct
     return !error && data ? dedupeById(data as T[]) : [];
   };
 
-  // Wave 1 — every direct, single-table match, all in parallel.
-  const [matchedClients, directBuildings, directContacts, employeeMatches, directProjects] = await Promise.all([
+  // Wave 1 — every direct, single-table match, all in parallel. A job
+  // number lookup is its own DB-filtered .eq() (never a full-table scan),
+  // and its results are prioritized first among project matches below.
+  const [matchedClients, directBuildings, directContacts, employeeMatches, directProjects, jobNumberMatches] = await Promise.all([
     ilikeAny<ClientCompany>("client_companies", ["name", "email", "phone"]),
     ilikeAny<Building>("buildings", ["name", "address", "city"]),
     ilikeAny<Contact>("contacts", ["first_name", "last_name", "email", "phone"]),
     ilikeAny<Employee>("employees", ["first_name", "last_name", "phone", "title"]),
     ilikeAny<Project>("projects", ["name", "unit_number"]),
+    jobNumber !== undefined
+      ? client
+          .from("projects")
+          .select("*")
+          .eq("job_number", jobNumber)
+          .limit(limit)
+          .then(({ data, error }) => (!error && data ? (data as Project[]) : []))
+      : Promise.resolve([] as Project[]),
   ]);
   const matchedClientIds = matchedClients.map((c) => c.id);
 
@@ -3786,6 +3934,6 @@ export async function searchDirectory(query: string, limit = 20): Promise<Direct
     clientCompanies: matchedClients.slice(0, limit),
     contacts: dedupeById([...directContacts, ...contactsByClient]).slice(0, limit),
     employees: employeeMatches.slice(0, limit),
-    projects: dedupeById([...directProjects, ...projectsByBuilding]).slice(0, limit),
+    projects: dedupeById([...jobNumberMatches, ...directProjects, ...projectsByBuilding]).slice(0, limit),
   };
 }

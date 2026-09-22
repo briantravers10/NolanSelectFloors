@@ -50,6 +50,7 @@ import type {
   SchedulePickupItem,
   Task,
   TimeOffEntry,
+  Unit,
   User,
   WorkTypeRecord,
   InboundEmail,
@@ -616,6 +617,33 @@ export function buildSeedData() {
     ...p,
     ...bidWorkflowById[p.id],
   })) as Project[];
+
+  // Permanent job numbers — same deterministic rule as the production
+  // migration (0031_job_numbers_and_units.sql): oldest created_at first,
+  // id as a tiebreaker, starting at 10001.
+  [...projects]
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+    .forEach((p, i) => {
+      p.job_number = 10001 + i;
+    });
+
+  // Units (Building -> Unit -> Job) — linked only for unambiguous
+  // single-unit text, mirroring the production backfill exactly.
+  const isAmbiguousUnit = (u: string) => /[,&/;]/.test(u) || /\band\b/i.test(u);
+  const unitByKey = new Map<string, Unit>();
+  const units: Unit[] = [];
+  for (const p of projects) {
+    const raw = p.unit_number?.trim();
+    if (!raw || isAmbiguousUnit(raw)) continue;
+    const key = `${p.building_id}::${raw}`;
+    let unit = unitByKey.get(key);
+    if (!unit) {
+      unit = { id: `unit-${units.length + 1}`, company_id: p.company_id, building_id: p.building_id, unit_number: raw, created_at: p.created_at };
+      unitByKey.set(key, unit);
+      units.push(unit);
+    }
+    p.unit_id = unit.id;
+  }
 
   const workTypeMap: Record<string, string[]> = {
     "p-1": ["Floor Sanding", "Staining", "Finishing"],
@@ -1219,6 +1247,7 @@ export function buildSeedData() {
     contacts,
     buildings,
     buildingContacts,
+    units,
     jobRequests,
     projects,
     projectWorkTypes,

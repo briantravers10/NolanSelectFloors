@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { listBuildings, listClientCompanies, listContacts, findOpenDuplicateBids } from "@/lib/db";
+import { listBuildings, listClientCompanies, listContacts, findOpenDuplicateBids, listProjectsByBuilding } from "@/lib/db";
 import { Card, PageHeader, Button, AlertPill } from "@/components/ui";
+import { formatJobNumber } from "@/lib/calculations";
 import { createJobRequestAction } from "../actions";
 import { BuildingSelectWithReminder } from "./BuildingSelectWithReminder";
 
@@ -27,9 +28,34 @@ export default async function NewJobRequestPage({
 
   const defaultBuildingId = sp.building_id ?? sp.building;
 
+  // "Previous work at this location" — non-intrusive, informational only.
+  // Never auto-copies anything into the new job; just a count + most
+  // recent job with a link to the full history. DB-filtered on building_id.
+  let priorHistory: { count: number; mostRecentName: string; mostRecentJobNumber: number; mostRecentDate: string } | undefined;
+  if (defaultBuildingId) {
+    const buildingJobs = await listProjectsByBuilding(defaultBuildingId);
+    const matching = sp.unit_number ? buildingJobs.filter((p) => (p.unit_number ?? "").trim().toLowerCase() === sp.unit_number!.trim().toLowerCase()) : buildingJobs;
+    if (matching.length > 0) {
+      const mostRecent = matching[0]; // already newest-first
+      priorHistory = { count: matching.length, mostRecentName: mostRecent.name, mostRecentJobNumber: mostRecent.job_number, mostRecentDate: mostRecent.created_at.slice(0, 10) };
+    }
+  }
+
   return (
     <div className="max-w-xl">
       <PageHeader title="New Job Request" subtitle="Fast entry — pick the building and the rest auto-populates." />
+
+      {priorHistory && !isDuplicateReturn && (
+        <Card className="p-3 mb-4 border-slate-200 bg-slate-50">
+          <p className="text-sm text-slate-700">
+            Previous work at this location: {priorHistory.count} prior job{priorHistory.count > 1 ? "s" : ""}. Most recent —{" "}
+            <span className="font-mono text-xs">{formatJobNumber(priorHistory.mostRecentJobNumber)}</span> {priorHistory.mostRecentName} ({priorHistory.mostRecentDate}).{" "}
+            <Link href={`/buildings/${defaultBuildingId}`} className="text-sky-600 hover:underline">
+              View Job History →
+            </Link>
+          </p>
+        </Card>
+      )}
 
       {isDuplicateReturn && duplicates.length > 0 && (
         <Card className="p-4 mb-4 border-amber-300 bg-amber-50">

@@ -348,12 +348,29 @@ export interface JobRequest {
   updated_at: string;
 }
 
+export interface Unit {
+  id: string;
+  company_id: string;
+  building_id: string;
+  unit_number: string;
+  created_at: string;
+}
+
 export interface Project {
   id: string;
   company_id: string;
   building_id: string;
   job_request_id?: string;
   unit_number?: string;
+  // Persistent Unit link (0031_job_numbers_and_units.sql) — set only when
+  // unit_number is an unambiguous single unit; null for building-level/
+  // common-area jobs and for legacy multi-unit text left unlinked on
+  // purpose (see the migration). unit_number itself is always the raw
+  // display text regardless of whether unit_id is set.
+  unit_id?: string | null;
+  // Permanent, human-readable job number (DB-assigned, sequence-backed —
+  // never set by application code). Present on every project.
+  job_number: number;
   name: string;
   description?: string;
   project_value: number;

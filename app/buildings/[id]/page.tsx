@@ -6,10 +6,13 @@ import {
   listClientCompanies,
   listContacts,
   listJobRequests,
-  listProjects,
+  listProjectsByBuilding,
+  listUnitsForBuilding,
+  listQuickBooksDocuments,
 } from "@/lib/db";
 import { Card, PageHeader, PhoneLink, StatusBadge, EmptyState } from "@/components/ui";
-import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber, isActiveProjectStage } from "@/lib/calculations";
+import { formatDateLong } from "@/lib/dates";
 import type { Building } from "@/lib/types";
 import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
 import { canEdit } from "@/lib/permissions";
@@ -28,16 +31,29 @@ const FIELD_LABELS: { key: keyof Building; label: string }[] = [
 
 export default async function BuildingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [buildings, clients, contacts, buildingContacts, projects, jobRequests] = await Promise.all([
+  const [buildings, clients, contacts, buildingContacts, jobRequests] = await Promise.all([
     listBuildings(),
     listClientCompanies(),
     listContacts(),
     listBuildingContacts(),
-    listProjects(),
     listJobRequests(),
   ]);
   const building = buildings.find((b) => b.id === id);
   if (!building) notFound();
+
+  // Job History: DB-filtered on building_id (never a full projects fetch
+  // filtered in JS) — see 0031_job_numbers_and_units.sql / listProjectsByBuilding.
+  const [buildingProjects, units, qbDocuments] = await Promise.all([
+    listProjectsByBuilding(id),
+    listUnitsForBuilding(id),
+    listQuickBooksDocuments(),
+  ]);
+  const unitById = new Map(units.map((u) => [u.id, u]));
+  const qbDocsByProject = new Map<string, typeof qbDocuments>();
+  for (const doc of qbDocuments) {
+    if (!qbDocsByProject.has(doc.project_id)) qbDocsByProject.set(doc.project_id, []);
+    qbDocsByProject.get(doc.project_id)!.push(doc);
+  }
 
   const client = clients.find((c) => c.id === building.client_company_id);
   const isUnassigned = client?.name === UNASSIGNED_CLIENT_NAME;
@@ -47,9 +63,10 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
     .map((bc) => ({ link: bc, contact: contacts.find((c) => c.id === bc.contact_id) }))
     .filter((x) => x.contact);
 
-  const buildingProjects = projects.filter((p) => p.building_id === id).sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
-  const activeProjects = buildingProjects.filter(isActiveProjectStage);
-  const pastProjects = buildingProjects.filter((p) => !isActiveProjectStage(p));
+  const activeProjects = [...buildingProjects].filter(isActiveProjectStage).sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
+  // Job History (all jobs, newest first) — grouped by unit where linked,
+  // with building-level/common-area work (no unit) called out separately.
+  const pastProjects = buildingProjects; // already newest-first from listProjectsByBuilding
   const buildingJobRequests = jobRequests.filter((j) => j.building_id === id);
 
   return (
@@ -120,7 +137,10 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
                 {activeProjects.map((p) => (
                   <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded">
                     <div>
-                      <div className="text-sm font-medium text-slate-800">{p.unit_number ? `Unit ${p.unit_number}` : p.name}</div>
+                      <div className="text-sm font-medium text-slate-800 flex items-center gap-2">
+                        <span className="font-mono text-xs text-slate-500">{formatJobNumber(p.job_number)}</span>
+                        {p.unit_number ? `Unit ${p.unit_number}` : p.name}
+                      </div>
                       <div className="text-xs text-slate-500">{p.name}</div>
                     </div>
                     <div className="text-right">
@@ -136,18 +156,40 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
           <Card className="p-4">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-3">Job History</h2>
             {pastProjects.length === 0 ? (
-              <EmptyState message="No completed job history yet." />
+              <EmptyState message="No job history yet." />
             ) : (
               <div className="divide-y divide-slate-100">
-                {pastProjects.map((p) => (
-                  <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center justify-between py-2.5 hover:bg-slate-50 -mx-1 px-1 rounded">
-                    <div>
-                      <div className="text-sm font-medium text-slate-800">{p.unit_number ? `Unit ${p.unit_number}` : p.name}</div>
-                      <div className="text-xs text-slate-500">{p.name}</div>
+                {pastProjects.map((p) => {
+                  const docs = qbDocsByProject.get(p.id) ?? [];
+                  const estimate = docs.find((d) => d.entity_type === "Estimate");
+                  const invoice = docs.find((d) => d.entity_type === "Invoice");
+                  const unit = p.unit_id ? unitById.get(p.unit_id) : undefined;
+                  const newJobHref = `/job-requests/new?building=${building.id}${p.unit_number ? `&unit_number=${encodeURIComponent(p.unit_number)}` : ""}`;
+                  return (
+                    <div key={p.id} className="flex items-center justify-between py-2.5 -mx-1 px-1 rounded hover:bg-slate-50 gap-3">
+                      <Link href={`/projects/${p.id}`} className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-slate-800 flex items-center gap-2">
+                          <span className="font-mono text-xs text-slate-500">{formatJobNumber(p.job_number)}</span>
+                          <span className="truncate">{unit ? `Unit ${unit.unit_number}` : p.unit_number ? `Unit ${p.unit_number}` : "Building-level / common area"}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 truncate">
+                          {p.name} · {formatDateLong(p.created_at.slice(0, 10))}
+                          {estimate?.document_number ? ` · Est #${estimate.document_number}` : ""}
+                          {invoice?.document_number ? ` · Inv #${invoice.document_number}` : ""}
+                        </div>
+                      </Link>
+                      <div className="text-right shrink-0 flex items-center gap-3">
+                        <div>
+                          <div className="text-sm text-slate-700">{formatCurrency(p.project_value)}</div>
+                          <StatusBadge status={p.pipeline_stage} />
+                        </div>
+                        <Link href={newJobHref} className="text-xs text-sky-600 hover:underline whitespace-nowrap" title="Create a new, independent job pre-filled with this location">
+                          New job here →
+                        </Link>
+                      </div>
                     </div>
-                    <StatusBadge status={p.pipeline_stage} />
-                  </Link>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>

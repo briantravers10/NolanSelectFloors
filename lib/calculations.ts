@@ -243,6 +243,13 @@ export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** Consistent "#10042" display for a project's permanent job number, used
+ * wherever a project is referenced in the UI. */
+export function formatJobNumber(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  return `#${n}`;
+}
+
 export function formatCurrency(n: number | null | undefined): string {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
