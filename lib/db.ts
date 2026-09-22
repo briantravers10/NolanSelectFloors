@@ -95,6 +95,11 @@ export async function listClientCompanies(): Promise<ClientCompany[]> {
 }
 
 export async function getClientCompany(id: string): Promise<ClientCompany | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("client_companies").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as ClientCompany | null) ?? undefined;
+  }
   return (await listClientCompanies()).find((c) => c.id === id);
 }
 
@@ -108,6 +113,11 @@ export async function listContacts(): Promise<Contact[]> {
 }
 
 export async function getContact(id: string): Promise<Contact | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("contacts").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as Contact | null) ?? undefined;
+  }
   return (await listContacts()).find((c) => c.id === id);
 }
 
@@ -149,6 +159,11 @@ export async function listBuildings(): Promise<Building[]> {
 }
 
 export async function getBuilding(id: string): Promise<Building | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("buildings").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as Building | null) ?? undefined;
+  }
   return (await listBuildings()).find((b) => b.id === id);
 }
 
@@ -224,6 +239,11 @@ export async function listJobRequests(): Promise<JobRequest[]> {
 }
 
 export async function getJobRequest(id: string): Promise<JobRequest | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("job_requests").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as JobRequest | null) ?? undefined;
+  }
   return (await listJobRequests()).find((j) => j.id === id);
 }
 
@@ -237,6 +257,11 @@ export async function listProjects(): Promise<Project[]> {
 }
 
 export async function getProject(id: string): Promise<Project | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("projects").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as Project | null) ?? undefined;
+  }
   return (await listProjects()).find((p) => p.id === id);
 }
 
@@ -250,6 +275,11 @@ export async function listOfficeUsers(): Promise<OfficeUser[]> {
 }
 
 export async function getOfficeUser(id: string): Promise<OfficeUser | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("office_users").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as OfficeUser | null) ?? undefined;
+  }
   return (await listOfficeUsers()).find((u) => u.id === id);
 }
 
@@ -261,6 +291,11 @@ export async function getOfficeUser(id: string): Promise<OfficeUser | undefined>
  * (auth_user_id) and 0013_auth_user_id_index.sql (the lookup index).
  */
 export async function getOfficeUserByAuthId(authUserId: string): Promise<OfficeUser | undefined> {
+  const client = sb();
+  if (client && isUuid(authUserId)) {
+    const { data, error } = await client.from("office_users").select("*").eq("auth_user_id", authUserId).maybeSingle();
+    if (!error) return (data as OfficeUser | null) ?? undefined;
+  }
   return (await listOfficeUsers()).find((u) => u.auth_user_id === authUserId);
 }
 
@@ -473,6 +508,11 @@ export async function listEmployees(): Promise<Employee[]> {
 }
 
 export async function getEmployee(id: string): Promise<Employee | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("employees").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as Employee | null) ?? undefined;
+  }
   return (await listEmployees()).find((e) => e.id === id);
 }
 
@@ -1351,6 +1391,18 @@ export async function confirmDay(workDate: string, actorName: string, notes?: st
  * Reuses the existing project_notes table with a marker author_name so no
  * new schema is needed; the latest such note is treated as "the" field. */
 export async function getCompletionNotes(projectId: string): Promise<string | undefined> {
+  const client = sb();
+  if (client && isUuid(projectId)) {
+    const { data, error } = await client
+      .from("project_notes")
+      .select("body")
+      .eq("project_id", projectId)
+      .eq("author_name", "Completion Notes")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!error) return (data as { body: string } | null)?.body ?? undefined;
+  }
   const notes = await listProjectNotes();
   return notes.find((n) => n.project_id === projectId && n.author_name === "Completion Notes")?.body;
 }
@@ -1383,6 +1435,11 @@ export async function listPricingFormulas(): Promise<PricingFormula[]> {
 }
 
 export async function getPricingFormula(id: string): Promise<PricingFormula | undefined> {
+  const client = sb();
+  if (client && isUuid(id)) {
+    const { data, error } = await client.from("pricing_formulas").select("*").eq("id", id).maybeSingle();
+    if (!error) return (data as PricingFormula | null) ?? undefined;
+  }
   return (await listPricingFormulas()).find((f) => f.id === id);
 }
 
@@ -2579,10 +2636,9 @@ export async function createBuildingRecord(input: Omit<Building, "id" | "company
  * used by the Schedule page's crew cards. Reuses the existing
  * `primary_contact_id` column on buildings; no new schema needed. */
 export async function getPrimaryContactForBuilding(buildingId: string): Promise<Contact | undefined> {
-  const [buildings, contacts] = await Promise.all([listBuildings(), listContacts()]);
-  const building = buildings.find((b) => b.id === buildingId);
+  const building = await getBuilding(buildingId);
   if (!building?.primary_contact_id) return undefined;
-  return contacts.find((c) => c.id === building.primary_contact_id);
+  return getContact(building.primary_contact_id);
 }
 
 export async function updateScheduleAssignmentCallTime(id: string, callTime: string): Promise<void> {
@@ -3064,6 +3120,11 @@ export async function listQuickBooksCustomerMappings(): Promise<QuickBooksCustom
 }
 
 export async function getQuickBooksCustomerMappingForClient(clientCompanyId: string): Promise<QuickBooksCustomerMapping | undefined> {
+  const client = sb();
+  if (client && isUuid(clientCompanyId)) {
+    const { data, error } = await client.from("quickbooks_customer_mappings").select("*").eq("client_company_id", clientCompanyId).maybeSingle();
+    if (!error) return (data as QuickBooksCustomerMapping | null) ?? undefined;
+  }
   return (await listQuickBooksCustomerMappings()).find((m) => m.client_company_id === clientCompanyId);
 }
 
