@@ -3676,3 +3676,116 @@ export async function linkMaterialToProject(id: string, projectId: string | null
     detail: `${before.description}${before.supplier ? ` (${before.supplier})` : ""} — $${before.cost}`,
   });
 }
+
+
+// ---------------------------------------------------------------------
+// GLOBAL SEARCH (header search box / app/api/search) — performance pass.
+// Was: fetch buildings, client_companies, contacts, employees, and
+// projects IN FULL, then substring-match in JS on every keystroke. Now:
+// per-column .ilike() queries pushed to Postgres, each capped with
+// .limit(), run in small parallel waves. Every value goes through
+// .ilike(column, value) — a proper bound query parameter through
+// supabase-js — rather than a hand-built filter string, so user input
+// (including characters like , ) % that would otherwise need escaping)
+// can never break the query or reach raw SQL.
+// ---------------------------------------------------------------------
+
+export interface DirectorySearchResults {
+  buildings: Building[];
+  clientCompanies: ClientCompany[];
+  contacts: Contact[];
+  employees: Employee[];
+  projects: Project[];
+}
+
+function dedupeById<T extends { id: string }>(rows: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const r of rows) byId.set(r.id, r);
+  return [...byId.values()];
+}
+
+/**
+ * Directory-wide search for the header search box. Preserves the old
+ * cross-entity matching (a building/contact shows up when ITS management
+ * company's name matches; a project shows up when its building's
+ * name/address/city — or that building's company's name — matches)
+ * without ever fetching a whole table: direct matches are found first
+ * (wave 1), then used to pull the buildings that belong to a matching
+ * company (wave 2), then those buildings (direct + by-company) are used
+ * to pull the projects that sit on any of them (wave 3).
+ */
+export async function searchDirectory(query: string, limit = 20): Promise<DirectorySearchResults> {
+  const q = query.trim();
+  const empty: DirectorySearchResults = { buildings: [], clientCompanies: [], contacts: [], employees: [], projects: [] };
+  if (!q) return empty;
+
+  const client = sb();
+  if (!client) {
+    // Demo/in-memory fallback — same full-scan-and-filter the app always
+    // used, since the in-memory store has no query language of its own.
+    const needle = q.toLowerCase();
+    const [buildings, clientCompanies, contacts, employees, projects] = await Promise.all([
+      listBuildings(),
+      listClientCompanies(),
+      listContacts(),
+      listEmployees(),
+      listProjects(),
+    ]);
+    const clientById = new Map(clientCompanies.map((c) => [c.id, c]));
+    const buildingById = new Map(buildings.map((b) => [b.id, b]));
+    return {
+      buildings: buildings.filter((b) => `${b.name} ${b.address} ${b.city} ${clientById.get(b.client_company_id)?.name ?? ""}`.toLowerCase().includes(needle)).slice(0, limit),
+      clientCompanies: clientCompanies.filter((c) => `${c.name} ${c.email ?? ""} ${c.phone ?? ""}`.toLowerCase().includes(needle)).slice(0, limit),
+      contacts: contacts.filter((c) => `${c.first_name} ${c.last_name} ${c.email ?? ""} ${c.phone ?? ""} ${clientById.get(c.client_company_id ?? "")?.name ?? ""}`.toLowerCase().includes(needle)).slice(0, limit),
+      employees: employees.filter((e) => `${e.first_name} ${e.last_name} ${e.phone ?? ""} ${e.title}`.toLowerCase().includes(needle)).slice(0, limit),
+      projects: projects.filter((p) => `${p.name} ${p.unit_number ?? ""} ${buildingById.get(p.building_id)?.name ?? ""}`.toLowerCase().includes(needle)).slice(0, limit),
+    };
+  }
+
+  const pattern = `%${q}%`;
+  const ilikeAny = async <T extends { id: string }>(table: string, columns: string[]): Promise<T[]> => {
+    const results = await Promise.all(
+      columns.map(async (col) => {
+        const { data, error } = await client.from(table).select("*").ilike(col, pattern).limit(limit);
+        return !error && data ? (data as T[]) : [];
+      })
+    );
+    return dedupeById(results.flat());
+  };
+  const byParentIds = async <T extends { id: string }>(table: string, column: string, ids: string[]): Promise<T[]> => {
+    if (ids.length === 0) return [];
+    const { data, error } = await client.from(table).select("*").in(column, ids).limit(limit);
+    return !error && data ? dedupeById(data as T[]) : [];
+  };
+
+  // Wave 1 — every direct, single-table match, all in parallel.
+  const [matchedClients, directBuildings, directContacts, employeeMatches, directProjects] = await Promise.all([
+    ilikeAny<ClientCompany>("client_companies", ["name", "email", "phone"]),
+    ilikeAny<Building>("buildings", ["name", "address", "city"]),
+    ilikeAny<Contact>("contacts", ["first_name", "last_name", "email", "phone"]),
+    ilikeAny<Employee>("employees", ["first_name", "last_name", "phone", "title"]),
+    ilikeAny<Project>("projects", ["name", "unit_number"]),
+  ]);
+  const matchedClientIds = matchedClients.map((c) => c.id);
+
+  // Wave 2 — rows that belong to a wave-1 match (a building/contact under
+  // a matching company) — same cross-entity matching the old JS join
+  // produced, still capped and still parallel.
+  const [buildingsByClient, contactsByClient] = await Promise.all([
+    byParentIds<Building>("buildings", "client_company_id", matchedClientIds),
+    byParentIds<Contact>("contacts", "client_company_id", matchedClientIds),
+  ]);
+  const allMatchedBuildingIds = dedupeById([...directBuildings, ...buildingsByClient]).map((b) => b.id);
+
+  // Wave 3 — projects sitting on any building matched so far (directly,
+  // or via its company).
+  const projectsByBuilding = await byParentIds<Project>("projects", "building_id", allMatchedBuildingIds);
+
+  return {
+    buildings: dedupeById([...directBuildings, ...buildingsByClient]).slice(0, limit),
+    clientCompanies: matchedClients.slice(0, limit),
+    contacts: dedupeById([...directContacts, ...contactsByClient]).slice(0, limit),
+    employees: employeeMatches.slice(0, limit),
+    projects: dedupeById([...directProjects, ...projectsByBuilding]).slice(0, limit),
+  };
+}
