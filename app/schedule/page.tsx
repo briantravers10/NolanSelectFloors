@@ -38,6 +38,18 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   const today = todayIso();
   const activeDate = dateParam ?? today;
 
+  // Date ranges needed by each view — computed up front (no data
+  // dependency) so the schedule/day-crew fetches below can be bounded to
+  // exactly what the active view will render. Carry-forward (see
+  // lib/schedule.ts buildScheduleJobRows) walks BACKWARD from a target
+  // date with no lower limit — a job can legitimately carry forward for
+  // months — so only the upper bound (the last date actually shown) can
+  // ever be trimmed without changing what's displayed.
+  const monday = startOfWeek(anchor);
+  const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));
+  const monthGridDates = Array.from({ length: 42 }, (_, i) => isoDate(addDays(startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1)), i)));
+  const maxScheduleDate = view === "day" ? activeDate : view === "week" ? weekDates[weekDates.length - 1] : monthGridDates[monthGridDates.length - 1];
+
   const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, qbDocuments, outboundInvoices] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -45,8 +57,8 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     listContacts(),
     listBuildingContacts(),
     listEmployees(),
-    listScheduleAssignments(),
-    listProjectScheduleDays(),
+    listScheduleAssignments({ maxDate: maxScheduleDate }),
+    listProjectScheduleDays({ maxDate: maxScheduleDate }),
     listWorkTypes(),
     listSchedulePickupItems(),
     listQuickBooksDocuments(),
@@ -55,9 +67,6 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   const outboundInvoiceProjectIds = new Set(outboundInvoices.filter((i) => i.is_current).map((i) => i.project_id));
 
   const rowInputs = { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, qbDocuments, outboundInvoiceProjectIds };
-
-  const monday = startOfWeek(anchor);
-  const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));
   const rowsByDate = new Map(weekDates.map((d) => [d, buildScheduleJobRows(d, rowInputs)]));
 
   const viewHref = (v: View) => `/schedule?view=${v}&date=${activeDate}`;
@@ -150,12 +159,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
         <MonthlyView
           monthAnchor={anchor}
           today={today}
-          rowsByDate={new Map(
-            Array.from({ length: 42 }, (_, i) => {
-              const d = isoDate(addDays(startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1)), i));
-              return [d, buildScheduleJobRows(d, rowInputs)] as const;
-            })
-          )}
+          rowsByDate={new Map(monthGridDates.map((d) => [d, buildScheduleJobRows(d, rowInputs)] as const))}
         />
       )}
     </div>

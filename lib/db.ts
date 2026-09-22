@@ -753,13 +753,27 @@ export async function listCrewRequirements(): Promise<ProjectCrewRequirement[]> 
   return getStore().projectCrewRequirements;
 }
 
-export async function listScheduleAssignments(): Promise<ScheduleAssignment[]> {
+/**
+ * `maxDate` (optional, inclusive "YYYY-MM-DD") drops rows scheduled AFTER
+ * that date at the database level — safe because every consumer of a
+ * bounded call already only looks at `schedule_date <= maxDate` itself
+ * (see lib/schedule.ts buildScheduleJobRows' carry-forward, which walks
+ * backward from a target date with no lower bound — a job can legitimately
+ * carry forward for months, so only the upper bound can ever be trimmed
+ * without changing behavior). Omitting `maxDate` keeps the original
+ * unfiltered full-table behavior for callers that need every row
+ * (reports, payroll, schedule history, etc).
+ */
+export async function listScheduleAssignments(options?: { maxDate?: string }): Promise<ScheduleAssignment[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("schedule_assignments").select("*");
+    let query = client.from("schedule_assignments").select("*");
+    if (options?.maxDate) query = query.lte("schedule_date", options.maxDate);
+    const { data, error } = await query;
     if (!error && data) return data as ScheduleAssignment[];
   }
-  return getStore().scheduleAssignments;
+  const all = getStore().scheduleAssignments;
+  return options?.maxDate ? all.filter((a) => a.schedule_date <= options.maxDate!) : all;
 }
 
 export async function listMaterials(): Promise<Material[]> {
@@ -901,13 +915,19 @@ export async function updateWorkType(id: string, patch: { name?: string; active?
   logActivity({ action: "Updated work type", detail: `${id}: ${JSON.stringify(patch)}` });
 }
 
-export async function listProjectScheduleDays(): Promise<ProjectScheduleDay[]> {
+/** See listScheduleAssignments' doc comment — same `maxDate` contract and
+ * same reasoning (carry-forward has no lower bound, so only the upper
+ * bound is ever safe to trim). Omitting it preserves the full-table read. */
+export async function listProjectScheduleDays(options?: { maxDate?: string }): Promise<ProjectScheduleDay[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("project_schedule_days").select("*");
+    let query = client.from("project_schedule_days").select("*");
+    if (options?.maxDate) query = query.lte("schedule_date", options.maxDate);
+    const { data, error } = await query;
     if (!error && data) return data as ProjectScheduleDay[];
   }
-  return getStore().projectScheduleDays;
+  const all = getStore().projectScheduleDays;
+  return options?.maxDate ? all.filter((d) => d.schedule_date <= options.maxDate!) : all;
 }
 
 /** Finds the existing project_schedule_days row for a project+date, or

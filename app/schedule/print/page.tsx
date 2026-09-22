@@ -35,8 +35,8 @@ export default async function PrintForJohnPage({ searchParams }: { searchParams:
     listContacts(),
     listBuildingContacts(),
     listEmployees(),
-    listScheduleAssignments(),
-    listProjectScheduleDays(),
+    listScheduleAssignments({ maxDate: date }),
+    listProjectScheduleDays({ maxDate: date }),
     listWorkTypes(),
     listSchedulePickupItems(),
   ]);

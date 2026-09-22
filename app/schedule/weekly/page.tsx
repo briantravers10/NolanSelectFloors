@@ -40,8 +40,8 @@ export default async function WeeklySummaryPage({ searchParams }: { searchParams
     listContacts(),
     listBuildingContacts(),
     listEmployees(),
-    listScheduleAssignments(),
-    listProjectScheduleDays(),
+    listScheduleAssignments({ maxDate: weekDates[weekDates.length - 1] }),
+    listProjectScheduleDays({ maxDate: weekDates[weekDates.length - 1] }),
     listWorkTypes(),
     listSchedulePickupItems(),
   ]);
