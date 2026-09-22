@@ -146,7 +146,14 @@ export default async function ScheduleEditPage({
       const mine = dayLaborEntries.filter((entry) => entry.employee_id === e.id);
       const onJobToday = mine.some((entry) => entry.project_id !== null);
       const driverEntry = mine.find((entry) => entry.project_id === null);
-      return { id: e.id, name: employeeDisplayName(e), onJobToday, working: Boolean(driverEntry) };
+      const timeOff = isEmployeeOffOn(timeOffEntries, e.id, date);
+      return {
+        id: e.id,
+        name: employeeDisplayName(e),
+        onJobToday,
+        working: Boolean(driverEntry),
+        offLabel: timeOff ? timeOffWarningLabel(timeOff.type) : null,
+      };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -200,6 +207,11 @@ export default async function ScheduleEditPage({
             {drivers.map((d) => (
               <div key={d.id} className="flex items-center gap-2 text-sm">
                 <span className="text-slate-800">{d.name}</span>
+                {d.offLabel && (
+                  <span className="text-[11px] font-medium text-amber-700" title="Auto-unselected because of time off — check the box to override">
+                    {d.offLabel}
+                  </span>
+                )}
                 {d.onJobToday ? (
                   <span className="text-[11px] text-slate-500">Already on a job today</span>
                 ) : (

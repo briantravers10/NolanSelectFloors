@@ -12,6 +12,7 @@ import { getSupabaseClient } from "./supabaseClient";
 import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
 import { mapJobStatusToPipelineStage } from "./schedule";
+import { isEmployeeOffOn } from "./time-off";
 import type {
   ActivityLogEntry,
   ActualLaborEntry,
@@ -1517,10 +1518,13 @@ const seededDriverDefaultDatesFallback = new Set<string>();
  * a driver-day actual_labor_entries row (project_id null, see
  * setDriverWorkingDay) for every active driver, exactly like an explicit
  * "Working" check would. A driver already logged on a job that date is
- * left alone (they're already covered). Recorded in
- * driver_working_defaults_seeded so it runs exactly once per date — an
- * office user's later uncheck (which deletes that row) must stick, not get
- * silently re-created the next time the page loads.
+ * left alone (they're already covered), and one on approved time off
+ * (Vacation/Sick/Personal/Unpaid — lib/time-off.ts) is NOT auto-selected —
+ * the office still sees them in the list and can check them anyway as a
+ * deliberate override (the UI shows the time-off warning either way).
+ * Recorded in driver_working_defaults_seeded so it runs exactly once per
+ * date — an office user's later uncheck (which deletes that row) must
+ * stick, not get silently re-created the next time the page loads.
  */
 export async function ensureDriverWorkingDefaults(date: string, actorName: string): Promise<void> {
   const companyId = getCurrentCompanyId();
@@ -1538,9 +1542,9 @@ export async function ensureDriverWorkingDefaults(date: string, actorName: strin
     if (seededDriverDefaultDatesFallback.has(`${companyId}__${date}`)) return;
   }
 
-  const [employees, dayEntries] = await Promise.all([listEmployees(), listActualLaborEntriesForDate(date)]);
+  const [employees, dayEntries, timeOffEntries] = await Promise.all([listEmployees(), listActualLaborEntriesForDate(date), listTimeOffEntries()]);
   const alreadyCovered = new Set(dayEntries.map((e) => e.employee_id));
-  const drivers = employees.filter((e) => e.is_driver && e.active && !alreadyCovered.has(e.id));
+  const drivers = employees.filter((e) => e.is_driver && e.active && !alreadyCovered.has(e.id) && !isEmployeeOffOn(timeOffEntries, e.id, date));
   for (const driver of drivers) {
     await createActualLaborEntry({
       employee_id: driver.id,
