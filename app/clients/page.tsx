@@ -5,10 +5,12 @@ import { Icon } from "@/components/Icon";
 import { isActiveProjectStage } from "@/lib/calculations";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
+import { ListSearchBox } from "@/components/ListSearchBox";
 
-export default async function ClientsPage() {
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const access = await requireSectionAccess("clients");
   if (access === "none") return <AccessDenied section="Clients" />;
+  const { q = "" } = await searchParams;
 
   const [clients, buildings, contacts, projects] = await Promise.all([
     listClientCompanies(),
@@ -17,7 +19,7 @@ export default async function ClientsPage() {
     listProjects(),
   ]);
 
-  const rows = clients.map((c) => {
+  let rows = clients.map((c) => {
     const clientBuildings = buildings.filter((b) => b.client_company_id === c.id);
     const buildingIds = new Set(clientBuildings.map((b) => b.id));
     const clientContacts = contacts.filter((ct) => ct.client_company_id === c.id);
@@ -25,6 +27,10 @@ export default async function ClientsPage() {
     const activeProjects = clientProjects.filter(isActiveProjectStage);
     return { client: c, buildingCount: clientBuildings.length, contactCount: clientContacts.length, projectCount: clientProjects.length, activeCount: activeProjects.length };
   });
+  if (q.trim()) {
+    const needle = q.trim().toLowerCase();
+    rows = rows.filter((r) => `${r.client.name} ${r.client.phone ?? ""} ${r.client.email ?? ""}`.toLowerCase().includes(needle));
+  }
 
   return (
     <div>
@@ -33,6 +39,7 @@ export default async function ClientsPage() {
         subtitle="Property management companies you do recurring work for."
         action={<LinkButton href="/clients/new"><Icon name="plus" className="w-4 h-4" />New Client</LinkButton>}
       />
+      <ListSearchBox action="/clients" q={q} placeholder="Search by management company, phone, or email…" ariaLabel="Search clients" />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -48,6 +55,9 @@ export default async function ClientsPage() {
               </tr>
             </thead>
             <tbody>
+              {rows.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">No clients match that search.</td></tr>
+              )}
               {rows.map(({ client, buildingCount, contactCount, projectCount, activeCount }) => (
                 <tr key={client.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                   <td className="px-4 py-3">

@@ -1,24 +1,32 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listProjects } from "@/lib/db";
-import { Card, PageHeader, LinkButton } from "@/components/ui";
+import { Card, PageHeader, LinkButton, EmptyState } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 import { BUILDING_REGIONS } from "@/lib/types";
 import { isActiveProjectStage } from "@/lib/calculations";
 import { BuildingMapLoader, type MapPin } from "@/components/BuildingMapLoader";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
+import { ListSearchBox } from "@/components/ListSearchBox";
 
-export default async function BuildingsPage({ searchParams }: { searchParams: Promise<{ region?: string; view?: string }> }) {
+export default async function BuildingsPage({ searchParams }: { searchParams: Promise<{ region?: string; view?: string; q?: string }> }) {
   const access = await requireSectionAccess("buildings");
   if (access === "none") return <AccessDenied section="Buildings" />;
 
-  const { region, view } = await searchParams;
+  const { region, view, q = "" } = await searchParams;
   const showMap = view === "map";
   const [buildings, clients, projects] = await Promise.all([listBuildings(), listClientCompanies(), listProjects()]);
   const clientById = new Map(clients.map((c) => [c.id, c]));
 
   const regionsPresent = BUILDING_REGIONS.filter((r) => buildings.some((b) => b.region === r));
-  const filtered = region ? buildings.filter((b) => b.region === region) : buildings;
+  let filtered = region ? buildings.filter((b) => b.region === region) : buildings;
+  if (q.trim()) {
+    const needle = q.trim().toLowerCase();
+    filtered = filtered.filter((b) => {
+      const client = clientById.get(b.client_company_id);
+      return `${b.name} ${b.address} ${b.city} ${b.state} ${b.zip} ${client?.name ?? ""}`.toLowerCase().includes(needle);
+    });
+  }
 
   const pins: MapPin[] = filtered
     .filter((b) => b.latitude != null && b.longitude != null)
@@ -73,6 +81,10 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
         ))}
       </div>
 
+      {!showMap && (
+        <ListSearchBox action="/buildings" q={q} placeholder="Search by building, address, or management company…" ariaLabel="Search buildings" extraParams={{ region, view }} />
+      )}
+
       {showMap ? (
         <>
           <BuildingMapLoader pins={pins} />
@@ -80,14 +92,16 @@ export default async function BuildingsPage({ searchParams }: { searchParams: Pr
             {pins.length} building{pins.length === 1 ? "" : "s"} plotted · pins colored by region · click a pin to open the building.
           </p>
         </>
-      ) : region ? (
+      ) : filtered.length === 0 ? (
+        <Card className="p-6"><EmptyState message="No buildings match that search." /></Card>
+      ) : region || q.trim() ? (
         <BuildingGrid buildings={filtered} clientById={clientById} projects={projects} />
       ) : (
         <div className="space-y-8">
           {regionsPresent.map((r) => (
             <div key={r}>
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{r} ({buildings.filter((b) => b.region === r).length})</div>
-              <BuildingGrid buildings={buildings.filter((b) => b.region === r)} clientById={clientById} projects={projects} />
+              <BuildingGrid buildings={filtered.filter((b) => b.region === r)} clientById={clientById} projects={projects} />
             </div>
           ))}
         </div>

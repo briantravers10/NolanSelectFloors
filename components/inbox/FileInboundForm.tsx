@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui";
 import { fileInboundAction } from "@/app/inbox/actions";
-import type { InboundKind } from "@/lib/types";
 
 export interface InboxJobOption {
   id: string;
@@ -11,22 +9,31 @@ export interface InboxJobOption {
   label: string;
 }
 
-type FileKind = Exclude<InboundKind, "unknown">;
+/** "Estimate Sent" isn't a stored kind — the server files it as a
+ * Potential Bid already marked "Quoted — waiting" against the chosen job. */
+export type FileKind = "drawing" | "invoice" | "outbound_invoice" | "purchase_order" | "bid" | "estimate_sent" | "coi";
 
 /**
  * Filing form on an email. What it becomes:
  *  - Drawing → the job's Drawings
  *  - Inbound Invoice (a supplier billing us) → ONE materials line under
- *    the supplier, linked to a job only if one is picked
+ *    the supplier, linked to a job only if one is picked. No "start date"
+ *    here — a bill isn't scheduled work, just an invoiced date.
  *  - Outbound Invoice (one we sent the customer) → the job's current
  *    invoice; the previous one moves to history
  *  - Purchase Order → the Purchase Orders section, linked to the job
  *  - Potential Bid → the Bids section
+ *  - Estimate Sent → the Bids section too, already marked "Quoted —
+ *    waiting" against the job whose details it carries
  *  - COI → the job's certificate; its COI badge turns Approved
+ *
+ * `kind` / `onKindChange` are controlled by the parent (InboxFilingBlock)
+ * so it can decide whether to also offer "New job from this email".
  */
 export function FileInboundForm({
   emailId,
-  initialKind,
+  kind,
+  onKindChange,
   jobs,
   defaultProjectId,
   suppliers,
@@ -35,7 +42,8 @@ export function FileInboundForm({
   submitLabel = "File",
 }: {
   emailId: string;
-  initialKind: FileKind;
+  kind: FileKind;
+  onKindChange: (k: FileKind) => void;
   jobs: InboxJobOption[];
   defaultProjectId: string;
   suppliers: string[];
@@ -43,19 +51,19 @@ export function FileInboundForm({
   defaultDate: string;
   submitLabel?: string;
 }) {
-  const [kind, setKind] = useState<FileKind>(initialKind);
   const input = "rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm w-full";
-  const needsJob = kind === "drawing" || kind === "coi" || kind === "outbound_invoice" || kind === "purchase_order";
+  const needsJob = kind === "drawing" || kind === "coi" || kind === "outbound_invoice" || kind === "purchase_order" || kind === "estimate_sent";
   const jobOptional = kind === "invoice" || kind === "bid";
 
   return (
     <form action={fileInboundAction.bind(null, emailId)} className="flex flex-col gap-2 min-w-[300px]">
-      <select name="kind" value={kind} onChange={(e) => setKind(e.target.value as FileKind)} className={input}>
+      <select name="kind" value={kind} onChange={(e) => onKindChange(e.target.value as FileKind)} className={input}>
         <option value="drawing">File as Drawing</option>
         <option value="invoice">File as Inbound Invoice (a supplier billing us)</option>
         <option value="outbound_invoice">File as Outbound Invoice (sent to the customer)</option>
         <option value="purchase_order">File as Purchase Order</option>
         <option value="bid">File as Potential Bid</option>
+        <option value="estimate_sent">File as Estimate Sent — marks a bid Quoted</option>
         <option value="coi">File as COI — marks the job&apos;s COI Approved</option>
       </select>
 
@@ -76,7 +84,7 @@ export function FileInboundForm({
               <input name="amount" type="number" step="0.01" min="0" placeholder="0.00" className={input} />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Invoice date</label>
+              <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Invoiced date</label>
               <input name="invoice_date" type="date" defaultValue={defaultDate} className={input} />
             </div>
           </div>
@@ -94,9 +102,16 @@ export function FileInboundForm({
             <input name="amount" type="number" step="0.01" min="0" placeholder="0.00" className={input} />
           </div>
           <div>
-            <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Date</label>
+            <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Invoiced date</label>
             <input name="invoice_date" type="date" defaultValue={defaultDate} className={input} />
           </div>
+        </div>
+      )}
+
+      {kind === "estimate_sent" && (
+        <div>
+          <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Estimate amount <span className="normal-case text-slate-400">(optional)</span></label>
+          <input name="amount" type="number" step="0.01" min="0" placeholder="0.00" className={input} />
         </div>
       )}
 
@@ -124,6 +139,9 @@ export function FileInboundForm({
         )}
         {kind === "bid" && (
           <div className="text-[11px] text-slate-500 mt-1">Goes to the Bids section to be priced. Mark it won or lost from there.</div>
+        )}
+        {kind === "estimate_sent" && (
+          <div className="text-[11px] text-slate-500 mt-1">Goes to Bids already marked “Quoted — waiting”, with this job&apos;s details attached.</div>
         )}
       </div>
       <Button type="submit">{submitLabel}</Button>

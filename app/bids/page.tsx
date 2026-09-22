@@ -7,6 +7,7 @@ import { AccessDenied } from "@/components/AccessDenied";
 import { signedFileUrl } from "@/lib/storage";
 import { setBidStatusAction, unfileInboundAction } from "@/app/inbox/actions";
 import { BID_EMAIL_STATUSES, type BidEmailStatus } from "@/lib/types";
+import { ListSearchBox } from "@/components/ListSearchBox";
 
 const STATUS_LABEL: Record<BidEmailStatus, string> = { open: "To price", quoted: "Quoted — waiting", won: "Won", lost: "Lost" };
 const STATUS_CLASS: Record<BidEmailStatus, string> = {
@@ -21,10 +22,10 @@ const STATUS_CLASS: Record<BidEmailStatus, string> = {
  * Potential Bid. Price it, mark it quoted, then won or lost. A won bid
  * becomes a job via New Job (or “New job from this email” in the inbox).
  */
-export default async function BidsPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
+export default async function BidsPage({ searchParams }: { searchParams: Promise<{ show?: string; q?: string }> }) {
   const access = await requireSectionAccess("job_requests");
   if (access === "none") return <AccessDenied section="Bids" />;
-  const { show } = await searchParams;
+  const { show, q = "" } = await searchParams;
   const [emails, projects, buildings, clients, editable] = await Promise.all([listInboundEmails(), listProjects(), listBuildings(), listClientCompanies(), canEdit("job_requests")]);
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -33,7 +34,17 @@ export default async function BidsPage({ searchParams }: { searchParams: Promise
   const all = emails.filter((e) => e.status === "filed" && e.filed_kind === "bid").sort((a, b) => b.received_at.localeCompare(a.received_at));
   const live = all.filter((e) => (e.bid_status ?? "open") === "open" || e.bid_status === "quoted");
   const closed = all.filter((e) => e.bid_status === "won" || e.bid_status === "lost");
-  const rows = show === "closed" ? closed : live;
+  let rows = show === "closed" ? closed : live;
+  if (q.trim()) {
+    const needle = q.trim().toLowerCase();
+    rows = rows.filter((e) => {
+      const p = e.filed_project_id ? projectById.get(e.filed_project_id) : e.suggested_project_id ? projectById.get(e.suggested_project_id) : undefined;
+      const b = p ? buildingById.get(p.building_id) : e.suggested_building_id ? buildingById.get(e.suggested_building_id) : undefined;
+      const c = b ? clientById.get(b.client_company_id) : undefined;
+      const hay = `${e.subject ?? ""} ${e.from_name ?? ""} ${e.from_email ?? ""} ${b?.name ?? ""} ${c?.name ?? ""} ${p?.unit_number ?? ""} ${e.bid_notes ?? ""}`.toLowerCase();
+      return hay.includes(needle);
+    });
+  }
 
   const links = new Map<string, string>();
   for (const e of rows) {
@@ -53,13 +64,14 @@ export default async function BidsPage({ searchParams }: { searchParams: Promise
         subtitle="Potential jobs that came in by email. Price them, mark them quoted, then won or lost. To add one, file an email in Email Inbox as a Potential Bid."
         action={
           <div className="flex gap-1 text-xs">
-            <Link href="/bids" className={`rounded-full border px-2.5 py-1 font-medium ${show !== "closed" ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>Open · {live.length}</Link>
-            <Link href="/bids?show=closed" className={`rounded-full border px-2.5 py-1 font-medium ${show === "closed" ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>Won / lost · {closed.length}</Link>
+            <Link href={q.trim() ? `/bids?q=${encodeURIComponent(q.trim())}` : "/bids"} className={`rounded-full border px-2.5 py-1 font-medium ${show !== "closed" ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>Open · {live.length}</Link>
+            <Link href={`/bids?show=closed${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}`} className={`rounded-full border px-2.5 py-1 font-medium ${show === "closed" ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>Won / lost · {closed.length}</Link>
           </div>
         }
       />
+      <ListSearchBox action="/bids" q={q} placeholder="Search by job, company, sender, or notes…" ariaLabel="Search bids" extraParams={{ show }} />
       {rows.length === 0 ? (
-        <Card className="p-6"><EmptyState message={show === "closed" ? "No won or lost bids yet." : "No open bids. When a request comes in by email, file it from Email Inbox as a Potential Bid and it lands here."} /></Card>
+        <Card className="p-6"><EmptyState message={q.trim() ? "No bids match that search." : show === "closed" ? "No won or lost bids yet." : "No open bids. When a request comes in by email, file it from Email Inbox as a Potential Bid and it lands here."} /></Card>
       ) : (
         <div className="space-y-3">
           {rows.map((e) => {

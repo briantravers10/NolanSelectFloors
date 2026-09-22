@@ -46,7 +46,11 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/payroll", label: "Payroll", icon: "clipboard", sectionKey: "reports" },
   // Not section-gated — the owner's personal agenda, always visible.
   { href: "/agenda", label: "My Agenda", icon: "calendar" },
-  { href: "/company-setup", label: "Company Setup", icon: "settings", sectionKey: "company_setup" },
+  // Company Setup is deliberately off the menu bar (client's ask) — the
+  // page and its sub-pages (Staff Access, Work Types, Email Routing,
+  // QuickBooks) still exist at /company-setup and are reached by direct
+  // link, e.g. the "Change access →" / "Give access" links on a staff
+  // member's page.
   // Opens the floating helper (see components/assistant/AssistantPanel.tsx).
   { href: "#assistant", label: "AI Assistant", icon: "spark" },
 ];

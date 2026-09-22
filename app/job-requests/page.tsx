@@ -8,6 +8,7 @@ import { formatDateLong } from "@/lib/dates";
 import { daysBetween, todayIso } from "@/lib/dates";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
+import { ListSearchBox } from "@/components/ListSearchBox";
 
 const CLOSED: JobRequestStatus[] = ["Converted to Project", "Archived", "Declined", "Cancelled"];
 const isOpen = (s: JobRequestStatus) => !CLOSED.includes(s);
@@ -16,10 +17,10 @@ const isOpen = (s: JobRequestStatus) => !CLOSED.includes(s);
 // defaults to newest-first.
 const OVERDUE_DAYS = 5;
 
-export default async function JobRequestsPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
+export default async function JobRequestsPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string }> }) {
   const access = await requireSectionAccess("job_requests");
   if (access === "none") return <AccessDenied section="Job Requests" />;
-  const { filter } = await searchParams;
+  const { filter, q = "" } = await searchParams;
   return (
     <div>
       <PageHeader
@@ -27,19 +28,19 @@ export default async function JobRequestsPage({ searchParams }: { searchParams: 
         subtitle="Incoming work. Start a request to put it under your name, then create the job when the details are in."
         action={<LinkButton href="/job-requests/new"><Icon name="plus" className="w-4 h-4" />New Job Request</LinkButton>}
       />
-      <JobRequestsList filter={filter} />
+      <JobRequestsList filter={filter} q={q} />
     </div>
   );
 }
 
-async function JobRequestsList({ filter }: { filter?: string }) {
+async function JobRequestsList({ filter, q }: { filter?: string; q: string }) {
   const [jobRequests, buildings, clients, actingUser] = await Promise.all([listJobRequests(), listBuildings(), listClientCompanies(), getActingUser()]);
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const today = todayIso();
 
   const tab = filter === "mine" || filter === "created" || filter === "archived" ? filter : "open";
-  const filtered = jobRequests
+  let filtered = jobRequests
     .filter((j) => {
       if (tab === "mine") return isOpen(j.status) && j.started_by_user_id === actingUser.id;
       if (tab === "created") return j.status === "Converted to Project";
@@ -48,21 +49,35 @@ async function JobRequestsList({ filter }: { filter?: string }) {
     })
     .slice()
     .sort((a, b) => (a.received_at < b.received_at ? 1 : -1)); // most recent first
+  if (q.trim()) {
+    const needle = q.trim().toLowerCase();
+    filtered = filtered.filter((j) => {
+      const building = buildingById.get(j.building_id);
+      const client = building ? clientById.get(building.client_company_id) : undefined;
+      const hay = `${building?.name ?? ""} ${j.unit_number ?? ""} ${client?.name ?? ""} ${j.description} ${j.started_by_name ?? ""}`.toLowerCase();
+      return hay.includes(needle);
+    });
+  }
   const counts = {
     open: jobRequests.filter((j) => isOpen(j.status)).length,
     mine: jobRequests.filter((j) => isOpen(j.status) && j.started_by_user_id === actingUser.id).length,
     created: jobRequests.filter((j) => j.status === "Converted to Project").length,
     archived: jobRequests.filter((j) => j.status === "Archived" || j.status === "Declined" || j.status === "Cancelled").length,
   };
-  const pill = (key: string, label: string, n: number) => (
-    <Link
-      key={key}
-      href={key === "open" ? "/job-requests" : `/job-requests?filter=${key}`}
-      className={`text-xs font-medium rounded-full px-3 py-1 border ${tab === key ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
-    >
-      {label} · {n}
-    </Link>
-  );
+  const qParam = q.trim() ? `q=${encodeURIComponent(q.trim())}` : "";
+  const pill = (key: string, label: string, n: number) => {
+    const filterParam = key === "open" ? "" : `filter=${key}`;
+    const params = [filterParam, qParam].filter(Boolean).join("&");
+    return (
+      <Link
+        key={key}
+        href={params ? `/job-requests?${params}` : "/job-requests"}
+        className={`text-xs font-medium rounded-full px-3 py-1 border ${tab === key ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}
+      >
+        {label} · {n}
+      </Link>
+    );
+  };
 
   return (
     <div>
@@ -73,9 +88,11 @@ async function JobRequestsList({ filter }: { filter?: string }) {
         {pill("archived", "Archived", counts.archived)}
       </div>
 
+      <ListSearchBox action="/job-requests" q={q} placeholder="Search by building, unit, company, or description…" ariaLabel="Search job requests" extraParams={{ filter }} />
+
       <Card>
         {filtered.length === 0 ? (
-          <EmptyState message="No job requests match this filter." />
+          <EmptyState message={q.trim() ? "No job requests match that search." : "No job requests match this filter."} />
         ) : (
           <div className="divide-y divide-slate-100">
             {filtered.map((jr) => {

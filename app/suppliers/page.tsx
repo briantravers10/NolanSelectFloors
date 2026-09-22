@@ -8,6 +8,7 @@ import { AccessDenied } from "@/components/AccessDenied";
 import { isFileStorageConfigured } from "@/lib/storage";
 import { summarizeSuppliers, supplierSlug, totalSuppliers, NO_SUPPLIER } from "@/lib/suppliers";
 import { AddSupplierInvoiceForm } from "@/components/suppliers/AddSupplierInvoiceForm";
+import { ListSearchBox } from "@/components/ListSearchBox";
 
 /**
  * SUPPLIERS — where the money went, by supplier. Every figure comes from
@@ -15,14 +16,16 @@ import { AddSupplierInvoiceForm } from "@/components/suppliers/AddSupplierInvoic
  * a supplier total and a job total can both show the same invoice without
  * it ever being added twice. Amber = invoices not linked to any job.
  */
-export default async function SuppliersPage() {
+export default async function SuppliersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const access = await requireSectionAccess("materials");
   if (access === "none") return <AccessDenied section="Suppliers" />;
+  const { q = "" } = await searchParams;
   const [materials, projects, buildings, clients, editable] = await Promise.all([listProjectMaterials(), listProjects(), listBuildings(), listClientCompanies(), canEdit("materials")]);
 
-  const rows = summarizeSuppliers(materials);
-  const totals = totalSuppliers(rows);
-  const supplierNames = rows.map((r) => r.name).filter((n) => n !== NO_SUPPLIER);
+  const allRows = summarizeSuppliers(materials);
+  const totals = totalSuppliers(allRows);
+  const supplierNames = allRows.map((r) => r.name).filter((n) => n !== NO_SUPPLIER);
+  const rows = q.trim() ? allRows.filter((r) => r.name.toLowerCase().includes(q.trim().toLowerCase())) : allRows;
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -62,9 +65,11 @@ export default async function SuppliersPage() {
         </Card>
       </div>
 
+      <ListSearchBox action="/suppliers" q={q} placeholder="Search by supplier name…" ariaLabel="Search suppliers" />
+
       <Card className="overflow-hidden">
         {rows.length === 0 ? (
-          <div className="p-6"><EmptyState message="No supplier spend yet. Add an invoice here, on a job's Materials, or file one from Email Inbox." /></div>
+          <div className="p-6"><EmptyState message={q.trim() ? "No suppliers match that search." : "No supplier spend yet. Add an invoice here, on a job's Materials, or file one from Email Inbox."} /></div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

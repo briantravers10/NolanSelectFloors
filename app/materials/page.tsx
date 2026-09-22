@@ -6,10 +6,12 @@ import { addDays, isoDate, todayIso } from "@/lib/dates";
 import { MATERIAL_STATUSES } from "@/lib/types";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
+import { ListSearchBox } from "@/components/ListSearchBox";
 
-export default async function MaterialsPage() {
+export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const access = await requireSectionAccess("materials");
   if (access === "none") return <AccessDenied section="Materials" />;
+  const { q = "" } = await searchParams;
 
   const [projectMaterials, projects, buildings] = await Promise.all([listProjectMaterials(), listProjects(), listBuildings()]);
   const projectById = new Map(projects.map((p) => [p.id, p]));
@@ -21,6 +23,15 @@ export default async function MaterialsPage() {
     const p = m.project_id ? projectById.get(m.project_id) : undefined;
     return p && isActiveProjectStage(p);
   });
+  let filteredMaterials = activeMaterials;
+  if (q.trim()) {
+    const needle = q.trim().toLowerCase();
+    filteredMaterials = activeMaterials.filter((m) => {
+      const p = m.project_id ? projectById.get(m.project_id) : undefined;
+      const b = p ? buildingById.get(p.building_id) : undefined;
+      return `${b?.name ?? ""} ${p?.name ?? ""} ${m.description} ${m.supplier ?? ""}`.toLowerCase().includes(needle);
+    });
+  }
 
   const warnings = activeMaterials.filter((m) => {
     const p = m.project_id ? projectById.get(m.project_id) : undefined;
@@ -64,6 +75,8 @@ export default async function MaterialsPage() {
         })}
       </div>
 
+      <ListSearchBox action="/materials" q={q} placeholder="Search by project, building, material, or supplier…" ariaLabel="Search materials" />
+
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -78,10 +91,10 @@ export default async function MaterialsPage() {
               </tr>
             </thead>
             <tbody>
-              {activeMaterials.length === 0 && (
-                <tr><td colSpan={6}><EmptyState message="No materials tracked yet." /></td></tr>
+              {filteredMaterials.length === 0 && (
+                <tr><td colSpan={6}><EmptyState message={q.trim() ? "No materials match that search." : "No materials tracked yet."} /></td></tr>
               )}
-              {activeMaterials.map((m) => {
+              {filteredMaterials.map((m) => {
                 const p = m.project_id ? projectById.get(m.project_id) : undefined;
                 const b = p ? buildingById.get(p.building_id) : undefined;
                 return (

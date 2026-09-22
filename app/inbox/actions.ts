@@ -22,12 +22,27 @@ function refresh(projectId?: string | null) {
 export async function fileInboundAction(id: string, formData: FormData) {
   if (!(await canEdit("projects"))) return;
   const projectId = String(formData.get("project_id") ?? "").trim() || null;
-  const kindRaw = String(formData.get("kind") ?? "") as InboundKind;
-  const kind: InboundKind = FILE_KINDS.includes(kindRaw) ? kindRaw : "drawing";
-  if (NEEDS_JOB.includes(kind) && !projectId) return;
+  const kindRaw = String(formData.get("kind") ?? "");
   const amountRaw = String(formData.get("amount") ?? "").replace(/[$,\s]/g, "");
   const amount = amountRaw === "" ? null : Number(amountRaw);
   const actingUser = await getActingUser();
+
+  // "Estimate Sent" isn't a stored kind — it files as a Potential Bid,
+  // already marked "Quoted — waiting", carrying the chosen job's details.
+  if (kindRaw === "estimate_sent") {
+    if (!projectId) return;
+    await fileInboundEmail(id, { kind: "bid", projectId }, actingUser.fullName);
+    await updateInboundEmail(id, {
+      bid_status: "quoted",
+      bid_notes: amount != null && Number.isFinite(amount) ? `Estimate sent — $${amount}` : "Estimate sent",
+    });
+    refresh(projectId);
+    revalidatePath("/bids");
+    return;
+  }
+
+  const kind: InboundKind = FILE_KINDS.includes(kindRaw as InboundKind) ? (kindRaw as InboundKind) : "drawing";
+  if (NEEDS_JOB.includes(kind) && !projectId) return;
   await fileInboundEmail(
     id,
     {

@@ -9,12 +9,13 @@ import { ByBuilding } from "./ByBuilding";
 
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
+import { ListSearchBox } from "@/components/ListSearchBox";
 
-export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ view?: string; stage?: string }> }) {
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ view?: string; stage?: string; q?: string }> }) {
   const access = await requireSectionAccess("projects");
   if (access === "none") return <AccessDenied section="Projects" />;
 
-  const { view, stage } = await searchParams;
+  const { view, stage, q = "" } = await searchParams;
   const showPipeline = view === "pipeline";
   const showByBuilding = view === "by-building";
 
@@ -63,12 +64,12 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         ))}
       </div>
 
-      {showPipeline ? <Pipeline stageFilter={stage} /> : showByBuilding ? <ByBuilding stageFilter={stage} /> : <ProjectsList stage={stage} />}
+      {showPipeline ? <Pipeline stageFilter={stage} /> : showByBuilding ? <ByBuilding stageFilter={stage} /> : <ProjectsList stage={stage} q={q} />}
     </div>
   );
 }
 
-async function ProjectsList({ stage }: { stage?: string }) {
+async function ProjectsList({ stage, q }: { stage?: string; q: string }) {
   const [projects, buildings, clients, assignments] = await Promise.all([
     listProjects(),
     listBuildings(),
@@ -82,10 +83,20 @@ async function ProjectsList({ stage }: { stage?: string }) {
   // pipeline_stage (see the sub-nav above) is now the only status filter.
   let filtered = projects.slice();
   if (stage) filtered = filtered.filter((p) => p.pipeline_stage === stage);
+  if (q.trim()) {
+    const needle = q.trim().toLowerCase();
+    filtered = filtered.filter((p) => {
+      const building = buildingById.get(p.building_id);
+      const client = building ? clientById.get(building.client_company_id) : undefined;
+      const hay = `${p.name} ${building?.name ?? ""} ${building?.address ?? ""} ${client?.name ?? ""} ${p.unit_number ?? ""}`.toLowerCase();
+      return hay.includes(needle);
+    });
+  }
   filtered.sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
 
   return (
     <div>
+      <ListSearchBox action="/projects" q={q} placeholder="Search by job, building, unit, or management company…" ariaLabel="Search projects" extraParams={{ stage }} />
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -101,6 +112,9 @@ async function ProjectsList({ stage }: { stage?: string }) {
               </tr>
             </thead>
             <tbody>
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-500">No projects match that search.</td></tr>
+              )}
               {filtered.map((p) => {
                 const building = buildingById.get(p.building_id);
                 const client = building ? clientById.get(building.client_company_id) : undefined;

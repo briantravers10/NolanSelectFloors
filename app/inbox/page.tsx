@@ -7,9 +7,9 @@ import { signedFileUrl } from "@/lib/storage";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { confirmAllMatchedAction, ignoreInboundAction, reopenInboundAction } from "./actions";
-import { FileInboundForm } from "@/components/inbox/FileInboundForm";
+import { InboxFilingBlock } from "@/components/inbox/InboxFilingBlock";
+import type { FileKind } from "@/components/inbox/FileInboundForm";
 import { supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
-import { NewJobFromEmailForm } from "@/components/inbox/NewJobFromEmailForm";
 import { INBOUND_KIND_LABELS, UNASSIGNED_CLIENT_NAME, type InboundKind } from "@/lib/types";
 
 /**
@@ -49,7 +49,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     .map((b) => ({ name: b.name, clientName: clientById.get(b.client_company_id)?.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const quickClients = clients.filter((c) => c.name !== UNASSIGNED_CLIENT_NAME).map((c) => ({ name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
-  const initialKind = (k: InboundKind): Exclude<InboundKind, "unknown"> => (k === "unknown" ? "drawing" : k);
+  const initialKind = (k: InboundKind): FileKind => (k === "unknown" ? "drawing" : k);
   const kindLabel = (k?: string | null) => INBOUND_KIND_LABELS[(k ?? "unknown") as InboundKind] ?? k ?? "Filed";
 
   const matched = emails.filter((e) => e.status === "matched");
@@ -140,7 +140,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   </div>
                   {editable && (
                     <div className="flex flex-col gap-2 min-w-[300px]">
-                      <FileInboundForm
+                      <InboxFilingBlock
                         emailId={e.id}
                         initialKind={initialKind(e.kind)}
                         jobs={jobOptions}
@@ -196,7 +196,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   </div>
                   {editable && (
                     <div className="flex flex-col gap-2 min-w-[300px]">
-                      <FileInboundForm
+                      <InboxFilingBlock
                         emailId={e.id}
                         initialKind={initialKind(e.kind)}
                         jobs={jobOptions}
@@ -204,14 +204,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                         suppliers={supplierNames}
                         defaultSupplier={guessSupplier(e.from_name, e.from_email)}
                         defaultDate={e.received_at.slice(0, 10)}
-                      />
-                      <NewJobFromEmailForm
-                        emailId={e.id}
-                        buildings={quickBuildings}
-                        clients={quickClients}
-                        defaultDate={todayIso()}
-                        defaultBuilding={suggestedBuilding?.name}
-                        defaultDescription={e.subject ?? ""}
+                        showNewJob
+                        quickBuildings={quickBuildings}
+                        quickClients={quickClients}
+                        defaultQuickDate={todayIso()}
+                        defaultQuickBuilding={suggestedBuilding?.name}
+                        defaultQuickDescription={e.subject ?? ""}
                       />
                       <form action={ignoreInboundAction.bind(null, e.id)} className="text-right">
                         <button type="submit" className="text-xs text-slate-500 hover:text-slate-800 underline">Nothing to file — ignore</button>
