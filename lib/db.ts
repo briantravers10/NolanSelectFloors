@@ -489,13 +489,16 @@ export async function setSectionPermission(
   });
 }
 
-export async function listProjectWorkTypes(): Promise<ProjectWorkType[]> {
+export async function listProjectWorkTypes(options?: { projectId?: string }): Promise<ProjectWorkType[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("project_work_types").select("*");
+    let query = client.from("project_work_types").select("*");
+    if (options?.projectId) query = query.eq("project_id", options.projectId);
+    const { data, error } = await query;
     if (!error && data) return data as ProjectWorkType[];
   }
-  return getStore().projectWorkTypes;
+  const all = getStore().projectWorkTypes;
+  return options?.projectId ? all.filter((wt) => wt.project_id === options.projectId) : all;
 }
 
 export async function listEmployees(): Promise<Employee[]> {
@@ -744,13 +747,16 @@ export async function deleteEmployee(id: string, actorName: string): Promise<voi
   });
 }
 
-export async function listCrewRequirements(): Promise<ProjectCrewRequirement[]> {
+export async function listCrewRequirements(options?: { projectId?: string }): Promise<ProjectCrewRequirement[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("project_crew_requirements").select("*");
+    let query = client.from("project_crew_requirements").select("*");
+    if (options?.projectId) query = query.eq("project_id", options.projectId);
+    const { data, error } = await query;
     if (!error && data) return data as ProjectCrewRequirement[];
   }
-  return getStore().projectCrewRequirements;
+  const all = getStore().projectCrewRequirements;
+  return options?.projectId ? all.filter((r) => r.project_id === options.projectId) : all;
 }
 
 /**
@@ -785,13 +791,33 @@ export async function listMaterials(): Promise<Material[]> {
   return [...getStore().materials].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function listProjectMaterials(): Promise<ProjectMaterial[]> {
+export async function listProjectMaterials(options?: { projectId?: string }): Promise<ProjectMaterial[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("project_materials").select("*");
+    let query = client.from("project_materials").select("*");
+    if (options?.projectId) query = query.eq("project_id", options.projectId);
+    const { data, error } = await query;
     if (!error && data) return data as ProjectMaterial[];
   }
-  return getStore().projectMaterials;
+  const all = getStore().projectMaterials;
+  return options?.projectId ? all.filter((m) => m.project_id === options.projectId) : all;
+}
+
+/** Every supplier name that has ever appeared on a materials/invoice line,
+ * for the "pick or type" datalist on Add Material / Add Invoice forms —
+ * needs every supplier company-wide, not just one project's, so this
+ * selects only the `supplier` column across the whole table instead of
+ * every column of every row (the full listProjectMaterials() shape). */
+export async function listDistinctMaterialSuppliers(): Promise<string[]> {
+  const client = sb();
+  let rows: { supplier?: string | null }[];
+  if (client) {
+    const { data, error } = await client.from("project_materials").select("supplier");
+    rows = !error && data ? data : getStore().projectMaterials;
+  } else {
+    rows = getStore().projectMaterials;
+  }
+  return [...new Set(rows.map((m) => m.supplier?.trim()).filter((x): x is string => Boolean(x)))].sort();
 }
 
 export async function listTasks(): Promise<Task[]> {
@@ -812,13 +838,16 @@ export async function listCommunications(): Promise<Communication[]> {
   return [...getStore().communications].sort((a, b) => (a.occurred_at < b.occurred_at ? 1 : -1));
 }
 
-export async function listProjectNotes(): Promise<ProjectNote[]> {
+export async function listProjectNotes(options?: { projectId?: string }): Promise<ProjectNote[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("project_notes").select("*").order("created_at", { ascending: false });
+    let query = client.from("project_notes").select("*").order("created_at", { ascending: false });
+    if (options?.projectId) query = query.eq("project_id", options.projectId);
+    const { data, error } = await query;
     if (!error && data) return data as ProjectNote[];
   }
-  return [...getStore().projectNotes].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  const all = [...getStore().projectNotes].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  return options?.projectId ? all.filter((n) => n.project_id === options.projectId) : all;
 }
 
 export async function listDocuments(): Promise<DocumentRecord[]> {
@@ -830,13 +859,19 @@ export async function listDocuments(): Promise<DocumentRecord[]> {
   return getStore().documents;
 }
 
-export async function listPhotos(): Promise<PhotoRecord[]> {
+export async function listPhotos(options?: { relatedType?: RelatedRecordType; relatedId?: string }): Promise<PhotoRecord[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("photos").select("*");
+    let query = client.from("photos").select("*");
+    if (options?.relatedType) query = query.eq("related_type", options.relatedType);
+    if (options?.relatedId) query = query.eq("related_id", options.relatedId);
+    const { data, error } = await query;
     if (!error && data) return data as PhotoRecord[];
   }
-  return getStore().photos;
+  const all = getStore().photos;
+  return options
+    ? all.filter((p) => (!options.relatedType || p.related_type === options.relatedType) && (!options.relatedId || p.related_id === options.relatedId))
+    : all;
 }
 
 export async function listLeads(): Promise<NewBusinessLead[]> {
@@ -848,13 +883,19 @@ export async function listLeads(): Promise<NewBusinessLead[]> {
   return [...getStore().newBusinessLeads].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }
 
-export async function listActivityLog(): Promise<ActivityLogEntry[]> {
+export async function listActivityLog(options?: { relatedType?: RelatedRecordType; relatedId?: string }): Promise<ActivityLogEntry[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("activity_log").select("*").order("created_at", { ascending: false });
+    let query = client.from("activity_log").select("*").order("created_at", { ascending: false });
+    if (options?.relatedType) query = query.eq("related_type", options.relatedType);
+    if (options?.relatedId) query = query.eq("related_id", options.relatedId);
+    const { data, error } = await query;
     if (!error && data) return data as ActivityLogEntry[];
   }
-  return [...getStore().activityLog].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  const all = [...getStore().activityLog].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  return options
+    ? all.filter((a) => (!options.relatedType || a.related_type === options.relatedType) && (!options.relatedId || a.related_id === options.relatedId))
+    : all;
 }
 
 export async function listCompanySetupAnswers(): Promise<CompanySetupAnswer[]> {
@@ -2710,13 +2751,16 @@ export async function createPhotoRecord(input: {
 // history. See lib/types.ts ProjectDrawing and README "Photos & Drawings".
 // ---------------------------------------------------------------------
 
-export async function listProjectDrawings(): Promise<ProjectDrawing[]> {
+export async function listProjectDrawings(options?: { projectId?: string }): Promise<ProjectDrawing[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("project_drawings").select("*").order("uploaded_at", { ascending: false });
+    let query = client.from("project_drawings").select("*").order("uploaded_at", { ascending: false });
+    if (options?.projectId) query = query.eq("project_id", options.projectId);
+    const { data, error } = await query;
     if (!error && data) return data as ProjectDrawing[];
   }
-  return [...getStore().projectDrawings].sort((a, b) => (a.uploaded_at < b.uploaded_at ? 1 : -1));
+  const all = [...getStore().projectDrawings].sort((a, b) => (a.uploaded_at < b.uploaded_at ? 1 : -1));
+  return options?.projectId ? all.filter((d) => d.project_id === options.projectId) : all;
 }
 
 /**
@@ -3202,6 +3246,11 @@ export async function listQuickBooksDocuments(): Promise<QuickBooksDocument[]> {
 }
 
 export async function listQuickBooksDocumentsForProject(projectId: string): Promise<QuickBooksDocument[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("quickbooks_documents").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+    if (!error && data) return data as QuickBooksDocument[];
+  }
   return (await listQuickBooksDocuments()).filter((d) => d.project_id === projectId);
 }
 
@@ -3424,13 +3473,16 @@ export interface FileInboundOptions {
 // ---------------------------------------------------------------------
 // OUTBOUND INVOICES — the invoices we send customers, one current per job.
 // ---------------------------------------------------------------------
-export async function listProjectOutboundInvoices(): Promise<ProjectOutboundInvoice[]> {
+export async function listProjectOutboundInvoices(options?: { projectId?: string }): Promise<ProjectOutboundInvoice[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("project_outbound_invoices").select("*").order("created_at", { ascending: false });
+    let query = client.from("project_outbound_invoices").select("*").order("created_at", { ascending: false });
+    if (options?.projectId) query = query.eq("project_id", options.projectId);
+    const { data, error } = await query;
     if (!error && data) return (data as ProjectOutboundInvoice[]).map((r) => ({ ...r, amount: r.amount == null ? null : Number(r.amount) }));
   }
-  return [...getStore().projectOutboundInvoices].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const all = [...getStore().projectOutboundInvoices].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return options?.projectId ? all.filter((i) => i.project_id === options.projectId) : all;
 }
 
 export async function createProjectOutboundInvoice(input: Omit<ProjectOutboundInvoice, "id" | "company_id" | "created_at" | "is_current">): Promise<ProjectOutboundInvoice> {

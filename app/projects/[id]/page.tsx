@@ -9,7 +9,7 @@ import {
   listEmployees,
   listEmployeeSkills,
   listMaterialRateItems,
-  listOfficeUsers,
+  listDistinctMaterialSuppliers,
   listPricingFormulaComponents,
   listPricingFormulas,
   listProjectMaterials,
@@ -60,82 +60,103 @@ import { isPhotoStorageConfigured } from "@/lib/storage";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Performance pass: activity log, photos, drawings, notes, crew
+  // requirements, work types, and outbound invoices are all scoped to this
+  // project at the database level (.eq("project_id", id) or equivalent)
+  // instead of fetching the entire table and filtering in JS — see the
+  // audit report. Schedule assignments and actual labor entries are
+  // DELIBERATELY still fetched in full: the "one day rate per person per
+  // day" double-booking split (plannedAssignmentShares / jobLaborSummary →
+  // computeActualLaborCosts) groups an employee's entries by
+  // employee+date+rate across EVERY project, not just this one, so scoping
+  // either table to this project would silently miscalculate cost on any
+  // day the employee is also booked elsewhere. The two canEdit() checks
+  // and the previously-sequential outbound-invoice fetch are folded into
+  // this same Promise.all; a stray listOfficeUsers() call whose result was
+  // never used (see the discarded destructure slot the old code had) is
+  // removed outright.
   const [
     projects,
     buildings,
     clients,
-    workTypes,
+    projectWorkTypes,
     assignments,
     employees,
     employeeSkills,
-    crewRequirements,
-    materials,
-    notes,
-    ,
+    projectCrewReqs,
+    projectMaterialsList,
+    supplierNames,
+    projectNotes,
     actingUser,
-    activityLog,
-    photos,
-    drawings,
+    projectActivity,
+    projectPhotosRaw,
+    projectDrawings,
     pricingFormulas,
     formulaComponents,
     materialRateItems,
     actualLaborEntries,
     qbDocuments,
     qbConnection,
+    outboundInvoices,
+    canEditProjects,
+    canEditMaterials,
   ] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
-    listProjectWorkTypes(),
+    listProjectWorkTypes({ projectId: id }),
     listScheduleAssignments(),
     listEmployees(),
     listEmployeeSkills(),
-    listCrewRequirements(),
-    listProjectMaterials(),
-    listProjectNotes(),
-    listOfficeUsers(),
+    listCrewRequirements({ projectId: id }),
+    listProjectMaterials({ projectId: id }),
+    listDistinctMaterialSuppliers(),
+    listProjectNotes({ projectId: id }),
     getActingUser(),
-    listActivityLog(),
-    listPhotos(),
-    listProjectDrawings(),
+    listActivityLog({ relatedType: "project", relatedId: id }),
+    listPhotos({ relatedType: "project", relatedId: id }),
+    listProjectDrawings({ projectId: id }),
     listPricingFormulas(),
     listPricingFormulaComponents(),
     listMaterialRateItems(),
     listActualLaborEntries(),
     listQuickBooksDocumentsForProject(id),
     getQuickBooksConnection(),
+    listProjectOutboundInvoices({ projectId: id }),
+    canEdit("projects"),
+    canEdit("materials"),
   ]);
 
   const project = projects.find((p) => p.id === id);
-  const canEditProjects = await canEdit("projects");
   if (!project) notFound();
 
-  const outboundInvoices = (await listProjectOutboundInvoices()).filter((i) => i.project_id === id);
-  const outboundInvoiceUrls = new Map<string, string>();
-  for (const inv of outboundInvoices) {
-    if (inv.file_reference) {
-      const url = await signedFileUrl(inv.file_reference, "inbound-email");
-      if (url) outboundInvoiceUrls.set(inv.id, url);
-    }
-  }
+  // Signed URLs are independent storage calls — batched instead of one
+  // sequential await per file.
+  const [outboundInvoiceUrlPairs, drawingUrlPairs, invoiceUrlPairs] = await Promise.all([
+    Promise.all(
+      outboundInvoices.map(async (inv) => (inv.file_reference ? ([inv.id, await signedFileUrl(inv.file_reference, "inbound-email")] as const) : null))
+    ),
+    Promise.all(
+      projectDrawings.map(async (d) => (d.file_reference && !d.storage_unavailable ? ([d.id, await drawingFileUrl(d.file_reference)] as const) : null))
+    ),
+    Promise.all(
+      projectMaterialsList.map(async (m) => (m.invoice_path ? ([m.id, await materialInvoiceUrl(m.invoice_path)] as const) : null))
+    ),
+  ]);
+  const outboundInvoiceUrls = new Map(outboundInvoiceUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
+  const drawingUrls = new Map(drawingUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
+  const invoiceUrls = new Map(invoiceUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
+
   const building = buildings.find((b) => b.id === project.building_id);
   const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
-  const projectWorkTypes = workTypes.filter((wt) => wt.project_id === id);
   const projectWorkTypeSet = new Set(projectWorkTypes.map((wt) => wt.work_type));
   const matchingFormulas = pricingFormulas.filter((f) => f.active && projectWorkTypeSet.has(f.work_type));
   const calculatorFormulas = matchingFormulas.length > 0 ? matchingFormulas : pricingFormulas.filter((f) => f.active);
   const projectAssignments = assignments.filter((a) => a.project_id === id).sort((a, b) => a.schedule_date.localeCompare(b.schedule_date));
   const scheduledDates = Array.from(new Set(projectAssignments.map((a) => a.schedule_date))).sort();
-  const projectCrewReqs = crewRequirements.filter((r) => r.project_id === id);
-  const projectMaterialsList = materials.filter((m) => m.project_id === id);
-  const projectNotes = notes.filter((n) => n.project_id === id);
   const employeeById = new Map(employees.map((e) => [e.id, e]));
-  const projectActivity = activityLog.filter((a) => a.related_type === "project" && a.related_id === id);
-  const projectPhotos = photos
-    .filter((ph) => ph.related_type === "project" && ph.related_id === id)
-    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  const projectPhotos = [...projectPhotosRaw].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   const photoStorageConfigured = isPhotoStorageConfigured();
-  const projectDrawings = drawings.filter((d) => d.project_id === id).sort((a, b) => (a.uploaded_at < b.uploaded_at ? 1 : -1));
   const currentDrawings = projectDrawings.filter((d) => d.is_current_version);
   const drawingsByName = new Map<string, typeof projectDrawings>();
   for (const d of projectDrawings) {
@@ -144,28 +165,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     drawingsByName.get(key)!.push(d);
   }
 
-  const costing = computeProjectCosting(project, assignments, materials, id);
+  const costing = computeProjectCosting(project, assignments, projectMaterialsList, id);
   // One day rate per person per day — a double-booked person's day is split
   // between their jobs, so this project only carries its share.
   const plannedShares = plannedAssignmentShares(assignments);
-  const canEditMaterials = await canEdit("materials");
   const canViewRates = canViewLaborCost(actingUser);
   const storageConfigured = isFileStorageConfigured();
-  const supplierNames = [...new Set(materials.map((m) => m.supplier?.trim()).filter((x): x is string => Boolean(x)))].sort();
-  const drawingUrls = new Map<string, string>();
-  for (const d of projectDrawings) {
-    if (d.file_reference && !d.storage_unavailable) {
-      const url = await drawingFileUrl(d.file_reference);
-      if (url) drawingUrls.set(d.id, url);
-    }
-  }
-  const invoiceUrls = new Map<string, string>();
-  for (const m of projectMaterialsList) {
-    if (m.invoice_path) {
-      const url = await materialInvoiceUrl(m.invoice_path);
-      if (url) invoiceUrls.set(m.id, url);
-    }
-  }
   const skillsByEmployee = new Map<string, string[]>();
   for (const sk of employeeSkills) skillsByEmployee.set(sk.employee_id, [...(skillsByEmployee.get(sk.employee_id) ?? []), sk.capability]);
   const crewPicks = employees
@@ -181,7 +186,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canQBManage = canManageQuickBooksDocuments(actingUser);
   const canFinancials = canViewJobFinancials(actingUser);
   const qbConnected = isQuickBooksConnected(qbConnection);
-  const financialSummary = computeFinancialSummary(project, assignments, materials, qbDocuments, qbConnected);
+  const financialSummary = computeFinancialSummary(project, assignments, projectMaterialsList, qbDocuments, qbConnected);
 
   return (
     <div>
@@ -307,7 +312,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <div className="space-y-3">
                 {scheduledDates.map((date) => {
                   const dayAssignments = projectAssignments.filter((a) => a.schedule_date === date);
-                  const crewComparison = compareCrewForProjectDate(crewRequirements, assignments, id, date);
+                  const crewComparison = compareCrewForProjectDate(projectCrewReqs, assignments, id, date);
                   const dayCost = plannedCostOf(dayAssignments, plannedShares);
                   return (
                     <div key={date} className="border border-slate-100 rounded-lg p-3">
