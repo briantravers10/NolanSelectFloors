@@ -5,6 +5,7 @@ import { formatDateShort } from "@/lib/dates";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { drawingFileUrl, signedFileUrl } from "@/lib/storage";
+import { mapWithConcurrency } from "@/lib/concurrency";
 
 /**
  * DRAWINGS — one library of every drawing across every job, so nobody has
@@ -57,22 +58,17 @@ export default async function DrawingsPage({ searchParams }: { searchParams: Pro
     .filter((e) => !q || `${e.subject ?? ""} ${e.from_email ?? ""} ${e.attachments.map((a) => a.filename).join(" ")}`.toLowerCase().includes(q.toLowerCase()))
     .filter(() => !company && !building);
 
-  const urls = new Map<string, string>();
-  for (const r of rows.slice(0, 120)) {
-    if (r.d.file_reference && !r.d.storage_unavailable) {
-      const url = await drawingFileUrl(r.d.file_reference);
-      if (url) urls.set(r.d.id, url);
-    }
-  }
-  const waitingUrls = new Map<string, string>();
-  for (const e of waiting) {
-    for (const a of e.attachments) {
-      if (a.storage_path && DRAWING_LIKE.test(a.filename)) {
-        const url = await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email");
-        if (url) waitingUrls.set(`${e.id}:${a.id}`, url);
-      }
-    }
-  }
+  // Signed URLs are independent storage calls — batched with bounded
+  // concurrency instead of one sequential await per file (see the
+  // performance audit report). Neither helper ever throws (missing/broken
+  // files just resolve to no URL), so a bad file can't take down the page.
+  const drawingsNeedingUrls = rows.slice(0, 120).filter((r) => r.d.file_reference && !r.d.storage_unavailable);
+  const urlResults = await mapWithConcurrency(drawingsNeedingUrls, 10, async (r) => [r.d.id, await drawingFileUrl(r.d.file_reference!)] as const);
+  const urls = new Map(urlResults.filter((([, url]) => url !== null)) as [string, string][]);
+
+  const waitingAttachments = waiting.flatMap((e) => e.attachments.filter((a) => a.storage_path && DRAWING_LIKE.test(a.filename)).map((a) => ({ e, a })));
+  const waitingUrlResults = await mapWithConcurrency(waitingAttachments, 10, async ({ e, a }) => [`${e.id}:${a.id}`, await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email")] as const);
+  const waitingUrls = new Map(waitingUrlResults.filter((([, url]) => url !== null)) as [string, string][]);
 
   const companyMap = new Map<string, (typeof clients)[number]>();
   const buildingMap = new Map<string, (typeof buildings)[number]>();

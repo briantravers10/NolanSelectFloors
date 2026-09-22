@@ -5,6 +5,7 @@ import { formatDateLong } from "@/lib/dates";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { signedFileUrl } from "@/lib/storage";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { unfileInboundAction } from "@/app/inbox/actions";
 
 /**
@@ -32,15 +33,11 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
     .filter((r) => !q || r.hay.includes(q.toLowerCase()))
     .sort((a, b) => b.e.received_at.localeCompare(a.e.received_at));
 
-  const links = new Map<string, string>();
-  for (const r of rows) {
-    for (const a of r.e.attachments) {
-      if (a.storage_path) {
-        const url = await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email");
-        if (url) links.set(`${r.e.id}:${a.id}`, url);
-      }
-    }
-  }
+  // Batched with bounded concurrency instead of one sequential await per
+  // file — see the performance audit report.
+  const poAttachments = rows.flatMap((r) => r.e.attachments.filter((a) => a.storage_path).map((a) => ({ e: r.e, a })));
+  const poLinkResults = await mapWithConcurrency(poAttachments, 10, async ({ e, a }) => [`${e.id}:${a.id}`, await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email")] as const);
+  const links = new Map(poLinkResults.filter((([, url]) => url !== null)) as [string, string][]);
 
   return (
     <div>

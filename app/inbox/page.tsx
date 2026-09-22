@@ -4,6 +4,7 @@ import { Card, PageHeader, EmptyState, Button } from "@/components/ui";
 import { daysBetween, formatDateLong, todayIso } from "@/lib/dates";
 import { isActiveProjectStage } from "@/lib/calculations";
 import { signedFileUrl } from "@/lib/storage";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { confirmAllMatchedAction, ignoreInboundAction, reopenInboundAction } from "./actions";
@@ -56,16 +57,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const unfiled = emails.filter((e) => e.status === "unfiled");
   const done = emails.filter((e) => e.status !== "unfiled" && e.status !== "matched").slice(0, show === "all" ? undefined : 20);
 
-  // Signed download links (1 hour) for every stored attachment shown.
-  const links = new Map<string, string>();
-  for (const e of [...matched, ...unfiled, ...done]) {
-    for (const a of e.attachments) {
-      if (a.storage_path) {
-        const url = await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email");
-        if (url) links.set(`${e.id}:${a.id}`, url);
-      }
-    }
-  }
+  // Signed download links (1 hour) for every stored attachment shown —
+  // batched with bounded concurrency instead of one sequential await per
+  // file (see the performance audit report). signedFileUrl never throws
+  // (a broken file just resolves to no URL), so this can't take the page
+  // down.
+  const attachmentsNeedingLinks = [...matched, ...unfiled, ...done].flatMap((e) => e.attachments.filter((a) => a.storage_path).map((a) => ({ e, a })));
+  const linkResults = await mapWithConcurrency(attachmentsNeedingLinks, 10, async ({ e, a }) => [`${e.id}:${a.id}`, await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email")] as const);
+  const links = new Map(linkResults.filter((([, url]) => url !== null)) as [string, string][]);
 
   const jobName = (id?: string | null) => {
     const p = id ? projectById.get(id) : undefined;

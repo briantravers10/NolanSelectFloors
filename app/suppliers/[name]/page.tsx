@@ -6,6 +6,7 @@ import { formatDateShort } from "@/lib/dates";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { isFileStorageConfigured, materialInvoiceUrl } from "@/lib/storage";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { materialDate, summarizeSuppliers, supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
 import { AddSupplierInvoiceForm } from "@/components/suppliers/AddSupplierInvoiceForm";
 import { LinkToJobForm } from "@/components/suppliers/LinkToJobForm";
@@ -42,13 +43,11 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
     .map((p) => ({ id: p.id, label: `${jobLabel(p.id)}${jobCompany(p.id) ? ` · ${jobCompany(p.id)}` : ""}` }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
-  const links = new Map<string, string>();
-  for (const m of lines) {
-    if (m.invoice_path) {
-      const url = await materialInvoiceUrl(m.invoice_path);
-      if (url) links.set(m.id, url);
-    }
-  }
+  // Batched with bounded concurrency instead of one sequential await per
+  // file — see the performance audit report.
+  const linesNeedingUrls = lines.filter((m) => m.invoice_path);
+  const linkResults = await mapWithConcurrency(linesNeedingUrls, 10, async (m) => [m.id, await materialInvoiceUrl(m.invoice_path!)] as const);
+  const links = new Map(linkResults.filter((([, url]) => url !== null)) as [string, string][]);
   const supplierNames = [...new Set(materials.map((m) => supplierKey(m)))].filter((n) => n !== NO_SUPPLIER).sort();
 
   return (

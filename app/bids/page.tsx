@@ -5,6 +5,7 @@ import { formatDateLong } from "@/lib/dates";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { signedFileUrl } from "@/lib/storage";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { setBidStatusAction, unfileInboundAction } from "@/app/inbox/actions";
 import { BID_EMAIL_STATUSES, type BidEmailStatus } from "@/lib/types";
 import { ListSearchBox } from "@/components/ListSearchBox";
@@ -46,15 +47,11 @@ export default async function BidsPage({ searchParams }: { searchParams: Promise
     });
   }
 
-  const links = new Map<string, string>();
-  for (const e of rows) {
-    for (const a of e.attachments) {
-      if (a.storage_path) {
-        const url = await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email");
-        if (url) links.set(`${e.id}:${a.id}`, url);
-      }
-    }
-  }
+  // Batched with bounded concurrency instead of one sequential await per
+  // file — see the performance audit report.
+  const bidAttachments = rows.flatMap((e) => e.attachments.filter((a) => a.storage_path).map((a) => ({ e, a })));
+  const bidLinkResults = await mapWithConcurrency(bidAttachments, 10, async ({ e, a }) => [`${e.id}:${a.id}`, await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email")] as const);
+  const links = new Map(bidLinkResults.filter((([, url]) => url !== null)) as [string, string][]);
   const input = "rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm";
 
   return (
