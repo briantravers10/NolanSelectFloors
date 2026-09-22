@@ -182,7 +182,7 @@ export default async function WeeklySummaryPage({ searchParams }: { searchParams
                       <td className="py-2 text-right">
                         {e.completed ? (
                           <span className="inline-flex rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-medium">
-                            Completed{e.completedOn ? ` ${dayLabel(e.completedOn).slice(0, 3)}` : ""}
+                            Completed{e.completedOn ? ` on ${formatDateShort(e.completedOn)}` : ""}
                           </span>
                         ) : e.cancelledDays && e.cancelledDays.length === e.days.length ? (
                           <span className="inline-flex rounded-full bg-rose-100 text-rose-800 px-2 py-0.5 text-xs font-medium">Cancelled</span>

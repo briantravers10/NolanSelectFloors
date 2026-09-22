@@ -25,6 +25,19 @@ export function Sidebar({ access, realAuthOn }: { access: Record<SectionKey, Sec
       </div>
       <nav className="flex-1 overflow-y-auto py-3">
         {items.map((item) => {
+          if (item.href === "#assistant") {
+            return (
+              <button
+                key={item.href}
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("nsf:assistant", { detail: "toggle" }))}
+                className="w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors text-sky-300 hover:bg-slate-800/60 hover:text-white border-l-2 border-transparent"
+              >
+                <Icon name={item.icon} className="w-4.5 h-4.5 shrink-0" />
+                <span>{item.label}</span>
+              </button>
+            );
+          }
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link

@@ -6,6 +6,7 @@ import { getCurrentSession, isRealAuthConfigured } from "@/lib/auth";
 import { signOutAction } from "@/app/login/actions";
 import { Button } from "./ui";
 import { BackButton } from "./BackButton";
+import { BackToTop } from "./BackToTop";
 
 /**
  * Once real login is on, who you are comes from your session — so the
@@ -31,6 +32,7 @@ export async function TopBar() {
       <div className="flex-1 flex justify-end md:justify-start">
         <SearchBox />
       </div>
+      <BackToTop />
       {!realAuthConfigured && <ActingUserSelector options={options} current={actingUser} />}
       {showSignOut && (
         <div className="flex items-center gap-2">

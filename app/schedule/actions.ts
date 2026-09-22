@@ -5,21 +5,11 @@ import { redirect } from "next/navigation";
 import {
   confirmDay,
   createActualLaborEntry,
-  createBuildingContact,
-  createBuildingRecord,
-  createClientCompanyRecord,
-  createContact,
-  getOrCreateUnassignedClient,
   listActualLaborEntries,
-  listBuildingContacts,
   listBuildings,
-  listClientCompanies,
-  listContacts,
   listProjects,
   removeProjectFromSchedule,
   setScheduleOrder,
-  updateBuilding,
-  updateContact,
   updateProjectUnitNumber,
   createScheduleAssignment,
   createQuickProject,
@@ -40,11 +30,16 @@ import {
   updateWorkType,
   createTimeOffEntry,
   listTimeOffEntries,
+  listAgendaEvents,
+  listOfficeUsers,
+  createAgendaEvent,
+  updateAgendaEvent,
 } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
+import { resolveQuickJobBuilding } from "@/lib/quick-job";
 import { canEdit } from "@/lib/permissions";
-import type { BuildingRegion, CoiStatus, ScheduleColor, ScheduleJobStatus, ScheduleMaterialsStatus, StaffCapability } from "@/lib/types";
-import { BUILDING_REGIONS, TIME_OFF_TYPES } from "@/lib/types";
+import type { CoiStatus, ScheduleColor, ScheduleJobStatus, ScheduleMaterialsStatus, StaffCapability } from "@/lib/types";
+import { TIME_OFF_TYPES } from "@/lib/types";
 import type { TimeOffType } from "@/lib/types";
 
 function revalidateSchedule(projectId?: string) {
@@ -195,6 +190,43 @@ export async function deletePickupItemAction(id: string, projectId: string) {
 // rows in place.
 // ---------------------------------------------------------------------
 
+/**
+ * A schedule meeting also lands on the agenda (the owner's and the person
+ * who set it up), linked back to the job, so it's in one place with the
+ * rest of the day. Re-saving updates the same agenda entry.
+ */
+async function syncMeetingToAgenda(projectId: string, date: string, time: string | null, notes: string, actingUser: { id: string; fullName: string }) {
+  const [projects, buildings, events, officeUsers] = await Promise.all([listProjects(), listBuildings(), listAgendaEvents(), listOfficeUsers()]);
+  const project = projects.find((p) => p.id === projectId);
+  const building = project ? buildings.find((b) => b.id === project.building_id) : undefined;
+  const title = `Meeting — ${building?.name ?? project?.name ?? "job"}${project?.unit_number ? ` Unit ${project.unit_number}` : ""}`;
+  const owners = new Set<string>(officeUsers.filter((u) => u.active && u.is_owner).map((u) => u.id));
+  owners.add(actingUser.id);
+  for (const ownerId of owners) {
+    const existing = events.find((e) => e.owner_user_id === ownerId && e.related_type === "project" && e.related_id === projectId && e.event_date === date);
+    if (existing) {
+      if (existing.title !== title || (existing.start_time ?? null) !== time || (existing.notes ?? null) !== (notes || null)) {
+        await updateAgendaEvent(existing.id, { title, start_time: time, notes: notes || null }, actingUser.fullName);
+      }
+    } else {
+      await createAgendaEvent({
+        owner_user_id: ownerId,
+        title,
+        event_date: date,
+        start_time: time ?? undefined,
+        location: building?.address ?? undefined,
+        notes: notes || undefined,
+        related_type: "project",
+        related_id: projectId,
+        actorName: actingUser.fullName,
+        created_by_name: actingUser.fullName,
+      });
+    }
+  }
+  revalidatePath("/agenda");
+  revalidatePath("/meetings");
+}
+
 export async function saveScheduleEntryAction(formData: FormData) {
   if (!(await canEdit("schedule"))) return;
   const project_id = String(formData.get("project_id") ?? "");
@@ -227,7 +259,17 @@ export async function saveScheduleEntryAction(formData: FormData) {
 
   const markComplete = schedule_color === "Complete";
   const markCancelled = schedule_color === "Cancelled";
-  if (!markComplete && !markCancelled && schedule_color && schedule_color !== day.schedule_color) await setScheduleColorAction(project_id, schedule_date, formData);
+
+  // Meeting flag + time. A meeting is always Yellow.
+  const is_meeting = formData.get("is_meeting") === "1";
+  const meeting_time = is_meeting ? String(formData.get("meeting_time") ?? "").trim() || null : null;
+  if (is_meeting !== Boolean(day.is_meeting) || meeting_time !== (day.meeting_time ?? null)) {
+    await updateProjectScheduleDay(day.id, { is_meeting, meeting_time }, actingUser.fullName);
+    if (is_meeting) await syncMeetingToAgenda(project_id, schedule_date, meeting_time, notes, actingUser);
+  }
+  if (is_meeting && !markComplete && !markCancelled) formData.set("schedule_color", "Yellow");
+  const effectiveColor = is_meeting && !markComplete && !markCancelled ? "Yellow" : schedule_color;
+  if (!markComplete && !markCancelled && effectiveColor && effectiveColor !== day.schedule_color) await setScheduleColorAction(project_id, schedule_date, formData);
   if (coi_status && coi_status !== day.coi_status) await setCoiStatusAction(project_id, schedule_date, formData);
   if (materials_status && materials_status !== day.materials_status) await setMaterialsStatusAction(project_id, schedule_date, formData);
   if (markComplete) {
@@ -364,73 +406,10 @@ export async function createQuickJobAction(formData: FormData) {
   if (!(await canEdit("schedule"))) return;
   const schedule_date = String(formData.get("schedule_date") ?? "");
   const description = String(formData.get("description") ?? "").trim();
-  const buildingName = String(formData.get("building_name") ?? "").trim();
-  const clientName = String(formData.get("client_name") ?? "").trim();
-  const contactName = String(formData.get("contact_name") ?? "").trim();
-  const contactPhone = String(formData.get("contact_phone") ?? "").trim();
-  if (!schedule_date || !description || !buildingName) return;
+  if (!schedule_date || !description) return;
 
-  const norm = (x: string) => x.trim().toLowerCase();
-  const [buildings, clients, contacts, links] = await Promise.all([listBuildings(), listClientCompanies(), listContacts(), listBuildingContacts()]);
-
-  // Management company: pick the existing one by name, or create it.
-  let client = clientName ? clients.find((c) => norm(c.name) === norm(clientName)) : undefined;
-
-  // Building: existing by name (preferring one under the named company),
-  // otherwise created under the company — which then must be known.
-  const nameMatches = buildings.filter((b) => norm(b.name) === norm(buildingName) || norm(b.address) === norm(buildingName));
-  let building = client ? nameMatches.find((b) => b.client_company_id === client!.id) ?? nameMatches[0] : nameMatches[0];
-  if (building && !client) client = clients.find((c) => c.id === building!.client_company_id);
-  if (!building) {
-    if (!client) {
-      // No company given: file the building under the "Unassigned"
-      // placeholder so the job can go ahead; it can be moved to the real
-      // company from the building page later.
-      client = clientName
-        ? await createClientCompanyRecord({ name: clientName, type: "Property Management", active: true })
-        : await getOrCreateUnassignedClient();
-    }
-    const latRaw = String(formData.get("latitude") ?? "");
-    const lngRaw = String(formData.get("longitude") ?? "");
-    const regionRaw = String(formData.get("region") ?? "");
-    building = await createBuildingRecord({
-      client_company_id: client.id,
-      name: buildingName,
-      address: String(formData.get("address") ?? "").trim() || buildingName,
-      city: String(formData.get("city") ?? "").trim(),
-      state: String(formData.get("state") ?? "").trim() || "NY",
-      zip: String(formData.get("zip") ?? "").trim(),
-      region: (BUILDING_REGIONS as readonly string[]).includes(regionRaw) ? (regionRaw as BuildingRegion) : "Other",
-      latitude: latRaw ? Number(latRaw) : null,
-      longitude: lngRaw ? Number(lngRaw) : null,
-      active: true,
-    });
-  }
-
-  // Point of contact: existing contact on this company by name, or a new
-  // one; linked to the building (as its POC if it has none yet).
-  if (contactName && client) {
-    const clientId = client.id;
-    let contact = contacts.find((c) => c.client_company_id === clientId && norm(`${c.first_name} ${c.last_name}`) === norm(contactName));
-    if (!contact) {
-      const parts = contactName.split(/\s+/);
-      contact = await createContact({
-        client_company_id: clientId,
-        first_name: parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0],
-        last_name: parts.length > 1 ? parts[parts.length - 1] : "",
-        phone: contactPhone || undefined,
-      });
-    } else if (contactPhone && !contact.phone) {
-      await updateContact(contact.id, { phone: contactPhone });
-    }
-    const buildingLinks = links.filter((l) => l.building_id === building!.id);
-    if (!buildingLinks.some((l) => l.contact_id === contact!.id)) {
-      const isPrimary = !buildingLinks.some((l) => l.is_primary);
-      await createBuildingContact({ building_id: building.id, contact_id: contact.id, role: "Other", is_primary: isPrimary });
-      if (!building.primary_contact_id) await updateBuilding(building.id, { primary_contact_id: contact.id });
-    }
-  }
-
+  const building = await resolveQuickJobBuilding(formData);
+  if (!building) return;
   const building_id = building.id;
   const actingUser = await getActingUser();
   revalidatePath("/clients");

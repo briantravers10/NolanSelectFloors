@@ -244,6 +244,11 @@ export interface ScheduleJobRow {
   // Schedule" instruction. Empty when nothing's linked, or when
   // qbDocuments wasn't passed in (older call sites).
   qbDocuments: QuickBooksDocument[];
+  // A meeting rather than a job (Yellow, with a time) — see is_meeting.
+  isMeeting: boolean;
+  meetingTime?: string | null;
+  // The job has a current outbound invoice on file (quick link on the tile).
+  hasOutboundInvoice: boolean;
 }
 
 export interface ScheduleRowInputs {
@@ -261,6 +266,8 @@ export interface ScheduleRowInputs {
   pickupItems?: SchedulePickupItem[];
   // Optional, same convention as pickupItems above.
   qbDocuments?: QuickBooksDocument[];
+  // Optional: ids of projects with a current outbound invoice on file.
+  outboundInvoiceProjectIds?: Set<string>;
 }
 
 function pointOfContact(
@@ -283,7 +290,7 @@ function pointOfContact(
  * project_schedule_days row OR a schedule_assignments row for the date
  * shows up — a job can be on the schedule with crew not yet assigned. */
 export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): ScheduleJobRow[] {
-  const { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems = [], qbDocuments = [] } = input;
+  const { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems = [], qbDocuments = [], outboundInvoiceProjectIds } = input;
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -385,6 +392,9 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       sortOrder: scheduleDay?.sort_order ?? null,
       pickupItems: scheduleDay ? pickupItems.filter((i) => i.project_schedule_day_id === scheduleDay.id) : [],
       qbDocuments: qbDocuments.filter((d) => d.project_id === projectId),
+      isMeeting: Boolean(scheduleDay?.is_meeting),
+      meetingTime: scheduleDay?.meeting_time ?? null,
+      hasOutboundInvoice: outboundInvoiceProjectIds?.has(projectId) ?? false,
     });
   }
 

@@ -11,6 +11,7 @@ import {
   listSchedulePickupItems,
   listTimeOffEntries,
   listWorkTypes,
+  listProjectOutboundInvoices,
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
@@ -42,7 +43,7 @@ export default async function ScheduleEditPage({
   const { project: projectParam, date: dateParam, qj, qj_building, qj_unit, qj_contact, qj_phone, qj_desc } = await searchParams;
   const date = dateParam ?? todayIso();
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems] = await Promise.all([
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems, outboundInvoices] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -54,6 +55,7 @@ export default async function ScheduleEditPage({
     listWorkTypes(),
     listTimeOffEntries(),
     listSchedulePickupItems(),
+    listProjectOutboundInvoices(),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -83,7 +85,8 @@ export default async function ScheduleEditPage({
     .filter((c) => c.name)
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems });
+  const outboundInvoiceProjectIds = new Set(outboundInvoices.filter((i) => i.is_current).map((i) => i.project_id));
+  const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, outboundInvoiceProjectIds });
 
   const selectedProjectId = projectParam && projects.some((p) => p.id === projectParam) ? projectParam : undefined;
   // Prefill from the row as shown for this date — which, for a job carried

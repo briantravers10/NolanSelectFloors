@@ -9,6 +9,7 @@ import {
   createProjectNote,
   deleteProjectCrewRequirement,
   deleteProjectMaterial,
+  deleteProjectOutboundInvoice,
   listProjectMaterials,
   logMaterialAdded,
   updateProjectMaterial,
@@ -278,4 +279,13 @@ export async function setMaterialUnitPriceAction(projectId: string, materialId: 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/materials");
   revalidatePath("/reports");
+}
+
+/** Remove one outbound invoice from a job's history (the newest remaining one becomes current). */
+export async function deleteOutboundInvoiceAction(projectId: string, invoiceId: string) {
+  if (!(await canEdit("projects"))) return;
+  const actingUser = await getActingUser();
+  await deleteProjectOutboundInvoice(invoiceId, actingUser.fullName);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/schedule");
 }

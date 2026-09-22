@@ -3,10 +3,13 @@ import { STAFF_CAPABILITIES, TAX_STATUSES } from "@/lib/types";
 import { canEditPayRates, getActingUser } from "@/lib/current-user";
 import { createStaffAction } from "../actions";
 import { PhoneInput } from "@/components/PhoneInput";
+import { NewStaffAccessFields } from "@/components/staff/NewStaffAccessFields";
+import { isOwnerActingUser } from "@/lib/permissions";
 
 export default async function NewStaffPage() {
   const actingUser = await getActingUser();
   const canEditRates = canEditPayRates(actingUser);
+  const isOwner = await isOwnerActingUser(actingUser);
   return (
     <div className="max-w-xl">
       <PageHeader title="New Staff" subtitle="Add a crew member." />
@@ -108,6 +111,7 @@ export default async function NewStaffPage() {
             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Notes</label>
             <textarea name="notes" rows={3} className="input" />
           </div>
+          {isOwner && <NewStaffAccessFields />}
           <Button type="submit">Create Staff Member</Button>
         </form>
       </Card>

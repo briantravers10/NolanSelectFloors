@@ -47,6 +47,7 @@ import type {
   ProjectCrewRequirement,
   ProjectDrawing,
   ProjectMaterial,
+  ProjectOutboundInvoice,
   ProjectNote,
   ProjectScheduleDay,
   ProjectWorkType,
@@ -989,7 +990,7 @@ export async function setScheduleOrder(date: string, orderedProjectIds: string[]
 }
 
 type ScheduleDayPatch = Partial<
-  Pick<ProjectScheduleDay, "schedule_color" | "coi_status" | "materials_status" | "job_status" | "work_type_id" | "notes">
+  Pick<ProjectScheduleDay, "schedule_color" | "coi_status" | "materials_status" | "job_status" | "work_type_id" | "notes" | "is_meeting" | "meeting_time">
 >;
 
 /**
@@ -1052,6 +1053,8 @@ export async function updateProjectScheduleDay(id: string, patch: ScheduleDayPat
     job_status: "Job status",
     work_type_id: "Work type",
     notes: "Notes",
+    is_meeting: "Meeting",
+    meeting_time: "Meeting time",
   };
   for (const [field, newValue] of Object.entries(patch)) {
     const label = fieldLabels[field] ?? field;
@@ -3334,6 +3337,71 @@ export interface FileInboundOptions {
   supplier?: string;
   amount?: number | null;
   invoiceDate?: string; // YYYY-MM-DD
+  invoiceNumber?: string;
+}
+
+// ---------------------------------------------------------------------
+// OUTBOUND INVOICES — the invoices we send customers, one current per job.
+// ---------------------------------------------------------------------
+export async function listProjectOutboundInvoices(): Promise<ProjectOutboundInvoice[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("project_outbound_invoices").select("*").order("created_at", { ascending: false });
+    if (!error && data) return (data as ProjectOutboundInvoice[]).map((r) => ({ ...r, amount: r.amount == null ? null : Number(r.amount) }));
+  }
+  return [...getStore().projectOutboundInvoices].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+export async function createProjectOutboundInvoice(input: Omit<ProjectOutboundInvoice, "id" | "company_id" | "created_at" | "is_current">): Promise<ProjectOutboundInvoice> {
+  const record: ProjectOutboundInvoice = { id: randomUUID(), company_id: getCurrentCompanyId(), created_at: new Date().toISOString(), is_current: true, ...input };
+  const client = sb();
+  if (client) {
+    // The new one replaces the current one; older ones stay as history.
+    const { error: e1 } = await client.from("project_outbound_invoices").update({ is_current: false }).eq("project_id", input.project_id).eq("is_current", true);
+    if (e1) throw e1;
+    const { error } = await client.from("project_outbound_invoices").insert(record);
+    if (error) throw error;
+  } else {
+    for (const r of getStore().projectOutboundInvoices) if (r.project_id === input.project_id) r.is_current = false;
+    getStore().projectOutboundInvoices.push(record);
+  }
+  logActivity({
+    action: "Outbound invoice filed",
+    related_type: "project",
+    related_id: input.project_id,
+    actor_name: input.uploaded_by ?? undefined,
+    detail: `${input.file_name ?? input.notes ?? "Invoice"}${input.amount != null ? ` — $${input.amount}` : ""}${input.invoice_number ? ` (#${input.invoice_number})` : ""} — now the current invoice for this job`,
+  });
+  return record;
+}
+
+export async function deleteProjectOutboundInvoice(id: string, actorName: string): Promise<void> {
+  const all = await listProjectOutboundInvoices();
+  const target = all.find((r) => r.id === id);
+  if (!target) return;
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("project_outbound_invoices").delete().eq("id", id);
+    if (error) throw error;
+  } else {
+    const store = getStore().projectOutboundInvoices;
+    const idx = store.findIndex((r) => r.id === id);
+    if (idx >= 0) store.splice(idx, 1);
+  }
+  // If the current one was removed, the newest remaining one becomes current.
+  if (target.is_current) {
+    const next = all.filter((r) => r.project_id === target.project_id && r.id !== id).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    if (next) {
+      if (client) {
+        const { error } = await client.from("project_outbound_invoices").update({ is_current: true }).eq("id", next.id);
+        if (error) throw error;
+      } else {
+        const r = getStore().projectOutboundInvoices.find((x) => x.id === next.id);
+        if (r) r.is_current = true;
+      }
+    }
+  }
+  logActivity({ action: "Outbound invoice removed", related_type: "project", related_id: target.project_id, actor_name: actorName, detail: target.file_name ?? target.notes ?? "Invoice" });
 }
 
 /**
@@ -3373,6 +3441,27 @@ export async function fileInboundEmail(id: string, opts: FileInboundOptions, act
     const file = attachments[0];
     if (!file) throw new Error("No stored attachment to file as the COI");
     await setProjectCoiFile(projectId, `inbound-email:${file.storage_path}`, file.filename, actorName);
+  } else if (opts.kind === "outbound_invoice") {
+    if (!projectId) throw new Error("An outbound invoice needs a job to file it on");
+    const file = attachments[0];
+    await createProjectOutboundInvoice({
+      project_id: projectId,
+      file_reference: file ? `inbound-email:${file.storage_path}` : null,
+      file_name: file?.filename ?? null,
+      amount: opts.amount != null && Number.isFinite(opts.amount) ? Math.round(opts.amount * 100) / 100 : null,
+      invoice_number: opts.invoiceNumber?.trim() || null,
+      invoice_date: opts.invoiceDate || null,
+      source_email_id: id,
+      uploaded_by: actorName,
+      notes: label,
+    });
+  } else if (opts.kind === "purchase_order") {
+    if (!projectId) throw new Error("A purchase order needs a job to file it on");
+    // Nothing else to create: the email itself IS the record, listed on
+    // the Purchase Orders page with a link to the job.
+  } else if (opts.kind === "bid") {
+    // A potential bid: stays in the Bids section until it's marked won/lost.
+    await updateInboundEmail(id, { bid_status: "open" });
   } else {
     if (!projectId) throw new Error("A drawing needs a job to file it on");
     for (const a of attachments) {
@@ -3387,8 +3476,16 @@ export async function fileInboundEmail(id: string, opts: FileInboundOptions, act
   }
 
   await updateInboundEmail(id, { status: "filed", filed_project_id: projectId, filed_kind: opts.kind, filed_by: actorName, filed_at: now });
+  const kindLabel: Record<string, string> = {
+    invoice: "Invoice filed from email",
+    outbound_invoice: "Outbound invoice filed from email",
+    purchase_order: "Purchase order filed from email",
+    bid: "Potential bid filed from email",
+    coi: "COI filed from email",
+    drawing: "Drawing filed from email",
+  };
   logActivity({
-    action: opts.kind === "invoice" ? "Invoice filed from email" : opts.kind === "coi" ? "COI filed from email" : "Drawing filed from email",
+    action: kindLabel[opts.kind] ?? "Email filed",
     related_type: projectId ? "project" : undefined,
     related_id: projectId ?? undefined,
     actor_name: actorName,

@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createEmployee, createTimeOffEntry, deleteEmployee, deleteTimeOffEntry, setEmployeeSkills, updateEmployee } from "@/lib/db";
 import { canEditPayRates, canEditTimeOffAllowance, getActingUser } from "@/lib/current-user";
-import { canEdit } from "@/lib/permissions";
+import { canEdit, isOwnerActingUser } from "@/lib/permissions";
+import { giveEmployeeAccessAction } from "@/app/company-setup/staff-access/actions";
 import type { PayType, StaffCapability, TaxStatus, TimeOffType } from "@/lib/types";
 import { STAFF_CAPABILITIES, TAX_STATUSES, TIME_OFF_TYPES } from "@/lib/types";
 
@@ -51,6 +52,11 @@ export async function createStaffAction(formData: FormData) {
     capabilities,
   });
   revalidatePath("/staff");
+  // Optional "Give app access" section on the New Staff form (Owner/Admin
+  // only): creates their login account with the chosen per-section grid.
+  if (formData.get("give_access") === "1" && (await isOwnerActingUser(actingUser))) {
+    await giveEmployeeAccessAction(employee.id, formData);
+  }
   redirect(`/staff/${employee.id}`);
 }
 

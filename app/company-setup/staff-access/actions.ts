@@ -3,7 +3,7 @@
 import { randomBytes } from "crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createOfficeUser, getOfficeUser, getStaffSetupCode, setSectionPermission, setStaffSetupCode, updateOfficeUser } from "@/lib/db";
+import { createOfficeUser, getOfficeUser, getStaffSetupCode, listEmployees, listOfficeUsers, setSectionPermission, setStaffSetupCode, updateEmployee, updateOfficeUser } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { isOwnerActingUser } from "@/lib/permissions";
 import { isRealAuthConfigured } from "@/lib/auth";
@@ -37,30 +37,41 @@ export interface CreateStaffAccountResult {
   setupCode?: string;
 }
 
+/**
+ * Creates the office_users row + the per-section grid from a submitted
+ * form (one <select> per SECTION_KEYS, named `section__<key>`; rows are
+ * only written for non-'none' values — a missing row already means
+ * 'none', secure by default). Shared by "+ Add Staff Account" and the
+ * "Give access" button on a crew member's page.
+ */
+async function createAccountWithGrid(
+  formData: FormData,
+  actorName: string,
+  overrides: { full_name?: string; email?: string; access_role?: AccessRole } = {}
+): Promise<{ id: string; full_name: string; email?: string } | null> {
+  const full_name = overrides.full_name ?? String(formData.get("full_name") ?? "").trim();
+  if (!full_name) return null;
+  const email = overrides.email ?? (String(formData.get("email") ?? "").trim() || undefined);
+  const role = (String(formData.get("role") ?? "estimator") as OfficeUserRole) || "estimator";
+  const access_role = overrides.access_role ?? ((String(formData.get("access_role") ?? "office_staff") as AccessRole) || "office_staff");
+  const created = await createOfficeUser({ full_name, email, role, access_role, active: true }, actorName);
+  for (const key of SECTION_KEYS) {
+    const level = String(formData.get(`section__${key}`) ?? "none") as SectionAccessLevel;
+    if (SECTION_ACCESS_LEVELS.includes(level) && level !== "none") {
+      await setSectionPermission(created.id, key, level, actorName);
+    }
+  }
+  revalidatePath("/company-setup/staff-access");
+  return { id: created.id, full_name, email };
+}
+
 export async function createStaffAccountAction(formData: FormData): Promise<CreateStaffAccountResult | void> {
   const actingUser = await getActingUser();
   if (!(await isOwnerActingUser(actingUser))) return;
 
-  const full_name = String(formData.get("full_name") ?? "").trim();
-  if (!full_name) return;
-  const email = String(formData.get("email") ?? "").trim() || undefined;
-  const role = (String(formData.get("role") ?? "estimator") as OfficeUserRole) || "estimator";
-  const access_role = (String(formData.get("access_role") ?? "office_staff") as AccessRole) || "office_staff";
-
-  const created = await createOfficeUser({ full_name, email, role, access_role, active: true }, actingUser.fullName);
-
-  // Per-section grid submitted at creation time (see README "Owner/Admin
-  // Staff-Access UI") — one <select> per SECTION_KEYS, name
-  // `section__<key>`. Rows are only written for non-'none' values (a
-  // missing row already means 'none' — secure by default).
-  for (const key of SECTION_KEYS) {
-    const level = String(formData.get(`section__${key}`) ?? "none") as SectionAccessLevel;
-    if (SECTION_ACCESS_LEVELS.includes(level) && level !== "none") {
-      await setSectionPermission(created.id, key, level, actingUser.fullName);
-    }
-  }
-
-  revalidatePath("/company-setup/staff-access");
+  const created = await createAccountWithGrid(formData, actingUser.fullName);
+  if (!created) return;
+  const { full_name, email } = created;
 
   // Demo mode (unchanged from before build 12): redirect straight to the
   // new account's edit page, exactly as always. Real auth configured: the
@@ -204,4 +215,36 @@ export async function setNewPasswordAction(officeUserId: string): Promise<SetNew
   } catch (err) {
     return { error: err instanceof Error ? `Could not reach Supabase: ${err.message}` : "Could not reach Supabase to set a new password." };
   }
+}
+
+/**
+ * "Give access" on a crew member's page: creates their login account (an
+ * office_users row named after them) with the per-section grid chosen on
+ * that page. Owner/Admin only, same as "+ Add Staff Account".
+ */
+export async function giveEmployeeAccessAction(employeeId: string, formData: FormData): Promise<CreateStaffAccountResult | void> {
+  const actingUser = await getActingUser();
+  if (!(await isOwnerActingUser(actingUser))) return;
+  const employee = (await listEmployees()).find((e) => e.id === employeeId);
+  if (!employee) return;
+  const email = String(formData.get("email") ?? "").trim() || employee.email || undefined;
+  const full_name = `${employee.first_name} ${employee.last_name}`.trim();
+  const existing = (await listOfficeUsers()).find((u) => (email && u.email?.toLowerCase() === email.toLowerCase()) || u.full_name.toLowerCase() === full_name.toLowerCase());
+  if (existing) {
+    // Already has an account — just update the grid they asked for.
+    for (const key of SECTION_KEYS) {
+      const level = String(formData.get(`section__${key}`) ?? "none") as SectionAccessLevel;
+      if (SECTION_ACCESS_LEVELS.includes(level)) await setSectionPermission(existing.id, key, level, actingUser.fullName);
+    }
+    if (email && !existing.email) await updateOfficeUser(existing.id, { email }, actingUser.fullName);
+    revalidatePath(`/staff/${employeeId}`);
+    revalidatePath("/company-setup/staff-access");
+    return { officeUserId: existing.id, fullName: existing.full_name, email: existing.email ?? email, setupCode: (await getStaffSetupCode()) ?? undefined };
+  }
+  const tier = String(formData.get("access_role") ?? "field_employee") as AccessRole;
+  const created = await createAccountWithGrid(formData, actingUser.fullName, { full_name, email, access_role: ACCESS_ROLES.includes(tier) ? tier : "field_employee" });
+  if (!created) return;
+  if (email && !employee.email) await updateEmployee(employeeId, { email }, actingUser.fullName);
+  revalidatePath(`/staff/${employeeId}`);
+  return { officeUserId: created.id, fullName: full_name, email, setupCode: (await getStaffSetupCode()) ?? undefined };
 }

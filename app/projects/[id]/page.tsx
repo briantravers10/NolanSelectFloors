@@ -24,7 +24,7 @@ import { Card, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { EditableTitle } from "@/components/projects/EditableTitle";
 import { CrewRequirementForm } from "@/components/projects/CrewRequirementForm";
 import { AddMaterialForm } from "@/components/projects/AddMaterialForm";
-import { drawingFileUrl, isFileStorageConfigured, materialInvoiceUrl } from "@/lib/storage";
+import { drawingFileUrl, isFileStorageConfigured, materialInvoiceUrl, signedFileUrl } from "@/lib/storage";
 import { canEdit } from "@/lib/permissions";
 import { markInvoiceSentAction } from "@/app/dashboard/actions";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
@@ -52,9 +52,10 @@ import {
   addProjectPhotoAction,
   movePipelineStageFormAction,
   saveProjectEstimateAction,
+  deleteOutboundInvoiceAction,
 } from "../actions";
 import { PHOTO_CATEGORIES } from "@/lib/types";
-import { listPhotos, listProjectDrawings } from "@/lib/db";
+import { listPhotos, listProjectDrawings, listProjectOutboundInvoices } from "@/lib/db";
 import { isPhotoStorageConfigured } from "@/lib/storage";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -109,6 +110,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canEditProjects = await canEdit("projects");
   if (!project) notFound();
 
+  const outboundInvoices = (await listProjectOutboundInvoices()).filter((i) => i.project_id === id);
+  const outboundInvoiceUrls = new Map<string, string>();
+  for (const inv of outboundInvoices) {
+    if (inv.file_reference) {
+      const url = await signedFileUrl(inv.file_reference, "inbound-email");
+      if (url) outboundInvoiceUrls.set(inv.id, url);
+    }
+  }
   const building = buildings.find((b) => b.id === project.building_id);
   const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
   const projectWorkTypes = workTypes.filter((wt) => wt.project_id === id);
@@ -554,6 +563,51 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </div>
                 ))}
               </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Invoice Sent to Customer</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Filed from Email Inbox as an Outbound Invoice. The newest one is the current invoice (the &ldquo;Invoice&rdquo; quick link on the schedule opens it); earlier ones stay here as history.
+            </p>
+            {outboundInvoices.length === 0 ? (
+              <EmptyState message="No invoice sent yet. Forward the invoice email to the office inbox and file it as an Outbound Invoice on this job." />
+            ) : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {outboundInvoices.map((inv) => {
+                    const url = outboundInvoiceUrls.get(inv.id);
+                    return (
+                      <tr key={inv.id} className={`border-b border-slate-100 last:border-0 ${inv.is_current ? "" : "text-slate-500"}`}>
+                        <td className="py-2 pr-2 w-28 text-xs">{formatDateLong((inv.invoice_date ?? inv.created_at).slice(0, 10))}</td>
+                        <td className="py-2 pr-2">
+                          {url ? (
+                            <a href={url} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline font-medium">{inv.file_name ?? inv.notes ?? "Invoice"}</a>
+                          ) : (
+                            <span className="font-medium">{inv.file_name ?? inv.notes ?? "Invoice"}</span>
+                          )}
+                          {inv.invoice_number && <span className="ml-2 text-xs text-slate-500">#{inv.invoice_number}</span>}
+                          {inv.is_current ? (
+                            <span className="ml-2 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-medium">Current</span>
+                          ) : (
+                            <span className="ml-2 rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-[11px]">Replaced</span>
+                          )}
+                          {inv.uploaded_by && <div className="text-[11px] text-slate-400">filed by {inv.uploaded_by}</div>}
+                        </td>
+                        <td className="py-2 pr-2 text-right font-semibold tabular-nums">{inv.amount != null ? formatCurrency(inv.amount) : "—"}</td>
+                        {canEditProjects && (
+                          <td className="py-2 text-right w-8">
+                            <form action={deleteOutboundInvoiceAction.bind(null, project.id, inv.id)}>
+                              <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove this invoice" title="Remove">✕</button>
+                            </form>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </Card>
 

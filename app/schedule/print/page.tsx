@@ -16,6 +16,7 @@ import { dayLabel, formatDateLong, todayIso } from "@/lib/dates";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { PrintButton } from "@/components/PrintButton";
+import { SCHEDULE_COLOR_BLOCK_CLASSES, SCHEDULE_COLOR_FORM_LABELS } from "@/components/schedule/badges";
 
 /**
  * "Print for John" — a big, plain day sheet: building, unit, who's on it,
@@ -61,12 +62,19 @@ export default async function PrintForJohnPage({ searchParams }: { searchParams:
           {rows.map((row, i) => {
             const toCollect = row.pickupItems.filter((p) => p.status !== "Collected");
             return (
-              <div key={row.key} className="border-2 border-slate-900 rounded-lg p-4 break-inside-avoid">
-                <div className="flex items-baseline gap-3">
-                  <span className="text-lg font-bold text-slate-500">{i + 1}.</span>
-                  <div>
-                    <div className="text-2xl font-bold leading-tight">{row.buildingName ?? "Unknown building"}</div>
-                    {row.address && <div className="text-base text-slate-700">{row.address}</div>}
+              <div key={row.key} className={`border-2 border-slate-900 rounded-lg p-4 break-inside-avoid print-color ${SCHEDULE_COLOR_BLOCK_CLASSES[row.scheduleColor]}`}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <div className="flex items-baseline gap-3">
+                    <span className="text-lg font-bold text-slate-500">{i + 1}.</span>
+                    <div>
+                      <div className="text-2xl font-bold leading-tight">{row.buildingName ?? "Unknown building"}</div>
+                      {row.address && <div className="text-base text-slate-700">{row.address}</div>}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-base font-bold uppercase tracking-wide">{row.scheduleColor}</div>
+                    <div className="text-xs text-slate-700">{SCHEDULE_COLOR_FORM_LABELS[row.scheduleColor].split("—")[1]?.trim()}</div>
+                    {row.isMeeting && <div className="text-sm font-semibold">Meeting{row.meetingTime ? ` at ${row.meetingTime}` : ""}</div>}
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-[110px_1fr] gap-y-2 text-lg">

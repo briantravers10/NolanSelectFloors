@@ -24,7 +24,6 @@ export default async function DashboardPage() {
     .filter((u) => u.active && (u.access_role === "office_staff" || u.access_role === "owner_admin"))
     .map((u) => ({ id: u.id, name: u.full_name }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const senderName = (id: string | null) => senders.find((s) => s.id === id)?.name;
 
   return (
     <div>
@@ -65,27 +64,43 @@ export default async function DashboardPage() {
               Invoices to send — {data.invoicesToSend.length} completed {data.invoicesToSend.length === 1 ? "job" : "jobs"}
             </h2>
           </div>
-          <div className="divide-y divide-amber-200">
-            {data.invoicesToSend.map((j) => (
-              <div key={j.projectId} className="py-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <Link href={`/projects/${j.projectId}`} className="text-sm font-medium text-slate-900 hover:text-sky-700">{j.name}</Link>
-                  <div className="text-xs text-slate-600">
-                    {j.clientName ?? "No management company"}
-                    {j.completedOn ? ` · completed ${formatDateLong(j.completedOn)}` : ""}
-                    {j.value ? ` · ${formatCurrency(j.value)}` : ""}
-                    {j.assignedTo && senderName(j.assignedTo) ? <span className="ml-1 font-medium text-amber-900">· {senderName(j.assignedTo)} is sending it</span> : null}
-                  </div>
+          {(() => {
+            // Grouped by who is sending: each office person, then Unassigned.
+            const groups: { key: string; label: string; items: typeof data.invoicesToSend }[] = [];
+            for (const p of senders) {
+              const items = data.invoicesToSend.filter((j) => j.assignedTo === p.id);
+              if (items.length) groups.push({ key: p.id, label: `${p.name} is sending`, items });
+            }
+            const unassigned = data.invoicesToSend.filter((j) => !j.assignedTo || !senders.some((p) => p.id === j.assignedTo));
+            if (unassigned.length) groups.push({ key: "unassigned", label: "Unassigned — nobody has picked these up yet", items: unassigned });
+            return groups.map((g) => (
+              <div key={g.key} className="mb-3 last:mb-0">
+                <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${g.key === "unassigned" ? "text-rose-800" : "text-amber-900"}`}>
+                  {g.label} · {g.items.length}
                 </div>
-                <div className="flex items-center gap-2">
-                  <InvoiceAssigneeSelect projectId={j.projectId} assignedTo={j.assignedTo} people={senders} />
-                  <form action={markInvoiceSentAction.bind(null, j.projectId, true)}>
-                    <Button type="submit" variant="secondary" className="text-xs py-1.5">Mark as Sent</Button>
-                  </form>
+                <div className="divide-y divide-amber-200 rounded-lg border border-amber-200 bg-white/60 px-3">
+                  {g.items.map((j) => (
+                    <div key={j.projectId} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <Link href={`/projects/${j.projectId}`} className="text-sm font-medium text-slate-900 hover:text-sky-700">{j.name}</Link>
+                        <div className="text-xs text-slate-600">
+                          {j.clientName ?? "No management company"}
+                          {j.completedOn ? ` · completed ${formatDateLong(j.completedOn)}` : ""}
+                          {j.value ? ` · ${formatCurrency(j.value)}` : ""}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <InvoiceAssigneeSelect projectId={j.projectId} assignedTo={j.assignedTo} people={senders} />
+                        <form action={markInvoiceSentAction.bind(null, j.projectId, true)}>
+                          <Button type="submit" variant="secondary" className="text-xs py-1.5">Mark as Sent</Button>
+                        </form>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            ));
+          })()}
           <p className="text-[11px] text-amber-800 mt-2">Marking a job here clears it from everyone&apos;s dashboard. Undo from the job page if it was a mistake.</p>
         </Card>
       )}

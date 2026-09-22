@@ -32,7 +32,20 @@ export function MobileNav({ access }: { access: Record<SectionKey, SectionAccess
               </button>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {moreItems.map((item) => (
+              {moreItems.map((item) => item.href === "#assistant" ? (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    window.dispatchEvent(new CustomEvent("nsf:assistant", { detail: "open" }));
+                  }}
+                  className="flex flex-col items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 py-3 text-sky-800 active:bg-sky-100"
+                >
+                  <Icon name={item.icon} className="w-5 h-5" />
+                  <span className="text-[11px] font-medium text-center leading-tight">{item.label}</span>
+                </button>
+              ) : (
                 <Link
                   key={item.href}
                   href={item.href}

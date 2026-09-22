@@ -53,6 +53,7 @@ import type {
   User,
   WorkTypeRecord,
   InboundEmail,
+  ProjectOutboundInvoice,
 } from "./types";
 
 // A fixed, valid UUID rather than a readable "co-1"-style id: this value is
@@ -1133,6 +1134,7 @@ export function buildSeedData() {
   const quickbooksConnections: QuickBooksConnection[] = [];
   const quickbooksCustomerMappings: QuickBooksCustomerMapping[] = [];
   const inboundEmails: InboundEmail[] = [];
+  const projectOutboundInvoices: ProjectOutboundInvoice[] = [];
   const quickbooksDocuments: QuickBooksDocument[] = [];
   const quickbooksWebhookEvents: QuickBooksWebhookEvent[] = [];
   const quickbooksSyncLog: QuickBooksSyncLogEntry[] = [];
@@ -1251,6 +1253,7 @@ export function buildSeedData() {
     quickbooksConnections,
     quickbooksCustomerMappings,
     inboundEmails,
+    projectOutboundInvoices,
     quickbooksDocuments,
     quickbooksWebhookEvents,
     quickbooksSyncLog,

@@ -25,6 +25,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/job-requests", label: "Job Requests", icon: "inbox", sectionKey: "job_requests" },
   { href: "/projects", label: "Projects", icon: "clipboard", sectionKey: "projects" },
   { href: "/schedule", label: "Schedule", icon: "calendar", sectionKey: "schedule" },
+  // Everyone's meetings for the day — schedule entries flagged as meetings.
+  { href: "/meetings", label: "Meetings", icon: "calendar", sectionKey: "schedule" },
   { href: "/staff", label: "Staff", icon: "users", sectionKey: "staff" },
   { href: "/materials", label: "Materials", icon: "box", sectionKey: "materials" },
   // Spend by supplier — the same invoice/material lines as the job pages,
@@ -35,12 +37,18 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/pricing", label: "Pricing", icon: "chart", sectionKey: "pricing" },
   // Drawings / invoices forwarded from the office Gmail, waiting to be filed.
   { href: "/inbox", label: "Email Inbox", icon: "inbox", sectionKey: "projects" },
+  // Customer purchase orders filed from Email Inbox, each linked to its job.
+  { href: "/purchase-orders", label: "Purchase Orders", icon: "clipboard", sectionKey: "projects" },
+  // Potential bids filed from Email Inbox — things worth pricing.
+  { href: "/bids", label: "Bids", icon: "chart", sectionKey: "job_requests" },
   { href: "/reports", label: "Reports", icon: "chart", sectionKey: "reports" },
   // Weekly hours by person, grouped W-4 / 1099 — gated with Reports.
   { href: "/payroll", label: "Payroll", icon: "clipboard", sectionKey: "reports" },
   // Not section-gated — the owner's personal agenda, always visible.
   { href: "/agenda", label: "My Agenda", icon: "calendar" },
   { href: "/company-setup", label: "Company Setup", icon: "settings", sectionKey: "company_setup" },
+  // Opens the floating helper (see components/assistant/AssistantPanel.tsx).
+  { href: "#assistant", label: "AI Assistant", icon: "spark" },
 ];
 
 // Subset shown in the mobile bottom bar — keep it to 5 for tap-target size.

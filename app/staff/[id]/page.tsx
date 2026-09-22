@@ -24,6 +24,10 @@ function taxStatusLabel(status?: string) {
   return status === "W-4" ? "W-4 Employee" : status === "1099" ? "1099 Contractor" : "Not set";
 }
 import { AddTimeOffForm } from "@/components/staff/AddTimeOffForm";
+import { GiveAccessForm } from "@/components/staff/GiveAccessForm";
+import { isOwnerActingUser } from "@/lib/permissions";
+import { listOfficeUsers, listSectionPermissions } from "@/lib/db";
+import { SECTION_LABELS } from "@/lib/types";
 import { DeleteStaffButton } from "@/components/staff/DeleteStaffButton";
 import { addTimeOffAction, deleteTimeOffAction, deleteStaffAction, setEmployeeActiveAction, updateEmployeeProfileAction, updateEmployeeNicknameAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
 
@@ -42,6 +46,13 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
   const employee = employees.find((e) => e.id === id);
   if (!employee) notFound();
   const canEditStaff = await canEdit("staff");
+  const isOwner = await isOwnerActingUser(actingUser);
+  // App login for this person: an office_users row with their email or name.
+  const fullName = `${employee.first_name} ${employee.last_name}`.trim().toLowerCase();
+  const account = isOwner
+    ? (await listOfficeUsers()).find((u) => (employee.email && u.email?.toLowerCase() === employee.email.toLowerCase()) || u.full_name.trim().toLowerCase() === fullName)
+    : undefined;
+  const accountPerms = account ? await listSectionPermissions(account.id) : [];
   const canViewRates = canViewLaborCost(actingUser);
   const canEditRates = canEditPayRates(actingUser);
   const canViewAllowance = canViewTimeOffAllowance(actingUser);
@@ -100,6 +111,31 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
         <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-sm px-3.5 py-2.5">
           ⚠ Over Allowance — {employee.first_name} has used more {timeOffUsage.vacationOver && timeOffUsage.sickOver ? "vacation and sick" : timeOffUsage.vacationOver ? "vacation" : "sick"} days than their {timeOffUsage.year} allowance. There is no email/notification system yet — this in-app banner and badge are the only alert for now.
         </div>
+      )}
+
+      {isOwner && (
+        <Card className="p-4 mb-5">
+          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">App Access</h2>
+          {account ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm">
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium mr-2 ${account.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{account.active ? "Has access" : "Access switched off"}</span>
+                <span className="text-slate-700">{account.email ?? "no email"}</span>
+                <span className="text-slate-500"> · {account.is_owner ? "Owner/Admin — everything" : account.access_role === "field_employee" ? "money hidden" : "sees costs"}</span>
+                <div className="text-xs text-slate-500 mt-1">
+                  {account.is_owner
+                    ? "Full access to every section."
+                    : accountPerms.filter((p) => p.access_level !== "none").length === 0
+                      ? "No sections allowed yet (Dashboard shows by default)."
+                      : accountPerms.filter((p) => p.access_level !== "none").map((p) => `${SECTION_LABELS[p.section_key]} (${p.access_level === "edit" ? "edit" : "view"})`).join(" · ")}
+                </div>
+              </div>
+              <Link href={`/company-setup/staff-access/${account.id}`} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50">Change access →</Link>
+            </div>
+          ) : (
+            <GiveAccessForm employeeId={employee.id} defaultEmail={employee.email} firstName={employee.first_name} />
+          )}
+        </Card>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

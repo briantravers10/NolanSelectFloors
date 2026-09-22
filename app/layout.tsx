@@ -4,6 +4,7 @@ import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { MobileNav } from "@/components/MobileNav";
 import { TopBar } from "@/components/TopBar";
+import { AssistantPanel } from "@/components/assistant/AssistantPanel";
 import { getActingUser } from "@/lib/current-user";
 import { getAllSectionAccess } from "@/lib/permissions";
 import { isRealAuthConfigured } from "@/lib/auth";
@@ -47,6 +48,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </div>
         </div>
         <MobileNav access={access} />
+        <AssistantPanel />
       </body>
     </html>
   );

@@ -11,6 +11,7 @@ import {
   listScheduleAssignments,
   listTimeOffEntries,
   listInboundEmails,
+  listProjectScheduleDays,
 } from "./db";
 import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
 import {
@@ -67,6 +68,7 @@ export async function getDashboardData() {
     projectMaterials,
     timeOffEntries,
     inboundEmails,
+    scheduleDays,
   ] = await Promise.all([
     listBuildings(),
     listClientCompanies(),
@@ -80,6 +82,7 @@ export async function getDashboardData() {
     listProjectMaterials(),
     listTimeOffEntries(),
     listInboundEmails(),
+    listProjectScheduleDays(),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -249,8 +252,21 @@ export async function getDashboardData() {
 
   // Completed jobs nobody has marked "Invoice Sent" on yet — shows on
   // every dashboard until one person ticks it.
+  // Meetings are never invoiced: a job whose schedule entries are all
+  // meetings is skipped even when marked Complete.
+  const meetingOnly = new Set<string>();
+  {
+    const byProject = new Map<string, { total: number; meetings: number }>();
+    for (const d of scheduleDays) {
+      const c = byProject.get(d.project_id) ?? { total: 0, meetings: 0 };
+      c.total += 1;
+      if (d.is_meeting) c.meetings += 1;
+      byProject.set(d.project_id, c);
+    }
+    for (const [id, c] of byProject) if (c.total > 0 && c.meetings === c.total) meetingOnly.add(id);
+  }
   const invoicesToSend = projects
-    .filter((p) => p.pipeline_stage === "Complete" && !p.invoice_sent_at)
+    .filter((p) => p.pipeline_stage === "Complete" && !p.invoice_sent_at && !meetingOnly.has(p.id))
     .map((p) => {
       const building = buildings.find((b) => b.id === p.building_id);
       const client = building ? clientCompanies.find((c) => c.id === building.client_company_id) : undefined;

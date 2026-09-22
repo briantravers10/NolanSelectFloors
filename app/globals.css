@@ -50,6 +50,7 @@ body {
   body { background: #fff !important; }
   main, .print-area { padding: 0 !important; margin: 0 !important; max-width: none !important; }
   * { box-shadow: none !important; }
+  .print-color { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   a[href]::after { content: "" !important; }
   .print-break { break-inside: avoid; }
 }

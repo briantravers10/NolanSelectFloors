@@ -871,6 +871,10 @@ export interface ProjectScheduleDay {
   // Manual position within the colour group (drag to rearrange on
   // Create/Edit Schedule). Colour priority always comes first.
   sort_order?: number | null;
+  // A meeting rather than a job (shown Yellow, with a time). Still on the
+  // schedule; never counts as a job to invoice when marked Complete.
+  is_meeting?: boolean;
+  meeting_time?: string | null;
   created_by?: string;
   updated_by?: string;
   created_at: string;
@@ -1131,7 +1135,21 @@ export const UNASSIGNED_CLIENT_NAME = "Unassigned — add management company lat
 // migration 0023). Auto-filed when the building/job match is certain,
 // otherwise held in the Unfiled tray at /inbox.
 // ---------------------------------------------------------------------
-export type InboundKind = "drawing" | "invoice" | "coi" | "unknown";
+// invoice = inbound (a supplier billing us); outbound_invoice = one we
+// sent the customer; purchase_order = a PO from a customer; bid = a
+// potential job worth pricing.
+export type InboundKind = "drawing" | "invoice" | "outbound_invoice" | "purchase_order" | "bid" | "coi" | "unknown";
+export const INBOUND_KIND_LABELS: Record<InboundKind, string> = {
+  drawing: "Drawing",
+  invoice: "Inbound Invoice",
+  outbound_invoice: "Outbound Invoice",
+  purchase_order: "Purchase Order",
+  bid: "Potential Bid",
+  coi: "COI",
+  unknown: "Unknown",
+};
+export const BID_EMAIL_STATUSES = ["open", "quoted", "won", "lost"] as const;
+export type BidEmailStatus = (typeof BID_EMAIL_STATUSES)[number];
 // "matched" = the app is confident which job it belongs to, but a person
 // still has to confirm before anything is filed.
 export type InboundStatus = "unfiled" | "matched" | "filed" | "ignored";
@@ -1161,7 +1179,28 @@ export interface InboundEmail {
   filed_project_id?: string | null;
   filed_kind?: string | null;
   filed_by?: string | null;
+  // Potential bids only (filed_kind = "bid").
+  bid_status?: BidEmailStatus | null;
+  bid_notes?: string | null;
   filed_at?: string | null;
   attachments: InboundAttachment[];
+  created_at: string;
+}
+
+/** An invoice WE sent the customer for a job, filed from Email Inbox. Only
+ * one is current per job; older ones stay as history. */
+export interface ProjectOutboundInvoice {
+  id: string;
+  company_id: string;
+  project_id: string;
+  file_reference?: string | null;
+  file_name?: string | null;
+  amount?: number | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  source_email_id?: string | null;
+  is_current: boolean;
+  uploaded_by?: string | null;
+  notes?: string | null;
   created_at: string;
 }

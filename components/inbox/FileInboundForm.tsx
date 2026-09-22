@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui";
 import { fileInboundAction } from "@/app/inbox/actions";
+import type { InboundKind } from "@/lib/types";
 
 export interface InboxJobOption {
   id: string;
@@ -10,10 +11,18 @@ export interface InboxJobOption {
   label: string;
 }
 
+type FileKind = Exclude<InboundKind, "unknown">;
+
 /**
- * Filing form on an unfiled email. Drawing → needs a job. Invoice →
- * supplier, amount, date, and an OPTIONAL job: leave it blank for stock or
- * tools and it still counts under the supplier. One record either way.
+ * Filing form on an email. What it becomes:
+ *  - Drawing → the job's Drawings
+ *  - Inbound Invoice (a supplier billing us) → ONE materials line under
+ *    the supplier, linked to a job only if one is picked
+ *  - Outbound Invoice (one we sent the customer) → the job's current
+ *    invoice; the previous one moves to history
+ *  - Purchase Order → the Purchase Orders section, linked to the job
+ *  - Potential Bid → the Bids section
+ *  - COI → the job's certificate; its COI badge turns Approved
  */
 export function FileInboundForm({
   emailId,
@@ -26,7 +35,7 @@ export function FileInboundForm({
   submitLabel = "File",
 }: {
   emailId: string;
-  initialKind: "drawing" | "invoice" | "coi";
+  initialKind: FileKind;
   jobs: InboxJobOption[];
   defaultProjectId: string;
   suppliers: string[];
@@ -34,14 +43,19 @@ export function FileInboundForm({
   defaultDate: string;
   submitLabel?: string;
 }) {
-  const [kind, setKind] = useState<"drawing" | "invoice" | "coi">(initialKind);
+  const [kind, setKind] = useState<FileKind>(initialKind);
   const input = "rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm w-full";
+  const needsJob = kind === "drawing" || kind === "coi" || kind === "outbound_invoice" || kind === "purchase_order";
+  const jobOptional = kind === "invoice" || kind === "bid";
 
   return (
     <form action={fileInboundAction.bind(null, emailId)} className="flex flex-col gap-2 min-w-[300px]">
-      <select name="kind" value={kind} onChange={(e) => setKind(e.target.value as "drawing" | "invoice" | "coi")} className={input}>
+      <select name="kind" value={kind} onChange={(e) => setKind(e.target.value as FileKind)} className={input}>
         <option value="drawing">File as Drawing</option>
-        <option value="invoice">File as Invoice</option>
+        <option value="invoice">File as Inbound Invoice (a supplier billing us)</option>
+        <option value="outbound_invoice">File as Outbound Invoice (sent to the customer)</option>
+        <option value="purchase_order">File as Purchase Order</option>
+        <option value="bid">File as Potential Bid</option>
         <option value="coi">File as COI — marks the job&apos;s COI Approved</option>
       </select>
 
@@ -69,12 +83,29 @@ export function FileInboundForm({
         </>
       )}
 
+      {kind === "outbound_invoice" && (
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Invoice #</label>
+            <input name="invoice_number" placeholder="optional" className={input} />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Amount</label>
+            <input name="amount" type="number" step="0.01" min="0" placeholder="0.00" className={input} />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Date</label>
+            <input name="invoice_date" type="date" defaultValue={defaultDate} className={input} />
+          </div>
+        </div>
+      )}
+
       <div>
         <label className="block text-[11px] text-slate-500 uppercase mb-0.5">
-          Job {kind === "invoice" && <span className="normal-case text-slate-400">(optional)</span>}
+          Job {jobOptional && <span className="normal-case text-slate-400">(optional)</span>}
         </label>
-        <select name="project_id" required={kind !== "invoice"} defaultValue={defaultProjectId} className={input}>
-          <option value="" disabled={kind !== "invoice"}>{kind !== "invoice" ? "— Which job? —" : "No job — supplier only"}</option>
+        <select name="project_id" required={needsJob} defaultValue={defaultProjectId} className={input}>
+          <option value="" disabled={needsJob}>{needsJob ? "— Which job? —" : kind === "invoice" ? "No job — supplier only" : "No job yet"}</option>
           {jobs.map((j) => (
             <option key={j.id} value={j.id}>{j.label}</option>
           ))}
@@ -84,6 +115,15 @@ export function FileInboundForm({
         )}
         {kind === "invoice" && (
           <div className="text-[11px] text-slate-500 mt-1">Counted once: under the supplier always, and under the job only if you pick one. You can link it later from Suppliers.</div>
+        )}
+        {kind === "outbound_invoice" && (
+          <div className="text-[11px] text-slate-500 mt-1">Becomes the job&apos;s current invoice, with an “Invoice” quick link on its schedule tile. Any earlier one stays in the job&apos;s history.</div>
+        )}
+        {kind === "purchase_order" && (
+          <div className="text-[11px] text-slate-500 mt-1">Listed under Purchase Orders with a link to the job. Don&apos;t see the job? Create it with “New job from this email” below first.</div>
+        )}
+        {kind === "bid" && (
+          <div className="text-[11px] text-slate-500 mt-1">Goes to the Bids section to be priced. Mark it won or lost from there.</div>
         )}
       </div>
       <Button type="submit">{submitLabel}</Button>

@@ -2,6 +2,8 @@ import type { Building, Project, InboundKind } from "./types";
 import { isActiveProjectStage } from "./calculations";
 
 const COI_WORDS = ["certificate of insurance", "certificate of liability", "insurance certificate", "coi ", " coi", "coi_", "coi-", "acord", "certificate holder", "additional insured"];
+const PO_WORDS = ["purchase order", "p.o. ", "po #", "po#", "po number", "work order"];
+const BID_WORDS = ["request for proposal", "rfp", "request a quote", "request for quote", "please quote", "bid request", "invitation to bid", "can you bid", "send a bid", "pricing for", "estimate request", "request an estimate"];
 const INVOICE_WORDS = ["invoice", "receipt", "bill", "statement", "payment due", "amount due"];
 const DRAWING_WORDS = ["drawing", "drawings", "plan", "plans", "floor plan", "layout", "blueprint", "spec", "elevation", "cad"];
 const DRAWING_EXT = [".dwg", ".dxf", ".rvt", ".skp"];
@@ -18,6 +20,8 @@ export function classifyInbound(to: string | undefined, subject: string | undefi
   // COI first: an insurance certificate email often also says "invoice"
   // or "estimate" in passing.
   if (COI_WORDS.some((w) => hay.includes(w)) || names.some((n) => /(^|[^a-z])coi([^a-z]|$)/.test(n) || n.includes("certificate") || n.includes("acord"))) return "coi";
+  if (PO_WORDS.some((w) => hay.includes(w)) || names.some((n) => /(^|[^a-z])po[-_ ]?\d/.test(n) || n.includes("purchase_order") || n.includes("purchase order"))) return "purchase_order";
+  if (BID_WORDS.some((w) => hay.includes(w))) return "bid";
   if (names.some((n) => DRAWING_EXT.some((e) => n.endsWith(e)))) return "drawing";
   if (INVOICE_WORDS.some((w) => hay.includes(w)) || names.some((n) => n.includes("invoice") || n.includes("receipt"))) return "invoice";
   if (DRAWING_WORDS.some((w) => hay.includes(w)) || names.some((n) => n.includes("plan") || n.includes("drawing"))) return "drawing";

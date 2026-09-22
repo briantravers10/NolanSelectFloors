@@ -44,6 +44,7 @@ export function ScheduleEditForm({
   // other field below stays an uncontrolled `defaultValue` input, still
   // submitted natively by this same <form action=...>.
   const [scheduleDate, setScheduleDate] = useState(date);
+  const [isMeeting, setIsMeeting] = useState(Boolean(selectedDay?.is_meeting));
 
   return (
     <Card className="p-5">
@@ -115,6 +116,20 @@ export function ScheduleEditForm({
             />
           </div>
         )}
+
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+          <label className="flex items-center gap-2 text-sm font-semibold text-amber-950 cursor-pointer">
+            <input type="checkbox" name="is_meeting" value="1" checked={isMeeting} onChange={(ev) => setIsMeeting(ev.target.checked)} className="rounded border-amber-500" />
+            This is a meeting, not a job
+          </label>
+          {isMeeting && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <label className="text-xs font-medium text-amber-900">Time</label>
+              <input type="time" name="meeting_time" defaultValue={selectedDay?.meeting_time ?? ""} className="rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-sm" />
+              <span className="text-[11px] text-amber-900">Shown Yellow on the schedule, listed under Meetings, and added to the agenda. Marking it complete later won&apos;t put it on &ldquo;invoices to send&rdquo;.</span>
+            </div>
+          )}
+        </div>
 
         <div>
           <label className="block text-sm font-semibold text-slate-800 mb-1.5">Schedule Type</label>

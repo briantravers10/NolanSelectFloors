@@ -9,6 +9,8 @@ import { AccessDenied } from "@/components/AccessDenied";
 import { confirmAllMatchedAction, ignoreInboundAction, reopenInboundAction } from "./actions";
 import { FileInboundForm } from "@/components/inbox/FileInboundForm";
 import { supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
+import { NewJobFromEmailForm } from "@/components/inbox/NewJobFromEmailForm";
+import { INBOUND_KIND_LABELS, UNASSIGNED_CLIENT_NAME, type InboundKind } from "@/lib/types";
 
 /**
  * EMAIL INBOX — drawings and invoices forwarded from the office Gmail.
@@ -42,6 +44,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
+  const quickBuildings = buildings
+    .filter((b) => b.active)
+    .map((b) => ({ name: b.name, clientName: clientById.get(b.client_company_id)?.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const quickClients = clients.filter((c) => c.name !== UNASSIGNED_CLIENT_NAME).map((c) => ({ name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const initialKind = (k: InboundKind): Exclude<InboundKind, "unknown"> => (k === "unknown" ? "drawing" : k);
+  const kindLabel = (k?: string | null) => INBOUND_KIND_LABELS[(k ?? "unknown") as InboundKind] ?? k ?? "Filed";
+
   const matched = emails.filter((e) => e.status === "matched");
   const unfiled = emails.filter((e) => e.status === "unfiled");
   const done = emails.filter((e) => e.status !== "unfiled" && e.status !== "matched").slice(0, show === "all" ? undefined : 20);
@@ -68,7 +78,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     <div>
       <PageHeader
         title="Email Inbox"
-        subtitle="Drawings and invoices forwarded from the office email. Anything the app couldn't match to a job on its own waits here for you to file."
+        subtitle="Everything forwarded from the office email: drawings, inbound and outbound invoices, purchase orders, potential bids and COIs. Anything the app couldn't match to a job on its own waits here for you to file."
       />
 
       {(() => {
@@ -113,7 +123,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                       From {e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email ?? "unknown"} · {formatDateLong(e.received_at.slice(0, 10))}
                     </div>
                     <div className="mt-1 text-xs">
-                      <span className="rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 font-medium">{e.kind === "invoice" ? "Invoice" : e.kind === "coi" ? "COI" : "Drawing"}</span>
+                      <span className="rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 font-medium">{kindLabel(e.kind)}</span>
                       <span className="ml-2 text-slate-700">→ <span className="font-medium">{jobName(e.suggested_project_id) ?? "Unknown job"}</span></span>
                     </div>
                     {e.text_preview && <p className="text-xs text-slate-600 mt-1 line-clamp-2">{e.text_preview}</p>}
@@ -132,7 +142,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     <div className="flex flex-col gap-2 min-w-[300px]">
                       <FileInboundForm
                         emailId={e.id}
-                        initialKind={e.kind === "invoice" ? "invoice" : e.kind === "coi" ? "coi" : "drawing"}
+                        initialKind={initialKind(e.kind)}
                         jobs={jobOptions}
                         defaultProjectId={e.suggested_project_id ?? ""}
                         suppliers={supplierNames}
@@ -141,7 +151,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                         submitLabel="✓ Confirm"
                       />
                       <form action={ignoreInboundAction.bind(null, e.id)} className="text-right">
-                        <button type="submit" className="text-xs text-slate-500 hover:text-slate-800 underline">Not a drawing or invoice — ignore</button>
+                        <button type="submit" className="text-xs text-slate-500 hover:text-slate-800 underline">Nothing to file — ignore</button>
                       </form>
                     </div>
                   )}
@@ -188,15 +198,23 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     <div className="flex flex-col gap-2 min-w-[300px]">
                       <FileInboundForm
                         emailId={e.id}
-                        initialKind={e.kind === "invoice" ? "invoice" : e.kind === "coi" ? "coi" : "drawing"}
+                        initialKind={initialKind(e.kind)}
                         jobs={jobOptions}
                         defaultProjectId={defaultProject}
                         suppliers={supplierNames}
                         defaultSupplier={guessSupplier(e.from_name, e.from_email)}
                         defaultDate={e.received_at.slice(0, 10)}
                       />
+                      <NewJobFromEmailForm
+                        emailId={e.id}
+                        buildings={quickBuildings}
+                        clients={quickClients}
+                        defaultDate={todayIso()}
+                        defaultBuilding={suggestedBuilding?.name}
+                        defaultDescription={e.subject ?? ""}
+                      />
                       <form action={ignoreInboundAction.bind(null, e.id)} className="text-right">
-                        <button type="submit" className="text-xs text-slate-500 hover:text-slate-800 underline">Not a drawing or invoice — ignore</button>
+                        <button type="submit" className="text-xs text-slate-500 hover:text-slate-800 underline">Nothing to file — ignore</button>
                       </form>
                     </div>
                   )}
@@ -224,11 +242,13 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   <td className="py-2 px-2 text-xs">
                     {e.status === "filed" ? (
                       <>
-                        <span className="rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5">{e.filed_kind === "invoice" ? "Invoice" : e.filed_kind === "coi" ? "COI" : "Drawing"}</span>
+                        <span className="rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5">{kindLabel(e.filed_kind)}</span>
                         {e.filed_project_id ? (
                           <Link href={`/projects/${e.filed_project_id}`} className="ml-2 text-sky-700 hover:underline">{jobName(e.filed_project_id)}</Link>
                         ) : e.filed_kind === "invoice" ? (
                           <Link href="/suppliers" className="ml-2 text-amber-800 hover:underline">Supplier only, no job</Link>
+                        ) : e.filed_kind === "bid" ? (
+                          <Link href="/bids" className="ml-2 text-sky-700 hover:underline">In Bids</Link>
                         ) : null}
                         <div className="text-slate-400 mt-0.5">by {e.filed_by}</div>
                       </>
