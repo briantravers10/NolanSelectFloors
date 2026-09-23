@@ -23,6 +23,7 @@ import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { markInvoiceSentAction } from "@/app/dashboard/actions";
 import { InvoiceAssigneeSelect } from "@/components/dashboard/InvoiceAssigneeSelect";
+import { AssigneeFilterSelect } from "@/components/schedule/AssigneeFilterSelect";
 import type { Project, ProjectNote } from "@/lib/types";
 import { addWeeklyReviewNoteAction } from "./actions";
 
@@ -34,12 +35,12 @@ import { addWeeklyReviewNoteAction } from "./actions";
  * the job is done and nobody's sent it yet. Sits under Schedule in the nav
  * per the client's ask.
  */
-export default async function FridayReviewPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
+export default async function FridayReviewPage({ searchParams }: { searchParams: Promise<{ week?: string; assignee?: string }> }) {
   const access = await requireSectionAccess("schedule");
   if (access === "none") return <AccessDenied section="Schedule" />;
   const canEditSchedule = access === "edit";
 
-  const { week } = await searchParams;
+  const { week, assignee } = await searchParams;
   const monday = startOfWeek(week ? new Date(week + "T00:00:00") : new Date());
   const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));
   const thisWeek = isoDate(startOfWeek(new Date(todayIso() + "T00:00:00")));
@@ -106,6 +107,14 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
   }
   const allEntries = [...byProject.values()];
 
+  // Filter down to one invoice assignee (or Unassigned) for printing just
+  // that person's list — see AssigneeFilterSelect.
+  const entries = !assignee
+    ? allEntries
+    : assignee === "unassigned"
+      ? allEntries.filter((e) => !e.project.invoice_assigned_to)
+      : allEntries.filter((e) => e.project.invoice_assigned_to === assignee);
+
   // Notes created during this specific week, per job — older history stays
   // on the job page's own Notes section rather than cluttering this review.
   const notesByProject = new Map<string, ProjectNote[]>();
@@ -118,14 +127,14 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
 
   // Property manager -> building -> jobs.
   const clientGroups = new Map<string, Map<string, Entry[]>>();
-  for (const e of allEntries) {
+  for (const e of entries) {
     const buildingGroups = clientGroups.get(e.clientName) ?? new Map<string, Entry[]>();
     buildingGroups.set(e.buildingKey, [...(buildingGroups.get(e.buildingKey) ?? []), e]);
     clientGroups.set(e.clientName, buildingGroups);
   }
   const clientGroupList = [...clientGroups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
-  const needsInvoiceCount = allEntries.filter((e) => e.project.pipeline_stage === "Complete" && !e.project.invoice_sent_at).length;
+  const needsInvoiceCount = entries.filter((e) => e.project.pipeline_stage === "Complete" && !e.project.invoice_sent_at).length;
 
   return (
     <div>
@@ -141,6 +150,10 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
         <Link href={`/schedule/friday-review?week=${thisWeek}`}><Button variant="secondary">This Week</Button></Link>
         <Link href={`/schedule/friday-review?week=${isoDate(addDays(monday, 7))}`}><Button variant="secondary">Next Week →</Button></Link>
         <div className="ml-2 font-medium text-slate-900">Week of {formatDateShort(weekDates[0])} – {formatDateShort(weekDates[6])}</div>
+        <div className="flex items-center gap-1.5 no-print">
+          <span className="text-xs text-slate-500">Invoicing assigned to</span>
+          <AssigneeFilterSelect people={senders} value={assignee ?? ""} />
+        </div>
         {needsInvoiceCount > 0 && (
           <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 text-xs font-medium">
             {needsInvoiceCount} {needsInvoiceCount === 1 ? "job needs" : "jobs need"} invoicing
@@ -149,7 +162,9 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
       </div>
 
       {clientGroupList.length === 0 ? (
-        <Card className="p-6"><EmptyState message="Nothing was on the schedule this week." /></Card>
+        <Card className="p-6">
+          <EmptyState message={assignee ? "No jobs match this filter for this week." : "Nothing was on the schedule this week."} />
+        </Card>
       ) : (
         clientGroupList.map(([clientName, buildingGroups]) => {
           const buildingGroupList = [...buildingGroups.entries()].sort((a, b) => a[1][0].buildingName.localeCompare(b[1][0].buildingName));

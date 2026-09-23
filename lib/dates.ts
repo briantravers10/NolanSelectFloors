@@ -69,6 +69,12 @@ export function weekdayIndexMondayBased(d: Date): number {
   return day === 0 ? 6 : day - 1;
 }
 
+/** "Mon".."Sun" for an ISO date string — matches lib/types.ts WEEKDAYS. */
+export function weekdayAbbrev(iso: string): string {
+  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return WEEKDAYS[weekdayIndexMondayBased(new Date(iso + "T00:00:00"))];
+}
+
 export function daysBetween(a: string, b: string): number {
   const da = new Date(a + "T00:00:00").getTime();
   const db = new Date(b + "T00:00:00").getTime();

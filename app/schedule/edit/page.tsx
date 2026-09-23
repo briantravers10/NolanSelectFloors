@@ -14,6 +14,7 @@ import {
   listProjectOutboundInvoices,
   listActualLaborEntriesForDate,
   ensureDriverWorkingDefaults,
+  ensureOfficeWorkingDefaults,
 } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
@@ -30,6 +31,7 @@ import { ScheduleDayRowCard } from "@/components/schedule/ScheduleDayRowCard";
 import { DraggableTiles } from "@/components/schedule/DraggableTiles";
 import { QuickJobForm } from "@/components/schedule/QuickJobForm";
 import { DriverWorkingToggle } from "@/components/schedule/DriverWorkingToggle";
+import { OfficeWorkingToggle } from "@/components/schedule/OfficeWorkingToggle";
 import { PrintButton } from "@/components/PrintButton";
 
 /**
@@ -56,6 +58,7 @@ export default async function ScheduleEditPage({
   if (await canEdit("schedule")) {
     const actingUser = await getActingUser();
     await ensureDriverWorkingDefaults(date, actingUser.fullName);
+    await ensureOfficeWorkingDefaults(date, actingUser.fullName);
   }
 
   const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems, outboundInvoices, dayLaborEntries] = await Promise.all([
@@ -157,6 +160,26 @@ export default async function ScheduleEditPage({
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Daily Office Staff Working Status — same mechanism as Drivers above,
+  // for office staff (Employee.is_office), so their day rate lands in
+  // payroll without a job assignment. See lib/db.ts#ensureOfficeWorkingDefaults.
+  const officeStaff = activeEmployees
+    .filter((e) => e.is_office)
+    .map((e) => {
+      const mine = dayLaborEntries.filter((entry) => entry.employee_id === e.id);
+      const onJobToday = mine.some((entry) => entry.project_id !== null);
+      const officeEntry = mine.find((entry) => entry.project_id === null);
+      const timeOff = isEmployeeOffOn(timeOffEntries, e.id, date);
+      return {
+        id: e.id,
+        name: employeeDisplayName(e),
+        onJobToday,
+        working: Boolean(officeEntry),
+        offLabel: timeOff ? timeOffWarningLabel(timeOff.type) : null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const prevDate = isoDate(addDays(new Date(date + "T00:00:00"), -1));
   const nextDate = isoDate(addDays(new Date(date + "T00:00:00"), 1));
 
@@ -216,6 +239,29 @@ export default async function ScheduleEditPage({
                   <span className="text-[11px] text-slate-500">Already on a job today</span>
                 ) : (
                   <DriverWorkingToggle employeeId={d.id} date={date} working={d.working} />
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {officeStaff.length > 0 && (
+        <Card className="p-3 mb-4">
+          <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5">Office Staff Working Today</h2>
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+            {officeStaff.map((d) => (
+              <div key={d.id} className="flex items-center gap-2 text-sm">
+                <span className="text-slate-800">{d.name}</span>
+                {d.offLabel && (
+                  <span className="text-[11px] font-medium text-amber-700" title="Auto-unselected because of time off — check the box to override">
+                    {d.offLabel}
+                  </span>
+                )}
+                {d.onJobToday ? (
+                  <span className="text-[11px] text-slate-500">Already on a job today</span>
+                ) : (
+                  <OfficeWorkingToggle employeeId={d.id} date={date} working={d.working} />
                 )}
               </div>
             ))}

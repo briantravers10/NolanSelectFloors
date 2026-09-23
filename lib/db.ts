@@ -13,6 +13,7 @@ import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
 import { mapJobStatusToPipelineStage } from "./schedule";
 import { isEmployeeOffOn } from "./time-off";
+import { weekdayAbbrev } from "./dates";
 import type {
   ActivityLogEntry,
   ActualLaborEntry,
@@ -1564,6 +1565,89 @@ export async function ensureDriverWorkingDefaults(date: string, actorName: strin
   }
 }
 
+/**
+ * DAILY OFFICE WORKING STATUS — same mechanism as setDriverWorkingDay
+ * above (an actual_labor_entries row with project_id null), for office
+ * staff (Employee.is_office). Kept as its own function/table (rather than
+ * generalizing the driver one) so a driver's and an office person's working
+ * day stay independently toggleable — one boolean's default logic doesn't
+ * have to serve both cases.
+ */
+export async function setOfficeWorkingDay(employeeId: string, workDate: string, working: boolean, actorName: string): Promise<void> {
+  const dayEntries = await listActualLaborEntriesForDate(workDate);
+  const mine = dayEntries.filter((e) => e.employee_id === employeeId);
+  const officeEntry = mine.find((e) => e.project_id === null);
+
+  if (working) {
+    if (mine.length > 0) return; // already has a base-pay entry for this date — no-op
+    await createActualLaborEntry({
+      employee_id: employeeId,
+      project_id: null,
+      work_date: workDate,
+      hours: 8,
+      notes: "Office working day (no job assigned)",
+      actorName,
+    });
+  } else if (officeEntry) {
+    await deleteActualLaborEntry(officeEntry.id, actorName);
+  }
+}
+
+// In-memory fallback for office_working_defaults_seeded when Supabase isn't
+// configured — see seededDriverDefaultDatesFallback above.
+const seededOfficeDefaultDatesFallback = new Set<string>();
+
+/**
+ * Office Staff Working Today defaults from each person's OWN typical
+ * workdays (Employee.office_workdays), unlike Drivers Working Today which
+ * assumes everyone by default — an office person with no workdays set yet
+ * gets no auto-check, just a manual checkbox, until that's filled in on
+ * their staff profile. Called once per date, the first time that day's
+ * schedule is viewed with edit access; recorded in
+ * office_working_defaults_seeded so an explicit uncheck sticks and isn't
+ * silently re-created on the next load.
+ */
+export async function ensureOfficeWorkingDefaults(date: string, actorName: string): Promise<void> {
+  const companyId = getCurrentCompanyId();
+  const client = sb();
+
+  if (client) {
+    const { data: existing, error: findError } = await client
+      .from("office_working_defaults_seeded")
+      .select("work_date")
+      .eq("company_id", companyId)
+      .eq("work_date", date)
+      .maybeSingle();
+    if (!findError && existing) return;
+  } else {
+    if (seededOfficeDefaultDatesFallback.has(`${companyId}__${date}`)) return;
+  }
+
+  const todayAbbrev = weekdayAbbrev(date);
+  const [employees, dayEntries, timeOffEntries] = await Promise.all([listEmployees(), listActualLaborEntriesForDate(date), listTimeOffEntries()]);
+  const alreadyCovered = new Set(dayEntries.map((e) => e.employee_id));
+  const officeStaff = employees.filter(
+    (e) => e.is_office && e.active && !alreadyCovered.has(e.id) && (e.office_workdays ?? []).includes(todayAbbrev) && !isEmployeeOffOn(timeOffEntries, e.id, date)
+  );
+  for (const person of officeStaff) {
+    await createActualLaborEntry({
+      employee_id: person.id,
+      project_id: null,
+      work_date: date,
+      hours: 8,
+      notes: "Office working day (no job assigned) — auto-selected from typical workdays",
+      actorName,
+    });
+  }
+
+  if (client) {
+    const { error } = await client.from("office_working_defaults_seeded").insert({ company_id: companyId, work_date: date });
+    if (error && error.code !== "23505") throw error; // 23505 = already seeded by a concurrent request; harmless
+  } else {
+    seededOfficeDefaultDatesFallback.add(`${companyId}__${date}`);
+  }
+}
+
 export async function updateActualLaborEntry(
   id: string,
   patch: { hours?: number; start_time?: string; end_time?: string; notes?: string },
@@ -2790,6 +2874,57 @@ export async function convertLeadToClient(leadId: string): Promise<ClientCompany
   }
   logActivity({ action: "Converted lead to client", related_type: "client_company", related_id: client_company.id, detail: lead.company_name });
   return client_company;
+}
+
+/**
+ * Mirrors a schedule day's "Notes" box (project_schedule_days.notes, typed
+ * from the Create/Edit Schedule tile) into the project_notes history table,
+ * so it shows up on the job's own Notes tab and in Weekly Review — not just
+ * on the schedule tile, which is the only place it lived before. One entry
+ * per (project, date): a marker author_name keeps it identifiable so
+ * repeated edits through the day update the SAME row (same "latest wins"
+ * pattern as Completion Notes, but a true in-place update here rather than
+ * appending again, since a day's note is genuinely a single mutable value).
+ */
+export async function upsertScheduleDayNote(projectId: string, date: string, body: string): Promise<void> {
+  const marker = `Schedule Note (${date})`;
+  const trimmed = body.trim();
+  const client = sb();
+  if (client) {
+    const { data: existing, error: findError } = await client
+      .from("project_notes")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("author_name", marker)
+      .maybeSingle();
+    if (findError) throw findError;
+    if (!trimmed) {
+      if (existing) {
+        const { error } = await client.from("project_notes").delete().eq("id", existing.id as string);
+        if (error) throw error;
+      }
+      return;
+    }
+    if (existing) {
+      const { error } = await client.from("project_notes").update({ body: trimmed, created_at: new Date().toISOString() }).eq("id", existing.id as string);
+      if (error) throw error;
+    } else {
+      await createProjectNote({ project_id: projectId, author_name: marker, body: trimmed });
+    }
+    return;
+  }
+  const store = getStore();
+  const existing = store.projectNotes.find((n) => n.project_id === projectId && n.author_name === marker);
+  if (!trimmed) {
+    if (existing) store.projectNotes = store.projectNotes.filter((n) => n !== existing);
+    return;
+  }
+  if (existing) {
+    existing.body = trimmed;
+    existing.created_at = new Date().toISOString();
+  } else {
+    await createProjectNote({ project_id: projectId, author_name: marker, body: trimmed });
+  }
 }
 
 export async function createProjectNote(input: { project_id: string; author_name?: string; body: string }): Promise<ProjectNote> {

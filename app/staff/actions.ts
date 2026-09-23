@@ -6,8 +6,8 @@ import { createEmployee, createTimeOffEntry, deleteEmployee, deleteTimeOffEntry,
 import { canEditPayRates, canEditTimeOffAllowance, getActingUser } from "@/lib/current-user";
 import { canEdit, isOwnerActingUser } from "@/lib/permissions";
 import { giveEmployeeAccessAction } from "@/app/company-setup/staff-access/actions";
-import type { PayType, StaffCapability, TaxStatus, TimeOffType } from "@/lib/types";
-import { STAFF_CAPABILITIES, TAX_STATUSES, TIME_OFF_TYPES } from "@/lib/types";
+import type { PayType, StaffCapability, TaxStatus, TimeOffType, Weekday } from "@/lib/types";
+import { STAFF_CAPABILITIES, TAX_STATUSES, TIME_OFF_TYPES, WEEKDAYS } from "@/lib/types";
 
 function parseTaxStatus(raw: FormDataEntryValue | null): TaxStatus | undefined {
   const value = String(raw ?? "").trim();
@@ -44,6 +44,11 @@ export async function createStaffAction(formData: FormData) {
     daily_rate,
     hourly_rate,
     is_driver: formData.get("is_driver") === "on",
+    is_office: formData.get("is_office") === "on",
+    office_workdays:
+      formData.get("is_office") === "on"
+        ? formData.getAll("office_workdays").map(String).filter((d): d is Weekday => (WEEKDAYS as readonly string[]).includes(d))
+        : [],
     active: formData.get("active") !== "off",
     hire_date: String(formData.get("hire_date") ?? "") || undefined,
     notes: String(formData.get("notes") ?? "") || undefined,
@@ -188,14 +193,17 @@ export async function deleteTimeOffAction(employeeId: string, entryId: string) {
   revalidatePath("/dashboard");
 }
 
-/** Title, driver flag and capabilities — editable from the staff profile. */
+/** Title, driver/office flags, typical office workdays and capabilities —
+ * editable from the staff profile. */
 export async function updateEmployeeProfileAction(employeeId: string, formData: FormData) {
   if (!(await canEdit("staff"))) return;
   const actingUser = await getActingUser();
   const title = String(formData.get("title") ?? "").trim();
   const is_driver = formData.get("is_driver") === "on";
+  const is_office = formData.get("is_office") === "on";
+  const office_workdays = is_office ? formData.getAll("office_workdays").map(String).filter((d): d is Weekday => (WEEKDAYS as readonly string[]).includes(d)) : [];
   const capabilities = formData.getAll("capabilities").map(String).filter((c): c is StaffCapability => (STAFF_CAPABILITIES as readonly string[]).includes(c));
-  await updateEmployee(employeeId, { ...(title ? { title } : {}), is_driver }, actingUser.fullName);
+  await updateEmployee(employeeId, { ...(title ? { title } : {}), is_driver, is_office, office_workdays }, actingUser.fullName);
   await setEmployeeSkills(employeeId, capabilities);
   revalidatePath(`/staff/${employeeId}`);
   revalidatePath("/staff");

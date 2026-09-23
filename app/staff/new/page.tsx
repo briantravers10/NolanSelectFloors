@@ -4,6 +4,7 @@ import { canEditPayRates, getActingUser } from "@/lib/current-user";
 import { createStaffAction } from "../actions";
 import { PhoneInput } from "@/components/PhoneInput";
 import { NewStaffAccessFields } from "@/components/staff/NewStaffAccessFields";
+import { OfficeWorkdaysFields } from "@/components/staff/OfficeWorkdaysFields";
 import { isOwnerActingUser } from "@/lib/permissions";
 
 export default async function NewStaffPage() {
@@ -88,10 +89,11 @@ export default async function NewStaffPage() {
           ) : (
             <p className="text-xs text-slate-400">Pay rate for labor cost tracking can be set by an Owner/Admin from the staff profile after this hire is created.</p>
           )}
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-start gap-6">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" name="is_driver" className="rounded border-slate-300" /> Driver
             </label>
+            <OfficeWorkdaysFields />
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" name="active" defaultChecked className="rounded border-slate-300" /> Active
             </label>

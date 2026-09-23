@@ -35,6 +35,8 @@ import {
   createAgendaEvent,
   updateAgendaEvent,
   setDriverWorkingDay,
+  setOfficeWorkingDay,
+  upsertScheduleDayNote,
 } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { resolveQuickJobBuilding } from "@/lib/quick-job";
@@ -139,7 +141,12 @@ export async function setScheduleNotesAction(projectId: string, date: string, fo
   const actingUser = await getActingUser();
   const day = await getOrCreateProjectScheduleDay(projectId, date, actingUser.fullName);
   await updateProjectScheduleDay(day.id, { notes }, actingUser.fullName);
+  // Mirror into the job's real Notes history so it shows on the project
+  // page's Notes tab and in Weekly Review, not just on the schedule tile.
+  await upsertScheduleDayNote(projectId, date, notes);
   revalidateSchedule(projectId);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/schedule/friday-review");
 }
 
 // ---------------------------------------------------------------------
@@ -355,6 +362,14 @@ export async function setDriverWorkingAction(employeeId: string, workDate: strin
   if (!(await canEdit("schedule"))) return;
   const actingUser = await getActingUser();
   await setDriverWorkingDay(employeeId, workDate, working, actingUser.fullName);
+  revalidateSchedule();
+  revalidatePath("/payroll");
+}
+
+export async function setOfficeWorkingAction(employeeId: string, workDate: string, working: boolean) {
+  if (!(await canEdit("schedule"))) return;
+  const actingUser = await getActingUser();
+  await setOfficeWorkingDay(employeeId, workDate, working, actingUser.fullName);
   revalidateSchedule();
   revalidatePath("/payroll");
 }

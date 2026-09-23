@@ -29,6 +29,7 @@ import { isOwnerActingUser } from "@/lib/permissions";
 import { listOfficeUsersCached, listSectionPermissionsCached } from "@/lib/request-cache";
 import { SECTION_LABELS } from "@/lib/types";
 import { DeleteStaffButton } from "@/components/staff/DeleteStaffButton";
+import { OfficeWorkdaysFields } from "@/components/staff/OfficeWorkdaysFields";
 import { addTimeOffAction, deleteTimeOffAction, deleteStaffAction, setEmployeeActiveAction, updateEmployeeProfileAction, updateEmployeeNicknameAction, updateEmployeePayRateAction, updateEmployeeTaxStatusAction, updateEmployeeTimeOffAllowanceAction } from "../actions";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -315,6 +316,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" name="is_driver" defaultChecked={employee.is_driver} className="rounded border-slate-300" /> Driver
               </label>
+              <OfficeWorkdaysFields defaultIsOffice={employee.is_office} defaultWorkdays={employee.office_workdays} />
               <div className="space-y-1">
                 {STAFF_CAPABILITIES.map((cap) => (
                   <label key={cap} className="flex items-center gap-2 text-sm text-slate-800">
@@ -352,6 +354,10 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
               </span>
             </div>
             <div className="flex justify-between"><span className="text-slate-500">Driver</span><span>{employee.is_driver ? "Yes" : "No"}</span></div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Office</span>
+              <span>{employee.is_office ? `Yes — ${employee.office_workdays?.length ? employee.office_workdays.join(", ") : "no typical days set"}` : "No"}</span>
+            </div>
           </div>
           {canEditStaff && (
             <div className="mt-4 pt-4 border-t border-slate-200">

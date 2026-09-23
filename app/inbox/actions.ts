@@ -117,6 +117,15 @@ export async function ignoreInboundAction(id: string) {
   refresh();
 }
 
+/** "Ignore all": clears every unfiled email at once — for a backlog of mail
+ * that never needed filing (delivery confirmations, chatter, etc). */
+export async function ignoreAllUnfiledAction() {
+  if (!(await canEdit("projects"))) return;
+  const unfiled = (await listInboundEmails()).filter((e) => e.status === "unfiled");
+  for (const e of unfiled) await updateInboundEmail(e.id, { status: "ignored" });
+  refresh();
+}
+
 export async function reopenInboundAction(id: string) {
   if (!(await canEdit("projects"))) return;
   await updateInboundEmail(id, { status: "unfiled" });

@@ -7,7 +7,7 @@ import { signedFileUrl } from "@/lib/storage";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
-import { confirmAllMatchedAction, ignoreInboundAction, reopenInboundAction } from "./actions";
+import { confirmAllMatchedAction, ignoreAllUnfiledAction, ignoreInboundAction, reopenInboundAction } from "./actions";
 import { InboxFilingBlock } from "@/components/inbox/InboxFilingBlock";
 import type { FileKind } from "@/components/inbox/FileInboundForm";
 import { supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
@@ -173,7 +173,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Unfiled — {unfiled.length}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Unfiled — {unfiled.length}</h2>
+        {editable && unfiled.length > 0 && (
+          <form action={ignoreAllUnfiledAction}>
+            <Button type="submit" variant="secondary">Ignore all {unfiled.length}</Button>
+          </form>
+        )}
+      </div>
       {unfiled.length === 0 ? (
         <Card className="p-6 mb-6"><EmptyState message="Nothing waiting. New emails with attachments will show up here within a minute of arriving." /></Card>
       ) : (

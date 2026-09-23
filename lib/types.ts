@@ -483,7 +483,22 @@ export interface Employee {
   // tracked yet", not "zero allowed". See README.
   vacation_days_allowed?: number;
   sick_days_allowed?: number;
+  // DAILY OFFICE WORKING STATUS — an office person (front desk, dispatch,
+  // etc.) tracked for payroll the same way a driver is: a day rate with no
+  // job assignment. See lib/db.ts#setOfficeWorkingDay/ensureOfficeWorkingDefaults.
+  // Optional (unlike is_driver) so existing seed/demo employee records don't
+  // all need updating — missing is treated as false everywhere it's read.
+  is_office?: boolean;
+  // This person's typical workdays (subset of WEEKDAYS below) — used to
+  // auto-check them as working on Create/Edit Schedule for those days only.
+  // Unset/empty means "not configured yet": no auto-check, still manual.
+  office_workdays?: string[];
 }
+
+/** Mon..Sun, matching Employee.office_workdays entries and used to decide
+ * whether "today" is one of an office person's typical workdays. */
+export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
 
 export interface EmployeeSkill {
   id: string;
