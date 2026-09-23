@@ -11,9 +11,10 @@ const TABS = [
   { key: "history", href: "/schedule/history", label: "Change History" },
   { key: "completed", href: "/schedule/completed", label: "Completed Jobs" },
   { key: "weekly", href: "/schedule/weekly", label: "Weekly Summary" },
+  { key: "friday-review", href: "/schedule/friday-review", label: "Weekly Review" },
 ] as const;
 
-export function ScheduleSubNav({ active }: { active: "view" | "edit" | "review" | "history" | "completed" | "weekly" }) {
+export function ScheduleSubNav({ active }: { active: "view" | "edit" | "review" | "history" | "completed" | "weekly" | "friday-review" }) {
   return (
     <div className="flex flex-wrap gap-1 mb-4 border-b border-slate-200">
       {TABS.map((tab) => (

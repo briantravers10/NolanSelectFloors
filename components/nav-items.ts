@@ -27,6 +27,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/schedule", label: "Schedule", icon: "calendar", sectionKey: "schedule" },
   // Everyone's meetings for the day — schedule entries flagged as meetings.
   { href: "/meetings", label: "Meetings", icon: "calendar", sectionKey: "schedule" },
+  // Every job worked this week, its notes, and what still needs invoicing —
+  // the office's Friday-before-invoicing routine (client's ask). Also
+  // reachable as a tab from every /schedule/* page's own sub-nav.
+  { href: "/schedule/friday-review", label: "Weekly Review", icon: "calendar", sectionKey: "schedule" },
   { href: "/staff", label: "Staff", icon: "users", sectionKey: "staff" },
   { href: "/materials", label: "Materials", icon: "box", sectionKey: "materials" },
   // Spend by supplier — the same invoice/material lines as the job pages,
