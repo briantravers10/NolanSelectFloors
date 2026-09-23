@@ -27,10 +27,12 @@ import type { Project, ProjectNote } from "@/lib/types";
 import { addWeeklyReviewNoteAction } from "./actions";
 
 /**
- * WEEKLY (FRIDAY) REVIEW — every job worked this week in one place, so the
- * office can review the notes crews have logged all week, add anything
- * that's missing, and see in the same view what still needs invoicing and
- * who's picked it up. Sits under Schedule in the nav per the client's ask.
+ * WEEKLY (FRIDAY) REVIEW — every job worked this week, grouped by property
+ * manager and then by building (a building can have several units worked
+ * the same week). Each job shows its notes, a way to add more, and — right
+ * on the job — who's sending the invoice, with a "Needs Invoice" flag once
+ * the job is done and nobody's sent it yet. Sits under Schedule in the nav
+ * per the client's ask.
  */
 export default async function FridayReviewPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
   const access = await requireSectionAccess("schedule");
@@ -66,13 +68,18 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
 
   // One entry per job worked this week — the same aggregation as Weekly
   // Summary, plus the project record itself so invoice status/assignee can
-  // be shown and edited right here.
+  // be shown and edited right here, and building/client identity kept
+  // separate (rather than baked into one display string) so jobs can be
+  // grouped by property manager, then by building.
   type Entry = {
     projectId: string;
     jobNumber: number;
-    name: string;
+    jobLabel: string; // just the unit/job part, without the building name
     address?: string;
+    clientId: string;
     clientName: string;
+    buildingKey: string;
+    buildingName: string;
     days: string[];
     project: Project;
   };
@@ -80,12 +87,16 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
   for (const date of weekDates) {
     for (const row of buildScheduleJobRows(date, input)) {
       if (row.weekendOff) continue;
+      const building = buildings.find((b) => b.id === row.project.building_id);
       const e = byProject.get(row.projectId) ?? {
         projectId: row.projectId,
         jobNumber: row.project.job_number,
-        name: `${row.buildingName ?? row.project.name}${row.unitNumber ? ` — Unit ${row.unitNumber}` : ""}`,
+        jobLabel: row.unitNumber ? `Unit ${row.unitNumber}` : row.buildingName ?? row.project.name,
         address: row.address,
+        clientId: building?.client_company_id ?? "",
         clientName: row.clientName ?? "No management company",
+        buildingKey: row.project.building_id ?? row.projectId,
+        buildingName: row.buildingName ?? row.project.name,
         days: [],
         project: row.project,
       };
@@ -93,8 +104,7 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
       byProject.set(row.projectId, e);
     }
   }
-
-  const entries = [...byProject.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const allEntries = [...byProject.values()];
 
   // Notes created during this specific week, per job — older history stays
   // on the job page's own Notes section rather than cluttering this review.
@@ -106,13 +116,22 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
   }
   for (const list of notesByProject.values()) list.sort((a, b) => a.created_at.localeCompare(b.created_at));
 
-  const needsInvoice = entries.filter((e) => e.project.pipeline_stage === "Complete" && !e.project.invoice_sent_at);
+  // Property manager -> building -> jobs.
+  const clientGroups = new Map<string, Map<string, Entry[]>>();
+  for (const e of allEntries) {
+    const buildingGroups = clientGroups.get(e.clientName) ?? new Map<string, Entry[]>();
+    buildingGroups.set(e.buildingKey, [...(buildingGroups.get(e.buildingKey) ?? []), e]);
+    clientGroups.set(e.clientName, buildingGroups);
+  }
+  const clientGroupList = [...clientGroups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  const needsInvoiceCount = allEntries.filter((e) => e.project.pipeline_stage === "Complete" && !e.project.invoice_sent_at).length;
 
   return (
     <div>
       <PageHeader
         title="Weekly Review"
-        subtitle="Every job worked this week — the notes logged so far, room to add more, and what still needs invoicing."
+        subtitle="Every job worked this week, grouped by property manager and building — notes logged so far, room to add more, and who's invoicing what."
         action={<PrintButton label="Print" />}
       />
       <ScheduleSubNav active="friday-review" />
@@ -122,92 +141,112 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
         <Link href={`/schedule/friday-review?week=${thisWeek}`}><Button variant="secondary">This Week</Button></Link>
         <Link href={`/schedule/friday-review?week=${isoDate(addDays(monday, 7))}`}><Button variant="secondary">Next Week →</Button></Link>
         <div className="ml-2 font-medium text-slate-900">Week of {formatDateShort(weekDates[0])} – {formatDateShort(weekDates[6])}</div>
+        {needsInvoiceCount > 0 && (
+          <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 text-xs font-medium">
+            {needsInvoiceCount} {needsInvoiceCount === 1 ? "job needs" : "jobs need"} invoicing
+          </span>
+        )}
       </div>
 
-      {needsInvoice.length > 0 && (
-        <Card className="p-4 mb-5 border-amber-300 bg-amber-50">
-          <h2 className="text-sm font-semibold text-amber-900 uppercase tracking-wide mb-2">
-            Needs invoicing — {needsInvoice.length} {needsInvoice.length === 1 ? "job" : "jobs"}
-          </h2>
-          <div className="divide-y divide-amber-200 rounded-lg border border-amber-200 bg-white/60 px-3">
-            {needsInvoice.map((e) => (
-              <div key={e.projectId} className="py-2 flex flex-wrap items-center justify-between gap-2">
-                <Link href={`/projects/${e.projectId}`} className="text-sm font-medium text-slate-900 hover:text-sky-700">
-                  <span className="font-mono text-xs text-slate-500">{formatJobNumber(e.jobNumber)}</span> {e.name}
-                </Link>
-                <div className="flex items-center gap-2">
-                  <InvoiceAssigneeSelect projectId={e.projectId} assignedTo={e.project.invoice_assigned_to ?? null} people={senders} />
-                  <form action={markInvoiceSentAction.bind(null, e.projectId, true)}>
-                    <Button type="submit" variant="secondary" className="text-xs py-1.5">Mark as Sent</Button>
-                  </form>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {entries.length === 0 ? (
+      {clientGroupList.length === 0 ? (
         <Card className="p-6"><EmptyState message="Nothing was on the schedule this week." /></Card>
       ) : (
-        entries.map((e) => {
-          const notes = notesByProject.get(e.projectId) ?? [];
+        clientGroupList.map(([clientName, buildingGroups]) => {
+          const buildingGroupList = [...buildingGroups.entries()].sort((a, b) => a[1][0].buildingName.localeCompare(b[1][0].buildingName));
+          const clientId = buildingGroupList[0]?.[1][0]?.clientId;
           return (
-            <Card key={e.projectId} className="p-4 mb-4 print-break">
-              <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
-                <div>
-                  <Link href={`/projects/${e.projectId}`} className="font-medium text-sky-700 hover:underline">
-                    <span className="font-mono text-xs text-slate-500">{formatJobNumber(e.jobNumber)}</span> {e.name}
-                  </Link>
-                  <div className="text-xs text-slate-500">
-                    {e.clientName}
-                    {e.address ? ` · ${e.address}` : ""}
-                    {" · Worked "}
-                    {e.days.map((d) => dayLabel(d).slice(0, 3)).join(", ")}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-xs">
-                  {e.project.pipeline_stage === "Complete" ? (
-                    e.project.invoice_sent_at ? (
-                      <span className="inline-flex rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 font-medium">
-                        Invoice sent{e.project.invoice_sent_by ? ` by ${e.project.invoice_sent_by}` : ""}
-                      </span>
-                    ) : (
-                      <>
-                        <InvoiceAssigneeSelect projectId={e.projectId} assignedTo={e.project.invoice_assigned_to ?? null} people={senders} />
-                        <form action={markInvoiceSentAction.bind(null, e.projectId, true)}>
-                          <Button type="submit" variant="secondary" className="text-xs py-1">Mark Sent</Button>
-                        </form>
-                      </>
-                    )
-                  ) : (
-                    <span className="inline-flex rounded-full bg-sky-100 text-sky-800 px-2 py-0.5 font-medium">Ongoing</span>
+            <div key={clientName} className="mb-6 print-break">
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2 pb-1 border-b border-slate-300">
+                {clientId ? <Link href={`/clients/${clientId}`} className="hover:text-sky-700">{clientName}</Link> : clientName}
+              </h2>
+              {buildingGroupList.map(([buildingKey, jobs]) => (
+                <div key={buildingKey} className="mb-4 last:mb-0">
+                  {jobs.length > 1 && (
+                    <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 ml-1">
+                      {jobs[0].buildingName} · {jobs.length} jobs
+                    </h3>
                   )}
-                </div>
-              </div>
+                  <div className="space-y-3">
+                    {jobs
+                      .sort((a, b) => a.jobLabel.localeCompare(b.jobLabel))
+                      .map((e) => {
+                        const notes = notesByProject.get(e.projectId) ?? [];
+                        const needsInvoice = e.project.pipeline_stage === "Complete" && !e.project.invoice_sent_at;
+                        return (
+                          <Card key={e.projectId} className={`p-4 ${needsInvoice ? "border-amber-300" : ""}`}>
+                            <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+                              <div>
+                                <Link href={`/projects/${e.projectId}`} className="font-medium text-sky-700 hover:underline">
+                                  <span className="font-mono text-xs text-slate-500">{formatJobNumber(e.jobNumber)}</span>{" "}
+                                  {jobs.length > 1 ? e.jobLabel : e.buildingName}
+                                </Link>
+                                <div className="text-xs text-slate-500">
+                                  {e.address ?? ""}
+                                  {e.address ? " · " : ""}
+                                  Worked {e.days.map((d) => dayLabel(d).slice(0, 3)).join(", ")}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs">
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 font-medium ${
+                                    e.project.pipeline_stage === "Complete" ? "bg-emerald-100 text-emerald-800" : "bg-sky-100 text-sky-800"
+                                  }`}
+                                >
+                                  {e.project.pipeline_stage === "Complete" ? "Completed" : "Ongoing"}
+                                </span>
+                                {needsInvoice && (
+                                  <span className="inline-flex rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 font-medium">
+                                    Needs Invoice
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
-              <div className="mt-3">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Notes this week</h3>
-                {notes.length === 0 ? (
-                  <p className="text-xs text-slate-400 mb-2">No notes logged yet this week.</p>
-                ) : (
-                  <div className="space-y-2 mb-3">
-                    {notes.map((n) => (
-                      <div key={n.id} className="text-sm border-l-2 border-slate-200 pl-3">
-                        <div className="text-slate-700">{n.body}</div>
-                        <div className="text-xs text-slate-400 mt-0.5">{n.author_name} · {formatDateLong(n.created_at.slice(0, 10))}</div>
-                      </div>
-                    ))}
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                              {e.project.invoice_sent_at ? (
+                                <span className="inline-flex rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-medium">
+                                  Invoice sent{e.project.invoice_sent_by ? ` by ${e.project.invoice_sent_by}` : ""} · {formatDateLong(e.project.invoice_sent_at.slice(0, 10))}
+                                </span>
+                              ) : (
+                                <>
+                                  <InvoiceAssigneeSelect projectId={e.projectId} assignedTo={e.project.invoice_assigned_to ?? null} people={senders} />
+                                  {e.project.pipeline_stage === "Complete" && (
+                                    <form action={markInvoiceSentAction.bind(null, e.projectId, true)}>
+                                      <Button type="submit" variant="secondary" className="text-xs py-1">Mark Sent</Button>
+                                    </form>
+                                  )}
+                                </>
+                              )}
+                            </div>
+
+                            <div>
+                              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Notes this week</h4>
+                              {notes.length === 0 ? (
+                                <p className="text-xs text-slate-400 mb-2">No notes logged yet this week.</p>
+                              ) : (
+                                <div className="space-y-2 mb-3">
+                                  {notes.map((n) => (
+                                    <div key={n.id} className="text-sm border-l-2 border-slate-200 pl-3">
+                                      <div className="text-slate-700">{n.body}</div>
+                                      <div className="text-xs text-slate-400 mt-0.5">{n.author_name} · {formatDateLong(n.created_at.slice(0, 10))}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {canEditSchedule && (
+                                <form action={addWeeklyReviewNoteAction.bind(null, e.projectId)} className="flex flex-wrap gap-2 no-print">
+                                  <textarea name="body" placeholder="Add a note…" rows={2} required className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                                  <Button type="submit" className="text-xs py-1.5">Add Note</Button>
+                                </form>
+                              )}
+                            </div>
+                          </Card>
+                        );
+                      })}
                   </div>
-                )}
-                {canEditSchedule && (
-                  <form action={addWeeklyReviewNoteAction.bind(null, e.projectId)} className="flex flex-wrap gap-2 no-print">
-                    <textarea name="body" placeholder="Add a note…" rows={2} required className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-                    <Button type="submit" className="text-xs py-1.5">Add Note</Button>
-                  </form>
-                )}
-              </div>
-            </Card>
+                </div>
+              ))}
+            </div>
           );
         })
       )}
