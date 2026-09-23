@@ -250,6 +250,29 @@ export function formatJobNumber(n: number | null | undefined): string {
   return `#${n}`;
 }
 
+/**
+ * The unit/sub-label part of a job's display name: unit_number when set,
+ * else the project's own `name` IF it differs from the building's name.
+ * Some projects (older/imported/quick-job ones) never got a proper
+ * unit_number and instead carry the distinguishing info in `name` itself
+ * (e.g. "415/14C") — without this fallback, every job-name display across
+ * the app (schedule, bids, drawings, inbox job pickers, etc.) would show
+ * only the building name for those, making them indistinguishable from
+ * every other job at the same building and impossible to find by unit.
+ */
+export function projectUnitLabel(project: { name: string; unit_number?: string }, buildingName?: string): string | undefined {
+  if (project.unit_number) return project.unit_number;
+  if (project.name && project.name !== buildingName) return project.name;
+  return undefined;
+}
+
+/** Building name (falling back to the project's own name when there's no
+ * building) plus its unit label, e.g. "London Terrace — Unit 415/14C". */
+export function projectDisplayName(project: { name: string; unit_number?: string }, buildingName?: string): string {
+  const unit = projectUnitLabel(project, buildingName);
+  return `${buildingName ?? project.name}${unit ? ` — Unit ${unit}` : ""}`;
+}
+
 export function formatCurrency(n: number | null | undefined): string {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });

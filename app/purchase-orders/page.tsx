@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listInboundEmails, listProjects } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
-import { formatJobNumber } from "@/lib/calculations";
+import { formatJobNumber, projectDisplayName } from "@/lib/calculations";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { signedFileUrl } from "@/lib/storage";
@@ -28,7 +28,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
       const p = e.filed_project_id ? projectById.get(e.filed_project_id) : undefined;
       const b = p ? buildingById.get(p.building_id) : undefined;
       const c = b ? clientById.get(b.client_company_id) : undefined;
-      const jobName = p ? `${b?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}` : "Job no longer exists";
+      const jobName = p ? projectDisplayName(p, b?.name) : "Job no longer exists";
       return { e, p, c, jobName, hay: `${e.subject ?? ""} ${e.from_email ?? ""} ${e.from_name ?? ""} ${jobName} ${c?.name ?? ""} ${e.attachments.map((a) => a.filename).join(" ")}`.toLowerCase() };
     })
     .filter((r) => !q || r.hay.includes(q.toLowerCase()))

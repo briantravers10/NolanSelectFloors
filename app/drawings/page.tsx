@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listInboundEmails, listProjectDrawings, listProjects, getNavSectionLastSeen, markNavSectionSeen } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
 import { formatDateShort } from "@/lib/dates";
-import { formatJobNumber } from "@/lib/calculations";
+import { formatJobNumber, projectDisplayName } from "@/lib/calculations";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { drawingFileUrl, signedFileUrl } from "@/lib/storage";
@@ -55,7 +55,7 @@ export default async function DrawingsPage({ searchParams }: { searchParams: Pro
         project: p,
         building: b,
         client: c,
-        jobName: p ? `${b?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}` : "Unknown job",
+        jobName: p ? projectDisplayName(p, b?.name) : "Unknown job",
         hay: [d.drawing_name, d.drawing_number, d.uploaded_by, d.notes, b?.name, b?.address, p?.unit_number, p?.name, c?.name].filter(Boolean).join(" ").toLowerCase(),
       };
     })

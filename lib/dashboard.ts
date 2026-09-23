@@ -13,6 +13,7 @@ import {
   getLatestInboundEmailReceivedAt,
   listProjectScheduleDays,
 } from "./db";
+import { projectDisplayName } from "./calculations";
 import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
 import {
   compareCrewForProjectDate,
@@ -261,7 +262,7 @@ export async function getDashboardData() {
       const client = building ? clientCompanies.find((c) => c.id === building.client_company_id) : undefined;
       return {
         projectId: p.id,
-        name: `${building?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}`,
+        name: projectDisplayName(p, building?.name),
         clientName: client?.name,
         completedOn: p.project_completed_at?.slice(0, 10) ?? null,
         value: p.project_value,

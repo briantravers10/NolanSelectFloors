@@ -5,6 +5,7 @@ import { addDays, dayLabel, formatDateLong, isoDate, todayIso } from "@/lib/date
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { employeeDisplayName } from "@/lib/employee-name";
+import { projectDisplayName } from "@/lib/calculations";
 import { setMeetingDoneAction, unmarkMeetingAction, updateMeetingAction } from "./actions";
 
 /**
@@ -90,7 +91,7 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
                 <div className="flex flex-wrap items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="text-lg font-semibold text-slate-900">
-                      {b?.name ?? p?.name ?? "Unknown"}{p?.unit_number ? ` — Unit ${p.unit_number}` : ""}
+                      {p ? projectDisplayName(p, b?.name) : (b?.name ?? "Unknown")}
                       {done && <span className="ml-2 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-xs font-medium">Done</span>}
                     </div>
                     <div className="text-sm text-slate-700">
@@ -159,7 +160,7 @@ export default async function MeetingsPage({ searchParams }: { searchParams: Pro
                     <td className="py-2 px-2 text-xs text-slate-500 w-36"><Link href={`/meetings?date=${d.schedule_date}`} className="hover:underline">{dayLabel(d.schedule_date).slice(0, 3)} {formatDateLong(d.schedule_date)}</Link></td>
                     <td className="py-2 px-2 w-20 font-semibold">{d.meeting_time ?? "—"}</td>
                     <td className="py-2 px-2">
-                      <div className="text-slate-900">{b?.name ?? p?.name ?? "Unknown"}{p?.unit_number ? ` — Unit ${p.unit_number}` : ""}</div>
+                      <div className="text-slate-900">{p ? projectDisplayName(p, b?.name) : (b?.name ?? "Unknown")}</div>
                       <div className="text-xs text-slate-500">{c?.name ?? ""}{crew.length ? ` · ${crew.join(" / ")}` : ""}</div>
                     </td>
                     <td className="py-2 px-2 text-right"><Link href={`/schedule/edit?project=${d.project_id}&date=${d.schedule_date}`} className="text-xs text-sky-700 hover:underline">Edit</Link></td>

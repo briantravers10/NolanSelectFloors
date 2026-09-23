@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { CompletedJobSummary } from "@/lib/schedule";
 import type { FinancialSummary } from "@/lib/financials";
 import { Button, PhoneLink, StatusBadge } from "@/components/ui";
-import { formatCurrency, formatJobNumber } from "@/lib/calculations";
+import { formatCurrency, formatJobNumber, projectDisplayName } from "@/lib/calculations";
 import { formatDateShort } from "@/lib/dates";
 import { saveCompletionNotesAction } from "@/app/schedule/actions";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
@@ -30,7 +30,7 @@ export function CompletedJobCard({
         <div className="min-w-0 flex-1">
           <div className="font-medium text-sm text-slate-900 flex items-center gap-2">
             <span className="font-mono text-xs text-slate-500">{formatJobNumber(project.job_number)}</span>
-            {building?.name}{project.unit_number ? ` — Unit ${project.unit_number}` : ""}
+            {projectDisplayName(project, building?.name)}
           </div>
           <div className="text-xs text-slate-500">{building?.address} · {client?.name}</div>
         </div>
@@ -44,7 +44,7 @@ export function CompletedJobCard({
           <div className="grid sm:grid-cols-2 gap-4 text-sm">
             <div>
               <div className="text-[11px] font-medium text-slate-500 uppercase mb-1">Job Info</div>
-              <div className="text-slate-800">{building?.name}{project.unit_number ? ` — Unit ${project.unit_number}` : ""}</div>
+              <div className="text-slate-800">{projectDisplayName(project, building?.name)}</div>
               <div className="text-slate-500">{building?.address}</div>
               <div className="text-slate-500">{client?.name}</div>
               {contactName && (

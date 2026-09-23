@@ -22,6 +22,7 @@ import { buildScheduleJobRows } from "@/lib/schedule";
 import { addDays, dayLabel, formatDateShort, isoDate, todayIso } from "@/lib/dates";
 import { isEmployeeOffOn, timeOffWarningLabel } from "@/lib/time-off";
 import { employeeDisplayName } from "@/lib/employee-name";
+import { projectDisplayName } from "@/lib/calculations";
 import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
@@ -98,7 +99,7 @@ export default async function ScheduleEditPage({
     .map((p) => {
       const building = buildingById.get(p.building_id);
       const client = building ? clientById.get(building.client_company_id) : undefined;
-      const label = `#${p.job_number} — ${building?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}${client ? ` · ${client.name}` : ""}`;
+      const label = `#${p.job_number} — ${projectDisplayName(p, building?.name)}${client ? ` · ${client.name}` : ""}`;
       return { id: p.id, label };
     })
     .sort((a, b) => a.label.localeCompare(b.label));

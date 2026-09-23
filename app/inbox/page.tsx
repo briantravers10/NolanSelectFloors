@@ -11,6 +11,7 @@ import { InboxFilingBlock } from "@/components/inbox/InboxFilingBlock";
 import type { FileKind } from "@/components/inbox/FileInboundForm";
 import { supplierKey, NO_SUPPLIER } from "@/lib/suppliers";
 import { INBOUND_KIND_LABELS, UNASSIGNED_CLIENT_NAME, type InboundKind } from "@/lib/types";
+import { projectDisplayName } from "@/lib/calculations";
 import { getActingUser } from "@/lib/current-user";
 import { NewPill } from "@/components/NewPill";
 
@@ -49,7 +50,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     .map((p) => {
       const b = buildingById.get(p.building_id);
       const c = b ? clientById.get(b.client_company_id) : undefined;
-      return { id: p.id, buildingId: p.building_id, label: `${b?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}${c ? ` · ${c.name}` : ""}` };
+      return { id: p.id, buildingId: p.building_id, label: `${projectDisplayName(p, b?.name)}${c ? ` · ${c.name}` : ""}` };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
@@ -82,7 +83,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     const p = id ? projectById.get(id) : undefined;
     if (!p) return null;
     const b = buildingById.get(p.building_id);
-    return `${b?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}`;
+    return projectDisplayName(p, b?.name);
   };
 
   return (

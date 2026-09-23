@@ -2,7 +2,7 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listInboundEmails, listProjects, getNavSectionLastSeen, markNavSectionSeen } from "@/lib/db";
 import { Card, PageHeader, EmptyState, Button } from "@/components/ui";
 import { formatDateLong } from "@/lib/dates";
-import { formatJobNumber } from "@/lib/calculations";
+import { formatJobNumber, projectUnitLabel } from "@/lib/calculations";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
 import { signedFileUrl } from "@/lib/storage";
@@ -104,7 +104,7 @@ export default async function BidsPage({ searchParams }: { searchParams: Promise
                     {(b || c) && (
                       <div className="text-xs text-slate-700 mt-0.5">
                         {p && <span className="font-mono text-slate-500">{formatJobNumber(p.job_number)} · </span>}
-                        {b?.name}{p?.unit_number ? ` — Unit ${p.unit_number}` : ""}{c ? ` · ${c.name}` : ""}
+                        {b?.name}{p && projectUnitLabel(p, b?.name) ? ` — Unit ${projectUnitLabel(p, b?.name)}` : ""}{c ? ` · ${c.name}` : ""}
                         {p && <Link href={`/projects/${p.id}`} className="ml-2 text-sky-700 hover:underline">View job →</Link>}
                       </div>
                     )}

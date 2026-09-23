@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listProjectMaterials, listProjects } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
-import { formatCurrency, formatCurrencyPrecise, isActiveProjectStage } from "@/lib/calculations";
+import { formatCurrency, formatCurrencyPrecise, isActiveProjectStage, projectDisplayName } from "@/lib/calculations";
 import { formatDateShort } from "@/lib/dates";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
@@ -31,7 +31,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
     const p = projectById.get(projectId);
     if (!p) return "Unknown job";
     const b = buildingById.get(p.building_id);
-    return `${b?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}`;
+    return projectDisplayName(p, b?.name);
   };
   const jobCompany = (projectId: string) => {
     const p = projectById.get(projectId);

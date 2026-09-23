@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { employeeDisplayName } from "@/lib/employee-name";
+import { projectUnitLabel } from "@/lib/calculations";
 import {
   listBuildingContacts,
   listBuildings,
@@ -82,7 +83,8 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     const project = projectById.get(a.project_id);
     const building = project ? buildingById.get(project.building_id) : undefined;
     const location = building ? `${building.name}, ${building.address}` : "the job site";
-    const unitPart = project?.unit_number ? `, Unit ${project.unit_number}` : "";
+    const unit = project ? projectUnitLabel(project, building?.name) : undefined;
+    const unitPart = unit ? `, Unit ${unit}` : "";
     const callTime = a.call_time || "7:00 AM";
     const dow = dayLabel(activeDate);
     const dateLabel = formatDateShort(activeDate);

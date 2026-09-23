@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listBuildings, listClientCompanies, listProjectMaterials, listProjects } from "@/lib/db";
 import { Card, PageHeader, EmptyState } from "@/components/ui";
-import { formatCurrency, isActiveProjectStage } from "@/lib/calculations";
+import { formatCurrency, isActiveProjectStage, projectDisplayName } from "@/lib/calculations";
 import { formatDateShort } from "@/lib/dates";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
@@ -34,7 +34,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
     .map((p) => {
       const b = buildingById.get(p.building_id);
       const c = b ? clientById.get(b.client_company_id) : undefined;
-      return { id: p.id, label: `${b?.name ?? p.name}${p.unit_number ? ` — Unit ${p.unit_number}` : ""}${c ? ` · ${c.name}` : ""}` };
+      return { id: p.id, label: `${projectDisplayName(p, b?.name)}${c ? ` · ${c.name}` : ""}` };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
