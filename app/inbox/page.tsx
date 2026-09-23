@@ -2,7 +2,6 @@ import Link from "next/link";
 import { listBuildings, listClientCompanies, listInboundEmails, listProjectMaterials, listProjects, getNavSectionLastSeen, markNavSectionSeen } from "@/lib/db";
 import { Card, PageHeader, EmptyState, Button } from "@/components/ui";
 import { daysBetween, formatDateLong, todayIso } from "@/lib/dates";
-import { isActiveProjectStage } from "@/lib/calculations";
 import { signedFileUrl } from "@/lib/storage";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { requireSectionAccess, canEdit } from "@/lib/permissions";
@@ -44,8 +43,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
 
+  // Every job, any pipeline stage — a completed job still needs its final
+  // invoice/change order/COI filed against it, so it must stay pickable.
   const jobOptions = projects
-    .filter((p) => isActiveProjectStage(p))
     .map((p) => {
       const b = buildingById.get(p.building_id);
       const c = b ? clientById.get(b.client_company_id) : undefined;

@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui";
 import { fileInboundAction } from "@/app/inbox/actions";
+import { JobPicker } from "@/components/JobPicker";
 
 export interface InboxJobOption {
   id: string;
@@ -140,12 +141,13 @@ export function FileInboundForm({
         <label className="block text-[11px] text-slate-500 uppercase mb-0.5">
           Job {jobOptional && <span className="normal-case text-slate-400">(optional)</span>}
         </label>
-        <select name="project_id" required={needsJob} defaultValue={defaultProjectId} className={input}>
-          <option value="" disabled={needsJob}>{needsJob ? "— Which job? —" : kind === "invoice" ? "No job — supplier only" : "No job yet"}</option>
-          {jobs.map((j) => (
-            <option key={j.id} value={j.id}>{j.label}</option>
-          ))}
-        </select>
+        <JobPicker
+          name="project_id"
+          jobs={jobs}
+          defaultValue={defaultProjectId}
+          required={needsJob}
+          placeholder={needsJob ? "Type to search — which job?" : kind === "invoice" ? "No job — supplier only (optional)" : "No job yet (optional)"}
+        />
         {kind === "coi" && (
           <div className="text-[11px] text-slate-500 mt-1">The certificate is attached to the job and the schedule&apos;s COI badge turns Approved and links to it. Confirming here is the approval.</div>
         )}
