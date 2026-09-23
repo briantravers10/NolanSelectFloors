@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ScheduleJobRow } from "@/lib/schedule";
 import { PhoneLink, EmailLink } from "@/components/ui";
 import { formatJobNumber } from "@/lib/calculations";
+import { formatDateShort } from "@/lib/dates";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
 import { EditableNotes } from "./EditableNotes";
 import { isWeekend } from "@/lib/dates";
@@ -166,12 +167,22 @@ export function ScheduleDayRowCard({ row, editableNotes = false }: { row: Schedu
 
         {/* Right: notes in their own box (editable in place on Create/Edit) */}
         {editableNotes && !off ? (
-          <EditableNotes projectId={row.projectId} date={row.date} notes={row.notes} />
+          <EditableNotes projectId={row.projectId} date={row.date} notes={row.notes} priorNote={row.priorNote} priorNoteDate={row.priorNoteDate} />
         ) : (
-          <div className="rounded-lg border border-slate-300 bg-white/60 px-2.5 py-1.5 min-h-[3rem]">
-            <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Notes</div>
-            <div className="text-[13px] text-slate-900 whitespace-pre-wrap leading-snug">
-              {row.notes ? row.notes : <span className="text-slate-500">None.</span>}
+          <div className="space-y-1.5">
+            {row.priorNote && (
+              <div className="rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1.5">
+                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Note from {row.priorNoteDate ? formatDateShort(row.priorNoteDate) : "before"}
+                </div>
+                <div className="text-[13px] text-slate-500 leading-snug whitespace-pre-wrap">{row.priorNote}</div>
+              </div>
+            )}
+            <div className="rounded-lg border border-slate-300 bg-white/60 px-2.5 py-1.5 min-h-[3rem]">
+              <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Notes{row.priorNote ? " — Today" : ""}</div>
+              <div className="text-[13px] text-slate-900 whitespace-pre-wrap leading-snug">
+                {row.notes ? row.notes : <span className="text-slate-500">None.</span>}
+              </div>
             </div>
           </div>
         )}

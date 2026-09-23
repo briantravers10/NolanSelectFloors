@@ -1080,8 +1080,9 @@ export async function getOrCreateProjectScheduleDay(projectId: string, date: str
   };
   // A job stays on the schedule until Completed, so a new day row for an
   // already-scheduled job is a continuation: start it from the latest
-  // earlier entry (color Blue → Gray, COI/materials/notes as they were)
-  // and carry its crew, instead of blank defaults.
+  // earlier entry (color Blue → Gray, COI/materials as they were) and
+  // carry its crew, instead of blank defaults. Notes are the one exception
+  // — see the comment below.
   const prior = (await listProjectScheduleDays())
     .filter((d) => d.project_id === projectId && d.schedule_date < date)
     .sort((a, b) => a.schedule_date.localeCompare(b.schedule_date))
@@ -1091,7 +1092,11 @@ export async function getOrCreateProjectScheduleDay(projectId: string, date: str
     record.coi_status = prior.coi_status;
     record.materials_status = prior.materials_status;
     record.work_type_id = prior.work_type_id;
-    record.notes = prior.notes;
+    // Notes deliberately do NOT carry forward — a new day starts with a
+    // blank note box so writing today's note never means erasing
+    // yesterday's first. Yesterday's note stays visible read-only (see
+    // ScheduleJobRow.priorNote/priorNoteDate) with a one-click "Repeat this
+    // note" instead of always auto-copying.
     record.sort_order = prior.sort_order ?? null;
   }
   const client = sb();

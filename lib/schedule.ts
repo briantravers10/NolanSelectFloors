@@ -249,6 +249,12 @@ export interface ScheduleJobRow {
   meetingTime?: string | null;
   // The job has a current outbound invoice on file (quick link on the tile).
   hasOutboundInvoice: boolean;
+  // The most recent EARLIER day's own note for this job (never carried into
+  // `notes` above — see lib/db.ts#getOrCreateProjectScheduleDay), shown
+  // read-only with its date so today's box can start blank instead of
+  // requiring yesterday's text to be erased first.
+  priorNote?: string;
+  priorNoteDate?: string;
 }
 
 export interface ScheduleRowInputs {
@@ -328,10 +334,14 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
     let crew = projectAssignments.filter((a) => a.schedule_date === date);
     let carriedFrom: string | undefined;
     let scheduleColor: ScheduleColor | undefined = scheduleDay?.schedule_color;
+    // The most recent day strictly before `date` — independent of whether
+    // today carries forward or has its own row, used only for the
+    // read-only "note from before" reference (never for `notes` itself).
+    const priorDay = projectDays.filter((d) => d.schedule_date < date).at(-1);
 
     if (!scheduleDay && crew.length === 0) {
       // Carry forward from the latest earlier entry (day row or crew).
-      const lastDay = projectDays.filter((d) => d.schedule_date < date).at(-1);
+      const lastDay = priorDay;
       const lastCrewDate = projectAssignments.reduce<string | null>((max, a) => (a.schedule_date < date && (!max || a.schedule_date > max) ? a.schedule_date : max), null);
       const anchorDate = [lastDay?.schedule_date, lastCrewDate].filter((x): x is string => Boolean(x)).sort().at(-1);
       if (!anchorDate) continue;
@@ -384,7 +394,10 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       jobStatus: scheduleDay?.job_status ?? mapPipelineStageToJobStatus(project.pipeline_stage),
       scheduleColor: scheduleColor ?? "Pink",
       workTypeName: scheduleDay?.work_type_id ? workTypeById.get(scheduleDay.work_type_id)?.name : undefined,
-      notes: scheduleDay?.notes || project.description,
+      // Only THIS date's own note — never the carried-forward row's, so a
+      // continuing job's box starts blank instead of showing yesterday's
+      // text as if it still needed erasing. See priorNote below for that.
+      notes: (scheduleDay?.schedule_date === date ? scheduleDay.notes : undefined) || project.description,
       scheduleDayId: scheduleDay?.id,
       earliestCallTime,
       carriedFrom,
@@ -392,6 +405,8 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       sortOrder: scheduleDay?.sort_order ?? null,
       pickupItems: scheduleDay ? pickupItems.filter((i) => i.project_schedule_day_id === scheduleDay.id) : [],
       qbDocuments: qbDocuments.filter((d) => d.project_id === projectId),
+      priorNote: priorDay?.notes || undefined,
+      priorNoteDate: priorDay?.notes ? priorDay.schedule_date : undefined,
       isMeeting: Boolean(scheduleDay?.is_meeting),
       meetingTime: scheduleDay?.meeting_time ?? null,
       hasOutboundInvoice: outboundInvoiceProjectIds?.has(projectId) ?? false,
