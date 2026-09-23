@@ -14,10 +14,11 @@ import {
 } from "@/lib/db";
 import { listOfficeUsersCached } from "@/lib/request-cache";
 import { Card, PageHeader, Button, EmptyState } from "@/components/ui";
-import { buildScheduleJobRows } from "@/lib/schedule";
+import { buildScheduleJobRows, scheduleNoteDate } from "@/lib/schedule";
 import { addDays, dayLabel, formatDateLong, formatDateShort, isoDate, startOfWeek, todayIso } from "@/lib/dates";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { PrintButton } from "@/components/PrintButton";
+import { ListSearchBox } from "@/components/ListSearchBox";
 import { formatJobNumber } from "@/lib/calculations";
 import { requireSectionAccess } from "@/lib/permissions";
 import { AccessDenied } from "@/components/AccessDenied";
@@ -35,12 +36,12 @@ import { addWeeklyReviewNoteAction } from "./actions";
  * the job is done and nobody's sent it yet. Sits under Schedule in the nav
  * per the client's ask.
  */
-export default async function FridayReviewPage({ searchParams }: { searchParams: Promise<{ week?: string; assignee?: string }> }) {
+export default async function FridayReviewPage({ searchParams }: { searchParams: Promise<{ week?: string; assignee?: string; q?: string }> }) {
   const access = await requireSectionAccess("schedule");
   if (access === "none") return <AccessDenied section="Schedule" />;
   const canEditSchedule = access === "edit";
 
-  const { week, assignee } = await searchParams;
+  const { week, assignee, q = "" } = await searchParams;
   const monday = startOfWeek(week ? new Date(week + "T00:00:00") : new Date());
   const weekDates = Array.from({ length: 7 }, (_, i) => isoDate(addDays(monday, i)));
   const thisWeek = isoDate(startOfWeek(new Date(todayIso() + "T00:00:00")));
@@ -114,21 +115,31 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
 
   // Filter down to one invoice assignee (or Unassigned) for printing just
   // that person's list — see AssigneeFilterSelect.
-  const entries = !assignee
+  const byAssignee = !assignee
     ? allEntries
     : assignee === "unassigned"
       ? allEntries.filter((e) => !e.project.invoice_assigned_to)
       : allEntries.filter((e) => e.project.invoice_assigned_to === assignee);
 
-  // Notes created during this specific week, per job — older history stays
-  // on the job page's own Notes section rather than cluttering this review.
+  // Search box: job number, building/unit, address, or management company.
+  const needle = q.trim().toLowerCase();
+  const entries = !needle
+    ? byAssignee
+    : byAssignee.filter((e) =>
+        [String(e.jobNumber), e.jobLabel, e.buildingName, e.address, e.clientName].filter(Boolean).join(" ").toLowerCase().includes(needle)
+      );
+
+  // Notes ABOUT this specific week, per job (by the schedule date they're
+  // for, not necessarily when they were saved — see scheduleNoteDate).
+  // Older history stays on the job page's own Notes section rather than
+  // cluttering this review.
   const notesByProject = new Map<string, ProjectNote[]>();
   for (const n of allNotes) {
     if (!byProject.has(n.project_id)) continue;
-    if (!weekDates.includes(n.created_at.slice(0, 10))) continue;
+    if (!weekDates.includes(scheduleNoteDate(n))) continue;
     notesByProject.set(n.project_id, [...(notesByProject.get(n.project_id) ?? []), n]);
   }
-  for (const list of notesByProject.values()) list.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  for (const list of notesByProject.values()) list.sort((a, b) => scheduleNoteDate(a).localeCompare(scheduleNoteDate(b)));
 
   // Property manager -> building -> jobs.
   const clientGroups = new Map<string, Map<string, Entry[]>>();
@@ -150,10 +161,26 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
       />
       <ScheduleSubNav active="friday-review" />
 
+      <ListSearchBox
+        action="/schedule/friday-review"
+        q={q}
+        placeholder="Search jobs by number, building, address, or company…"
+        extraParams={{ week, assignee }}
+        className="no-print"
+      />
+
       <div className="flex flex-wrap items-center gap-2 mb-4 no-print">
-        <Link href={`/schedule/friday-review?week=${isoDate(addDays(monday, -7))}`}><Button variant="secondary">← Prev Week</Button></Link>
-        <Link href={`/schedule/friday-review?week=${thisWeek}`}><Button variant="secondary">This Week</Button></Link>
-        <Link href={`/schedule/friday-review?week=${isoDate(addDays(monday, 7))}`}><Button variant="secondary">Next Week →</Button></Link>
+        {(() => {
+          const kept = { ...(assignee ? { assignee } : {}), ...(q ? { q } : {}) };
+          const weekHref = (w: string) => `/schedule/friday-review?${new URLSearchParams({ week: w, ...kept }).toString()}`;
+          return (
+            <>
+              <Link href={weekHref(isoDate(addDays(monday, -7)))}><Button variant="secondary">← Prev Week</Button></Link>
+              <Link href={weekHref(thisWeek)}><Button variant="secondary">This Week</Button></Link>
+              <Link href={weekHref(isoDate(addDays(monday, 7)))}><Button variant="secondary">Next Week →</Button></Link>
+            </>
+          );
+        })()}
         <div className="ml-2 font-medium text-slate-900">Week of {formatDateShort(weekDates[0])} – {formatDateShort(weekDates[6])}</div>
         <div className="flex items-center gap-1.5 no-print">
           <span className="text-xs text-slate-500">Invoicing assigned to</span>
@@ -245,12 +272,17 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
                                 <p className="text-xs text-slate-400 mb-2">No notes logged yet this week.</p>
                               ) : (
                                 <div className="space-y-2 mb-3">
-                                  {notes.map((n) => (
-                                    <div key={n.id} className="text-sm border-l-2 border-slate-200 pl-3">
-                                      <div className="text-slate-700">{n.body}</div>
-                                      <div className="text-xs text-slate-400 mt-0.5">{n.author_name} · {formatDateLong(n.created_at.slice(0, 10))}</div>
-                                    </div>
-                                  ))}
+                                  {notes.map((n) => {
+                                    const isScheduleNote = n.author_name?.startsWith("Schedule Note (");
+                                    return (
+                                      <div key={n.id} className="text-sm border-l-2 border-slate-200 pl-3">
+                                        <div className="text-slate-700">{n.body}</div>
+                                        <div className="text-xs text-slate-400 mt-0.5">
+                                          {isScheduleNote ? "From the schedule" : n.author_name} · {formatDateLong(scheduleNoteDate(n))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
                               {canEditSchedule && (

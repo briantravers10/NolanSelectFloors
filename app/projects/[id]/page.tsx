@@ -43,6 +43,7 @@ import {
   formatPercent,
 } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
+import { scheduleNoteDate } from "@/lib/schedule";
 import { PIPELINE_STAGES } from "@/lib/types";
 import {
   deleteCrewRequirementAction,
@@ -514,12 +515,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <EmptyState message="No notes yet." />
             ) : (
               <div className="space-y-2.5">
-                {projectNotes.map((n) => (
-                  <div key={n.id} className="text-sm border-l-2 border-slate-200 pl-3">
-                    <div className="text-slate-700">{n.body}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{n.author_name} · {formatDateLong(n.created_at.slice(0, 10))}</div>
-                  </div>
-                ))}
+                {projectNotes.map((n) => {
+                  const isScheduleNote = n.author_name?.startsWith("Schedule Note (");
+                  return (
+                    <div key={n.id} className="text-sm border-l-2 border-slate-200 pl-3">
+                      <div className="text-slate-700">{n.body}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        {isScheduleNote ? "From the schedule" : n.author_name} · {formatDateLong(scheduleNoteDate(n))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Card>

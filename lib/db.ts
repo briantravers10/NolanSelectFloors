@@ -11,7 +11,7 @@ import { randomUUID } from "crypto";
 import { getSupabaseClient } from "./supabaseClient";
 import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
-import { mapJobStatusToPipelineStage } from "./schedule";
+import { mapJobStatusToPipelineStage, scheduleNoteMarker } from "./schedule";
 import { isEmployeeOffOn } from "./time-off";
 import { weekdayAbbrev } from "./dates";
 import type {
@@ -2903,7 +2903,7 @@ export async function convertLeadToClient(leadId: string): Promise<ClientCompany
  * appending again, since a day's note is genuinely a single mutable value).
  */
 export async function upsertScheduleDayNote(projectId: string, date: string, body: string): Promise<void> {
-  const marker = `Schedule Note (${date})`;
+  const marker = scheduleNoteMarker(date);
   const trimmed = body.trim();
   const client = sb();
   if (client) {

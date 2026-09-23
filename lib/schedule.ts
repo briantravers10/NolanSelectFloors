@@ -420,6 +420,32 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
 }
 
 // ---------------------------------------------------------------------
+// SCHEDULE NOTE MARKER — the author_name convention lib/db.ts#upsertScheduleDayNote
+// uses to mirror a schedule day's note into project_notes, identifiable by
+// (project, date) rather than by author. Defined here (not lib/db.ts) so it
+// can be shared with anything reading project_notes without a circular
+// import (lib/db.ts already imports from this file).
+// ---------------------------------------------------------------------
+
+const SCHEDULE_NOTE_MARKER = /^Schedule Note \((\d{4}-\d{2}-\d{2})\)$/;
+
+export function scheduleNoteMarker(date: string): string {
+  return `Schedule Note (${date})`;
+}
+
+/**
+ * The date a note is actually ABOUT: parsed from the schedule-note marker
+ * when present, else its save date. A note is often written the evening
+ * before its schedule date (prepping tomorrow's jobs before leaving) — its
+ * created_at would be the wrong day for filtering/display in Weekly Review
+ * without this.
+ */
+export function scheduleNoteDate(note: { author_name?: string; created_at: string }): string {
+  const m = note.author_name?.match(SCHEDULE_NOTE_MARKER);
+  return m ? m[1] : note.created_at.slice(0, 10);
+}
+
+// ---------------------------------------------------------------------
 // CHANGE HISTORY — which activity_log actions count as "schedule" activity
 // for the Schedule section's Change History / Activity view, so it doesn't
 // show the whole app's unrelated activity log (bids, invoices, etc).
