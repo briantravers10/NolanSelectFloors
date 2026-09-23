@@ -147,6 +147,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const outboundInvoiceUrls = new Map(outboundInvoiceUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
   const drawingUrls = new Map(drawingUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
   const invoiceUrls = new Map(invoiceUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
+  // Change orders share the same table/storage as outbound invoices, but
+  // are filed and shown separately so they never look like "the" invoice.
+  const changeOrders = outboundInvoices.filter((inv) => inv.document_type === "change_order");
+  const invoicesOnly = outboundInvoices.filter((inv) => inv.document_type !== "change_order");
 
   const building = buildings.find((b) => b.id === project.building_id);
   const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
@@ -580,12 +584,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <p className="text-xs text-slate-500 mb-3">
               Filed from Email Inbox as an Outbound Invoice. The newest one is the current invoice (the &ldquo;Invoice&rdquo; quick link on the schedule opens it); earlier ones stay here as history.
             </p>
-            {outboundInvoices.length === 0 ? (
+            {invoicesOnly.length === 0 ? (
               <EmptyState message="No invoice sent yet. Forward the invoice email to the office inbox and file it as an Outbound Invoice on this job." />
             ) : (
               <table className="w-full text-sm">
                 <tbody>
-                  {outboundInvoices.map((inv) => {
+                  {invoicesOnly.map((inv) => {
                     const url = outboundInvoiceUrls.get(inv.id);
                     return (
                       <tr key={inv.id} className={`border-b border-slate-100 last:border-0 ${inv.is_current ? "" : "text-slate-500"}`}>
@@ -609,6 +613,46 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                           <td className="py-2 text-right w-8">
                             <form action={deleteOutboundInvoiceAction.bind(null, project.id, inv.id)}>
                               <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove this invoice" title="Remove">✕</button>
+                            </form>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Change Orders (Outbound)</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Filed from Email Inbox as a Change Order (Outbound). Kept separate from the invoice above — none of these ever become the job&apos;s current invoice.
+            </p>
+            {changeOrders.length === 0 ? (
+              <EmptyState message="No change orders sent yet. Forward the email to the office inbox and file it as a Change Order (Outbound) on this job." />
+            ) : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {changeOrders.map((co) => {
+                    const url = outboundInvoiceUrls.get(co.id);
+                    return (
+                      <tr key={co.id} className="border-b border-slate-100 last:border-0">
+                        <td className="py-2 pr-2 w-28 text-xs">{formatDateLong((co.invoice_date ?? co.created_at).slice(0, 10))}</td>
+                        <td className="py-2 pr-2">
+                          {url ? (
+                            <a href={url} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline font-medium">{co.file_name ?? co.notes ?? "Change order"}</a>
+                          ) : (
+                            <span className="font-medium">{co.file_name ?? co.notes ?? "Change order"}</span>
+                          )}
+                          {co.invoice_number && <span className="ml-2 text-xs text-slate-500">#{co.invoice_number}</span>}
+                          {co.uploaded_by && <div className="text-[11px] text-slate-400">filed by {co.uploaded_by}</div>}
+                        </td>
+                        <td className="py-2 pr-2 text-right font-semibold tabular-nums">{co.amount != null ? formatCurrency(co.amount) : "—"}</td>
+                        {canEditProjects && (
+                          <td className="py-2 text-right w-8">
+                            <form action={deleteOutboundInvoiceAction.bind(null, project.id, co.id)}>
+                              <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove this change order" title="Remove">✕</button>
                             </form>
                           </td>
                         )}

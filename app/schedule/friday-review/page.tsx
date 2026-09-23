@@ -88,6 +88,11 @@ export default async function FridayReviewPage({ searchParams }: { searchParams:
   for (const date of weekDates) {
     for (const row of buildScheduleJobRows(date, input)) {
       if (row.weekendOff) continue;
+      // Meetings aren't jobs — they never need invoicing or job notes here.
+      // They stay tracked in the Meetings tab/history instead of cluttering
+      // this review (or a completed meeting-only entry falsely flagging
+      // "Needs Invoice").
+      if (row.isMeeting) continue;
       const building = buildings.find((b) => b.id === row.project.building_id);
       const e = byProject.get(row.projectId) ?? {
         projectId: row.projectId,

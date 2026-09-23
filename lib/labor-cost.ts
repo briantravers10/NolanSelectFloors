@@ -9,7 +9,7 @@
 // Nothing here reads an employee's CURRENT rate — that would violate
 // Historical Pay Rate Accuracy (a later raise must never change an old
 // job's calculated cost).
-import type { ActualLaborEntry, Employee, PayType, Project } from "./types";
+import type { ActualLaborEntry, Employee, PayType, Project, ScheduleAssignment } from "./types";
 import { round2 } from "./calculations";
 
 // ---------------------------------------------------------------------
@@ -145,6 +145,24 @@ export function dayLaborCostTotal(date: string, entries: ActualLaborEntry[]): nu
   const dayEntries = entries.filter((e) => e.work_date === date);
   const costByEntry = laborCostByEntryId(dayEntries);
   return round2(dayEntries.reduce((sum, e) => sum + (costByEntry.get(e.id) ?? 0), 0));
+}
+
+/**
+ * What today's crew is PLANNED to cost, straight from the schedule
+ * (schedule_assignments.assignment_cost) — a comparison figure for
+ * dayLaborCostTotal above, which only counts what's been explicitly
+ * confirmed via End of Day Review and so reads low until that's done for
+ * every job. Same one-day-rate-per-person rule as lib/payroll.ts's
+ * schedule fallback: a double-booked person is paid once, so their highest
+ * single assignment cost counts, never the sum.
+ */
+export function dayPlannedLaborCostTotal(date: string, assignments: ScheduleAssignment[]): number {
+  const maxByEmployee = new Map<string, number>();
+  for (const a of assignments) {
+    if (a.schedule_date !== date) continue;
+    maxByEmployee.set(a.employee_id, Math.max(maxByEmployee.get(a.employee_id) ?? 0, a.assignment_cost));
+  }
+  return round2([...maxByEmployee.values()].reduce((sum, c) => sum + c, 0));
 }
 
 // ---------------------------------------------------------------------

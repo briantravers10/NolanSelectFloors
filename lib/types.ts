@@ -1172,13 +1172,17 @@ export const UNASSIGNED_CLIENT_NAME = "Unassigned — add management company lat
 // otherwise held in the Unfiled tray at /inbox.
 // ---------------------------------------------------------------------
 // invoice = inbound (a supplier billing us); outbound_invoice = one we
-// sent the customer; purchase_order = a PO from a customer; bid = a
-// potential job worth pricing.
-export type InboundKind = "drawing" | "invoice" | "outbound_invoice" | "purchase_order" | "bid" | "coi" | "unknown";
+// sent the customer; change_order_outbound = a change order we sent the
+// customer (kept separate from outbound_invoice so it never becomes "the
+// current invoice" the schedule's Invoice quick link opens — see
+// lib/db.ts#createProjectOutboundInvoice's document_type); purchase_order =
+// a PO from a customer; bid = a potential job worth pricing.
+export type InboundKind = "drawing" | "invoice" | "outbound_invoice" | "change_order_outbound" | "purchase_order" | "bid" | "coi" | "unknown";
 export const INBOUND_KIND_LABELS: Record<InboundKind, string> = {
   drawing: "Drawing",
   invoice: "Inbound Invoice",
   outbound_invoice: "Outbound Invoice",
+  change_order_outbound: "Change Order (Outbound)",
   purchase_order: "Purchase Order",
   bid: "Potential Bid",
   coi: "COI",
@@ -1239,4 +1243,7 @@ export interface ProjectOutboundInvoice {
   uploaded_by?: string | null;
   notes?: string | null;
   created_at: string;
+  // 'change_order' rows never participate in is_current/the Invoice quick
+  // link — see lib/db.ts#createProjectOutboundInvoice.
+  document_type: "invoice" | "change_order";
 }

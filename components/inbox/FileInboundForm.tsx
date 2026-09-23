@@ -11,7 +11,7 @@ export interface InboxJobOption {
 
 /** "Estimate Sent" isn't a stored kind — the server files it as a
  * Potential Bid already marked "Quoted — waiting" against the chosen job. */
-export type FileKind = "drawing" | "invoice" | "outbound_invoice" | "purchase_order" | "bid" | "estimate_sent" | "coi";
+export type FileKind = "drawing" | "invoice" | "outbound_invoice" | "change_order_outbound" | "purchase_order" | "bid" | "estimate_sent" | "coi";
 
 /**
  * Filing form on an email. What it becomes:
@@ -21,6 +21,9 @@ export type FileKind = "drawing" | "invoice" | "outbound_invoice" | "purchase_or
  *    here — a bill isn't scheduled work, just an invoiced date.
  *  - Outbound Invoice (one we sent the customer) → the job's current
  *    invoice; the previous one moves to history
+ *  - Change Order (Outbound) → the job's Change Orders history — kept
+ *    separate from Outbound Invoice so it never becomes "the" invoice the
+ *    schedule's Invoice quick link opens
  *  - Purchase Order → the Purchase Orders section, linked to the job
  *  - Potential Bid → the Bids section
  *  - Estimate Sent → the Bids section too, already marked "Quoted —
@@ -52,7 +55,7 @@ export function FileInboundForm({
   submitLabel?: string;
 }) {
   const input = "rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm w-full";
-  const needsJob = kind === "drawing" || kind === "coi" || kind === "outbound_invoice" || kind === "purchase_order" || kind === "estimate_sent";
+  const needsJob = kind === "drawing" || kind === "coi" || kind === "outbound_invoice" || kind === "change_order_outbound" || kind === "purchase_order" || kind === "estimate_sent";
   const jobOptional = kind === "invoice" || kind === "bid";
 
   return (
@@ -61,6 +64,7 @@ export function FileInboundForm({
         <option value="drawing">File as Drawing</option>
         <option value="invoice">File as Inbound Invoice (a supplier billing us)</option>
         <option value="outbound_invoice">File as Outbound Invoice (sent to the customer)</option>
+        <option value="change_order_outbound">File as Change Order (Outbound, sent to the customer)</option>
         <option value="purchase_order">File as Purchase Order</option>
         <option value="bid">File as Potential Bid</option>
         <option value="estimate_sent">File as Estimate Sent — marks a bid Quoted</option>
@@ -108,6 +112,23 @@ export function FileInboundForm({
         </div>
       )}
 
+      {kind === "change_order_outbound" && (
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="block text-[11px] text-slate-500 uppercase mb-0.5">CO #</label>
+            <input name="invoice_number" placeholder="optional" className={input} />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Amount</label>
+            <input name="amount" type="number" step="0.01" min="0" placeholder="0.00" className={input} />
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Sent date</label>
+            <input name="invoice_date" type="date" defaultValue={defaultDate} className={input} />
+          </div>
+        </div>
+      )}
+
       {kind === "estimate_sent" && (
         <div>
           <label className="block text-[11px] text-slate-500 uppercase mb-0.5">Estimate amount <span className="normal-case text-slate-400">(optional)</span></label>
@@ -133,6 +154,9 @@ export function FileInboundForm({
         )}
         {kind === "outbound_invoice" && (
           <div className="text-[11px] text-slate-500 mt-1">Becomes the job&apos;s current invoice, with an “Invoice” quick link on its schedule tile. Any earlier one stays in the job&apos;s history.</div>
+        )}
+        {kind === "change_order_outbound" && (
+          <div className="text-[11px] text-slate-500 mt-1">Filed under the job&apos;s Change Orders history — separate from Outbound Invoice, so it never becomes the invoice the schedule&apos;s quick link opens.</div>
         )}
         {kind === "purchase_order" && (
           <div className="text-[11px] text-slate-500 mt-1">Listed under Purchase Orders with a link to the job. Don&apos;t see the job? Create it with “New job from this email” below first.</div>

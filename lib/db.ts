@@ -1594,7 +1594,8 @@ export async function setOfficeWorkingDay(employeeId: string, workDate: string, 
 }
 
 // In-memory fallback for office_working_defaults_seeded when Supabase isn't
-// configured — see seededDriverDefaultDatesFallback above.
+// configured — see seededDriverDefaultDatesFallback above. Keyed per
+// (company, date, employee) — see the doc comment below for why.
 const seededOfficeDefaultDatesFallback = new Set<string>();
 
 /**
@@ -1602,34 +1603,45 @@ const seededOfficeDefaultDatesFallback = new Set<string>();
  * workdays (Employee.office_workdays), unlike Drivers Working Today which
  * assumes everyone by default — an office person with no workdays set yet
  * gets no auto-check, just a manual checkbox, until that's filled in on
- * their staff profile. Called once per date, the first time that day's
- * schedule is viewed with edit access; recorded in
- * office_working_defaults_seeded so an explicit uncheck sticks and isn't
- * silently re-created on the next load.
+ * their staff profile.
+ *
+ * Seeded PER (date, employee), not once for the whole date: with everyone
+ * sharing one typical-workdays profile, seeding once per date would mean
+ * setting someone's typical days up AFTER the date was first viewed could
+ * never auto-check them for that date. Evaluating per employee instead
+ * self-heals as workdays get configured throughout the day, while still
+ * recording a marker the moment someone IS auto-checked so a deliberate
+ * uncheck afterward sticks and isn't silently re-created on the next load.
  */
 export async function ensureOfficeWorkingDefaults(date: string, actorName: string): Promise<void> {
   const companyId = getCurrentCompanyId();
   const client = sb();
-
-  if (client) {
-    const { data: existing, error: findError } = await client
-      .from("office_working_defaults_seeded")
-      .select("work_date")
-      .eq("company_id", companyId)
-      .eq("work_date", date)
-      .maybeSingle();
-    if (!findError && existing) return;
-  } else {
-    if (seededOfficeDefaultDatesFallback.has(`${companyId}__${date}`)) return;
-  }
-
   const todayAbbrev = weekdayAbbrev(date);
+
   const [employees, dayEntries, timeOffEntries] = await Promise.all([listEmployees(), listActualLaborEntriesForDate(date), listTimeOffEntries()]);
   const alreadyCovered = new Set(dayEntries.map((e) => e.employee_id));
-  const officeStaff = employees.filter(
+  const candidates = employees.filter(
     (e) => e.is_office && e.active && !alreadyCovered.has(e.id) && (e.office_workdays ?? []).includes(todayAbbrev) && !isEmployeeOffOn(timeOffEntries, e.id, date)
   );
-  for (const person of officeStaff) {
+  if (candidates.length === 0) return;
+
+  let alreadySeeded: Set<string>;
+  if (client) {
+    const { data, error } = await client
+      .from("office_working_defaults_seeded")
+      .select("employee_id")
+      .eq("company_id", companyId)
+      .eq("work_date", date)
+      .in("employee_id", candidates.map((e) => e.id));
+    alreadySeeded = new Set(!error && data ? data.map((r) => r.employee_id as string) : []);
+  } else {
+    alreadySeeded = new Set(
+      [...seededOfficeDefaultDatesFallback].filter((k) => k.startsWith(`${companyId}__${date}__`)).map((k) => k.slice(`${companyId}__${date}__`.length))
+    );
+  }
+
+  for (const person of candidates) {
+    if (alreadySeeded.has(person.id)) continue;
     await createActualLaborEntry({
       employee_id: person.id,
       project_id: null,
@@ -1638,13 +1650,12 @@ export async function ensureOfficeWorkingDefaults(date: string, actorName: strin
       notes: "Office working day (no job assigned) — auto-selected from typical workdays",
       actorName,
     });
-  }
-
-  if (client) {
-    const { error } = await client.from("office_working_defaults_seeded").insert({ company_id: companyId, work_date: date });
-    if (error && error.code !== "23505") throw error; // 23505 = already seeded by a concurrent request; harmless
-  } else {
-    seededOfficeDefaultDatesFallback.add(`${companyId}__${date}`);
+    if (client) {
+      const { error } = await client.from("office_working_defaults_seeded").insert({ company_id: companyId, work_date: date, employee_id: person.id });
+      if (error && error.code !== "23505") throw error; // 23505 = already seeded by a concurrent request; harmless
+    } else {
+      seededOfficeDefaultDatesFallback.add(`${companyId}__${date}__${person.id}`);
+    }
   }
 }
 
@@ -3880,25 +3891,37 @@ export async function listProjectOutboundInvoices(options?: { projectId?: string
   return options?.projectId ? all.filter((i) => i.project_id === options.projectId) : all;
 }
 
+/**
+ * A change order (document_type "change_order") is filed exactly like an
+ * outbound invoice — same table, storage and signed-url plumbing — but
+ * NEVER touches is_current: it doesn't demote the current invoice, and
+ * never becomes "the current invoice" itself. Only "invoice" rows drive
+ * the project page's Current/Replaced badges and the schedule's Invoice
+ * quick link (app/projects/[id]/invoice/route.ts).
+ */
 export async function createProjectOutboundInvoice(input: Omit<ProjectOutboundInvoice, "id" | "company_id" | "created_at" | "is_current">): Promise<ProjectOutboundInvoice> {
-  const record: ProjectOutboundInvoice = { id: randomUUID(), company_id: getCurrentCompanyId(), created_at: new Date().toISOString(), is_current: true, ...input };
+  const isInvoice = input.document_type === "invoice";
+  const record: ProjectOutboundInvoice = { id: randomUUID(), company_id: getCurrentCompanyId(), created_at: new Date().toISOString(), is_current: isInvoice, ...input };
   const client = sb();
   if (client) {
-    // The new one replaces the current one; older ones stay as history.
-    const { error: e1 } = await client.from("project_outbound_invoices").update({ is_current: false }).eq("project_id", input.project_id).eq("is_current", true);
-    if (e1) throw e1;
+    // The new invoice replaces the current one; older ones stay as history.
+    // A change order never demotes anything.
+    if (isInvoice) {
+      const { error: e1 } = await client.from("project_outbound_invoices").update({ is_current: false }).eq("project_id", input.project_id).eq("is_current", true);
+      if (e1) throw e1;
+    }
     const { error } = await client.from("project_outbound_invoices").insert(record);
     if (error) throw error;
   } else {
-    for (const r of getStore().projectOutboundInvoices) if (r.project_id === input.project_id) r.is_current = false;
+    if (isInvoice) for (const r of getStore().projectOutboundInvoices) if (r.project_id === input.project_id) r.is_current = false;
     getStore().projectOutboundInvoices.push(record);
   }
   logActivity({
-    action: "Outbound invoice filed",
+    action: isInvoice ? "Outbound invoice filed" : "Change order (outbound) filed",
     related_type: "project",
     related_id: input.project_id,
     actor_name: input.uploaded_by ?? undefined,
-    detail: `${input.file_name ?? input.notes ?? "Invoice"}${input.amount != null ? ` — $${input.amount}` : ""}${input.invoice_number ? ` (#${input.invoice_number})` : ""} — now the current invoice for this job`,
+    detail: `${input.file_name ?? input.notes ?? (isInvoice ? "Invoice" : "Change order")}${input.amount != null ? ` — $${input.amount}` : ""}${input.invoice_number ? ` (#${input.invoice_number})` : ""}${isInvoice ? " — now the current invoice for this job" : ""}`,
   });
   return record;
 }
@@ -3916,9 +3939,12 @@ export async function deleteProjectOutboundInvoice(id: string, actorName: string
     const idx = store.findIndex((r) => r.id === id);
     if (idx >= 0) store.splice(idx, 1);
   }
-  // If the current one was removed, the newest remaining one becomes current.
+  // If the current invoice was removed, the newest remaining INVOICE (never
+  // a change order) becomes current.
   if (target.is_current) {
-    const next = all.filter((r) => r.project_id === target.project_id && r.id !== id).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const next = all
+      .filter((r) => r.project_id === target.project_id && r.id !== id && r.document_type === "invoice")
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
     if (next) {
       if (client) {
         const { error } = await client.from("project_outbound_invoices").update({ is_current: true }).eq("id", next.id);
@@ -3929,7 +3955,13 @@ export async function deleteProjectOutboundInvoice(id: string, actorName: string
       }
     }
   }
-  logActivity({ action: "Outbound invoice removed", related_type: "project", related_id: target.project_id, actor_name: actorName, detail: target.file_name ?? target.notes ?? "Invoice" });
+  logActivity({
+    action: target.document_type === "invoice" ? "Outbound invoice removed" : "Change order (outbound) removed",
+    related_type: "project",
+    related_id: target.project_id,
+    actor_name: actorName,
+    detail: target.file_name ?? target.notes ?? "Invoice",
+  });
 }
 
 /**
@@ -3982,6 +4014,22 @@ export async function fileInboundEmail(id: string, opts: FileInboundOptions, act
       source_email_id: id,
       uploaded_by: actorName,
       notes: label,
+      document_type: "invoice",
+    });
+  } else if (opts.kind === "change_order_outbound") {
+    if (!projectId) throw new Error("A change order needs a job to file it on");
+    const file = attachments[0];
+    await createProjectOutboundInvoice({
+      project_id: projectId,
+      file_reference: file ? `inbound-email:${file.storage_path}` : null,
+      file_name: file?.filename ?? null,
+      amount: opts.amount != null && Number.isFinite(opts.amount) ? Math.round(opts.amount * 100) / 100 : null,
+      invoice_number: opts.invoiceNumber?.trim() || null,
+      invoice_date: opts.invoiceDate || null,
+      source_email_id: id,
+      uploaded_by: actorName,
+      notes: label,
+      document_type: "change_order",
     });
   } else if (opts.kind === "purchase_order") {
     if (!projectId) throw new Error("A purchase order needs a job to file it on");
@@ -4007,6 +4055,7 @@ export async function fileInboundEmail(id: string, opts: FileInboundOptions, act
   const kindLabel: Record<string, string> = {
     invoice: "Invoice filed from email",
     outbound_invoice: "Outbound invoice filed from email",
+    change_order_outbound: "Change order (outbound) filed from email",
     purchase_order: "Purchase order filed from email",
     bid: "Potential bid filed from email",
     coi: "COI filed from email",

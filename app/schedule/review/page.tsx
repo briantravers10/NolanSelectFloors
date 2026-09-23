@@ -17,14 +17,16 @@ import {
 } from "@/lib/db";
 import { Card, PageHeader, Button, Stat } from "@/components/ui";
 import { buildScheduleJobRows } from "@/lib/schedule";
-import { dayLaborCostTotal } from "@/lib/labor-cost";
+import { dayLaborCostTotal, dayPlannedLaborCostTotal } from "@/lib/labor-cost";
 import { canViewLaborCost, getActingUser } from "@/lib/current-user";
 import { formatCurrency } from "@/lib/calculations";
 import { addDays, dayLabel, formatDateShort, isoDate, todayIso } from "@/lib/dates";
+import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
 import { ScheduleSubNav } from "@/components/schedule/ScheduleSubNav";
 import { JobReviewCard } from "@/components/schedule/JobReviewCard";
 import { AgendaDoneToggle } from "@/components/agenda/AgendaDoneToggle";
 import { ConfirmDayForm } from "@/components/schedule/ConfirmDayForm";
+import { QuickJobForm } from "@/components/schedule/QuickJobForm";
 
 export default async function ReviewPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
   const { date: dateParam } = await searchParams;
@@ -67,23 +69,44 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const confirmation = confirmations.find((c) => c.work_date === date);
   const canViewCost = canViewLaborCost(actingUser);
   const dayCost = dayLaborCostTotal(date, actualLaborEntries);
+  const plannedCost = dayPlannedLaborCostTotal(date, assignments);
+
+  const clientById = new Map(clients.map((c) => [c.id, c]));
+  const quickBuildings = buildings
+    .filter((b) => b.active)
+    .map((b) => ({ name: b.name, clientName: clientById.get(b.client_company_id)?.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const quickClients = clients.filter((c) => c.name !== UNASSIGNED_CLIENT_NAME).map((c) => ({ name: c.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const quickContacts = contacts
+    .map((c) => ({ name: `${c.first_name} ${c.last_name}`.trim(), clientName: c.client_company_id ? clientById.get(c.client_company_id)?.name : undefined }))
+    .filter((c) => c.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div>
       <PageHeader title="End of Day Review" subtitle="Confirm who worked, how many hours, and note any schedule changes." />
       <ScheduleSubNav active="review" />
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         <Link href={`/schedule/review?date=${isoDate(addDays(new Date(date + "T00:00:00"), -1))}`}><Button variant="secondary">← Prev Day</Button></Link>
         <Link href={`/schedule/review?date=${today}`}><Button variant="secondary">Today</Button></Link>
         <Link href={`/schedule/review?date=${isoDate(addDays(new Date(date + "T00:00:00"), 1))}`}><Button variant="secondary">Next Day →</Button></Link>
         <div className="ml-2 font-medium text-slate-900">{dayLabel(date)} <span className="text-slate-400 font-normal">{formatDateShort(date)}</span></div>
+        <div className="ml-auto">
+          <QuickJobForm date={date} buildings={quickBuildings} clients={quickClients} contacts={quickContacts} />
+        </div>
       </div>
 
       {canViewCost && (
-        <div className="mb-4 max-w-xs">
+        <div className="mb-4 flex flex-wrap gap-3">
           <Stat label="Total Labor Cost — This Day (Actual)" value={formatCurrency(dayCost)} />
+          <Stat label="Planned From Schedule (Estimate)" value={formatCurrency(plannedCost)} />
         </div>
+      )}
+      {canViewCost && dayCost < plannedCost && (
+        <p className="text-xs text-slate-500 -mt-3 mb-4">
+          Actual only counts hours confirmed below for each job — it rises as you fill in &quot;who worked&quot; and Save hours. Planned is what today&apos;s scheduled crew would cost if nothing changes.
+        </p>
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">

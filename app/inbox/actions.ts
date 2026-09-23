@@ -7,8 +7,8 @@ import { canEdit } from "@/lib/permissions";
 import { resolveQuickJobBuilding } from "@/lib/quick-job";
 import { BID_EMAIL_STATUSES, type BidEmailStatus, type InboundKind } from "@/lib/types";
 
-const FILE_KINDS: InboundKind[] = ["drawing", "invoice", "outbound_invoice", "purchase_order", "bid", "coi"];
-const NEEDS_JOB: InboundKind[] = ["drawing", "coi", "outbound_invoice", "purchase_order"];
+const FILE_KINDS: InboundKind[] = ["drawing", "invoice", "outbound_invoice", "change_order_outbound", "purchase_order", "bid", "coi"];
+const NEEDS_JOB: InboundKind[] = ["drawing", "coi", "outbound_invoice", "change_order_outbound", "purchase_order"];
 
 function refresh(projectId?: string | null) {
   revalidatePath("/inbox");
