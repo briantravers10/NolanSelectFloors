@@ -12,13 +12,15 @@ import {
   listTimeOffEntries,
   getLatestInboundEmailReceivedAt,
   listProjectScheduleDays,
+  listActualLaborEntriesForDate,
 } from "./db";
-import { projectDisplayName } from "./calculations";
+import { projectDisplayName, round2 } from "./calculations";
 import { getTimeOffForDate, isEmployeeOffOn } from "./time-off";
 import {
   compareCrewForProjectDate,
   summarizeDay,
 } from "./calculations";
+import { laborCostByEntryId } from "./labor-cost";
 import { addDays, isoDate, todayIso } from "./dates";
 import type { Employee, MaterialStatus, Project } from "./types";
 
@@ -69,6 +71,7 @@ export async function getDashboardData() {
     timeOffEntries,
     latestInboundReceivedAt,
     scheduleDays,
+    todaysActualLaborEntries,
   ] = await Promise.all([
     listBuildings(),
     listClientCompanies(),
@@ -83,6 +86,7 @@ export async function getDashboardData() {
     listTimeOffEntries(),
     getLatestInboundEmailReceivedAt(),
     listProjectScheduleDays(),
+    listActualLaborEntriesForDate(today),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -131,8 +135,19 @@ export async function getDashboardData() {
     .filter((x): x is TodayJobRow => x !== null)
     .sort((a, b) => a.buildingName.localeCompare(b.buildingName));
 
-  const totalManCount = todaysJobs.reduce((sum, j) => sum + j.manCount, 0);
-  const totalLaborCost = todaysJobs.reduce((sum, j) => sum + j.laborCost, 0);
+  // Drivers/office staff marked "Working" for today (Create/Edit Schedule)
+  // never appear in todaysJobs — they're never on a job's crew list, just a
+  // day rate with no job assignment (actual_labor_entries, project_id
+  // null; see lib/db.ts#setDriverWorkingDay/setOfficeWorkingDay). Still
+  // real headcount and real cost for the day, so they're added in here.
+  const todaysAssignedEmployeeIds = new Set(todaysAssignments.map((a) => a.employee_id));
+  const todaysBaseEntries = todaysActualLaborEntries.filter((e) => e.project_id === null && !todaysAssignedEmployeeIds.has(e.employee_id));
+  const baseEntryCosts = laborCostByEntryId(todaysBaseEntries);
+  const baseManCount = todaysBaseEntries.length;
+  const baseLaborCost = todaysBaseEntries.reduce((sum, e) => sum + (baseEntryCosts.get(e.id) ?? 0), 0);
+
+  const totalManCount = todaysJobs.reduce((sum, j) => sum + j.manCount, 0) + baseManCount;
+  const totalLaborCost = round2(todaysJobs.reduce((sum, j) => sum + j.laborCost, 0) + baseLaborCost);
 
   const activeEmployees = employees.filter((e) => e.active);
   const todaysAvailability = new Map(availability.filter((a) => a.schedule_date === today).map((a) => [a.employee_id, a.status]));

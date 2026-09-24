@@ -129,10 +129,11 @@ export default async function ScheduleEditPage({
   // carried over with a job from an earlier day (not just rows saved on
   // this exact date).
   const assignedIds = new Set(rowsForDate.filter((r) => !r.weekendOff).flatMap((r) => r.crew.map((c) => c.employeeId)));
-  // Office staff are never expected to be on a job's crew list — their
-  // working status for the day is tracked separately above (Office Staff
-  // Working Today), so they'd otherwise always show up here as "free".
-  const fieldEmployees = activeEmployees.filter((e) => !e.is_office);
+  // Office staff and drivers are never on a job's crew list — that's for
+  // site work only. Their working status for the day is tracked separately
+  // above (Office Staff / Drivers Working Today), so they'd otherwise
+  // always show up here as "free".
+  const fieldEmployees = activeEmployees.filter((e) => !e.is_office && !e.is_driver);
   const notOnSchedule = fieldEmployees
     .filter((e) => !assignedIds.has(e.id))
     .map((e) => {
