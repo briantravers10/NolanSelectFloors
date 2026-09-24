@@ -129,7 +129,11 @@ export default async function ScheduleEditPage({
   // carried over with a job from an earlier day (not just rows saved on
   // this exact date).
   const assignedIds = new Set(rowsForDate.filter((r) => !r.weekendOff).flatMap((r) => r.crew.map((c) => c.employeeId)));
-  const notOnSchedule = activeEmployees
+  // Office staff are never expected to be on a job's crew list — their
+  // working status for the day is tracked separately above (Office Staff
+  // Working Today), so they'd otherwise always show up here as "free".
+  const fieldEmployees = activeEmployees.filter((e) => !e.is_office);
+  const notOnSchedule = fieldEmployees
     .filter((e) => !assignedIds.has(e.id))
     .map((e) => {
       const off = isEmployeeOffOn(timeOffEntries, e.id, date);
@@ -326,7 +330,7 @@ export default async function ScheduleEditPage({
         <div className="flex items-baseline justify-between mb-1.5">
           <h2 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Not on the schedule</h2>
           <span className="text-[11px] text-slate-500">
-            {notOnSchedule.length} of {activeEmployees.length} free on {dayLabel(date)}
+            {notOnSchedule.length} of {fieldEmployees.length} free on {dayLabel(date)}
           </span>
         </div>
         {notOnSchedule.length === 0 ? (
