@@ -11,6 +11,8 @@ import {
   listProjects,
   listQuickBooksDocuments,
   listProjectOutboundInvoices,
+  listProjectDrawings,
+  listInboundEmails,
   listScheduleAssignments,
   listSchedulePickupItems,
   listWorkTypes,
@@ -51,7 +53,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   const monthGridDates = Array.from({ length: 42 }, (_, i) => isoDate(addDays(startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1)), i)));
   const maxScheduleDate = view === "day" ? activeDate : view === "week" ? weekDates[weekDates.length - 1] : monthGridDates[monthGridDates.length - 1];
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, qbDocuments, outboundInvoices] = await Promise.all([
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, qbDocuments, outboundInvoices, projectDrawings, inboundEmails] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -64,10 +66,16 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
     listSchedulePickupItems(),
     listQuickBooksDocuments(),
     listProjectOutboundInvoices(),
+    listProjectDrawings(),
+    listInboundEmails(),
   ]);
   const outboundInvoiceProjectIds = new Set(outboundInvoices.filter((i) => i.is_current).map((i) => i.project_id));
+  const drawingProjectIds = new Set(projectDrawings.map((d) => d.project_id));
+  const estimateProjectIds = new Set(
+    inboundEmails.filter((e) => e.filed_kind === "bid").map((e) => e.filed_project_id).filter((id): id is string => Boolean(id))
+  );
 
-  const rowInputs = { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, qbDocuments, outboundInvoiceProjectIds };
+  const rowInputs = { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, qbDocuments, outboundInvoiceProjectIds, drawingProjectIds, estimateProjectIds };
   const rowsByDate = new Map(weekDates.map((d) => [d, buildScheduleJobRows(d, rowInputs)]));
 
   const viewHref = (v: View) => `/schedule?view=${v}&date=${activeDate}`;

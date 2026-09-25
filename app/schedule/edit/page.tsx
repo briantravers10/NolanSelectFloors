@@ -12,6 +12,8 @@ import {
   listTimeOffEntries,
   listWorkTypes,
   listProjectOutboundInvoices,
+  listProjectDrawings,
+  listInboundEmails,
   listActualLaborEntriesForDate,
   ensureDriverWorkingDefaults,
   ensureOfficeWorkingDefaults,
@@ -62,7 +64,7 @@ export default async function ScheduleEditPage({
     await ensureOfficeWorkingDefaults(date, actingUser.fullName);
   }
 
-  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems, outboundInvoices, dayLaborEntries] = await Promise.all([
+  const [projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, timeOffEntries, pickupItems, outboundInvoices, dayLaborEntries, projectDrawings, inboundEmails] = await Promise.all([
     listProjects(),
     listBuildings(),
     listClientCompanies(),
@@ -76,6 +78,8 @@ export default async function ScheduleEditPage({
     listSchedulePickupItems(),
     listProjectOutboundInvoices(),
     listActualLaborEntriesForDate(date),
+    listProjectDrawings(),
+    listInboundEmails(),
   ]);
 
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
@@ -115,7 +119,11 @@ export default async function ScheduleEditPage({
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const outboundInvoiceProjectIds = new Set(outboundInvoices.filter((i) => i.is_current).map((i) => i.project_id));
-  const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, outboundInvoiceProjectIds });
+  const drawingProjectIds = new Set(projectDrawings.map((d) => d.project_id));
+  const estimateProjectIds = new Set(
+    inboundEmails.filter((e) => e.filed_kind === "bid").map((e) => e.filed_project_id).filter((id): id is string => Boolean(id))
+  );
+  const rowsForDate = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems, outboundInvoiceProjectIds, drawingProjectIds, estimateProjectIds });
 
   // Prefill from the row as shown for this date — which, for a job carried
   // over from an earlier day, is that day's entry and crew — so editing a

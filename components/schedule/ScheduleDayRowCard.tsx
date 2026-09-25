@@ -93,6 +93,24 @@ export function ScheduleDayRowCard({ row, editableNotes = false }: { row: Schedu
                   Invoice 📎
                 </a>
               )}
+              {row.hasFiledEstimate && (
+                <Link
+                  href={`/projects/${row.projectId}#estimates`}
+                  title="Open the estimate(s) filed on this job"
+                  className="rounded-md bg-indigo-50 border border-indigo-300 px-2 py-0.5 font-medium text-indigo-800 hover:bg-indigo-100"
+                >
+                  Estimate 📎
+                </Link>
+              )}
+              {row.hasDrawings && (
+                <Link
+                  href={`/projects/${row.projectId}#drawings`}
+                  title="Open the drawings on file for this job"
+                  className="rounded-md bg-sky-50 border border-sky-300 px-2 py-0.5 font-medium text-sky-800 hover:bg-sky-100"
+                >
+                  Drawings 📎
+                </Link>
+              )}
               <Link href={`/projects/${row.projectId}`} className="text-sky-700 hover:underline font-medium">
                 View Project →
               </Link>

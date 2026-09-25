@@ -683,7 +683,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             )}
           </Card>
 
-          <Card className="p-4">
+          <Card id="estimates" className="p-4 scroll-mt-4">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Estimates &amp; Purchase Orders (From Email)</h2>
             <p className="text-xs text-slate-500 mb-3">
               Potential bids/estimates and purchase orders filed from Email Inbox onto this job — these don&apos;t have their own page section like
@@ -719,7 +719,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             )}
           </Card>
 
-          <Card className="p-4">
+          <Card id="drawings" className="p-4 scroll-mt-4">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Drawings</h2>
             <p className="text-xs text-slate-500 mb-3">
               Plans and drawings with version history, Procore-style — uploading against an existing drawing supersedes it.

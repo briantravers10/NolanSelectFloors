@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { Icon } from "./Icon";
 import { formatUsPhone, phoneHref } from "@/lib/phone";
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>{children}</div>;
+export function Card({ children, className = "", id }: { children: ReactNode; className?: string; id?: string }) {
+  return <div id={id} className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>{children}</div>;
 }
 
 export function PageHeader({

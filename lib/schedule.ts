@@ -249,6 +249,10 @@ export interface ScheduleJobRow {
   meetingTime?: string | null;
   // The job has a current outbound invoice on file (quick link on the tile).
   hasOutboundInvoice: boolean;
+  // Quick-link flags for the tile — has at least one drawing on file, and
+  // has at least one estimate/bid filed from email onto this job.
+  hasDrawings: boolean;
+  hasFiledEstimate: boolean;
   // The most recent EARLIER day's own note for this job (never carried into
   // `notes` above — see lib/db.ts#getOrCreateProjectScheduleDay), shown
   // read-only with its date so today's box can start blank instead of
@@ -274,6 +278,10 @@ export interface ScheduleRowInputs {
   qbDocuments?: QuickBooksDocument[];
   // Optional: ids of projects with a current outbound invoice on file.
   outboundInvoiceProjectIds?: Set<string>;
+  // Optional: ids of projects with at least one drawing on file.
+  drawingProjectIds?: Set<string>;
+  // Optional: ids of projects with at least one estimate/bid filed from email.
+  estimateProjectIds?: Set<string>;
 }
 
 function pointOfContact(
@@ -296,7 +304,7 @@ function pointOfContact(
  * project_schedule_days row OR a schedule_assignments row for the date
  * shows up — a job can be on the schedule with crew not yet assigned. */
 export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): ScheduleJobRow[] {
-  const { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems = [], qbDocuments = [], outboundInvoiceProjectIds } = input;
+  const { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems = [], qbDocuments = [], outboundInvoiceProjectIds, drawingProjectIds, estimateProjectIds } = input;
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const buildingById = new Map(buildings.map((b) => [b.id, b]));
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -410,6 +418,8 @@ export function buildScheduleJobRows(date: string, input: ScheduleRowInputs): Sc
       isMeeting: Boolean(scheduleDay?.is_meeting),
       meetingTime: scheduleDay?.meeting_time ?? null,
       hasOutboundInvoice: outboundInvoiceProjectIds?.has(projectId) ?? false,
+      hasDrawings: drawingProjectIds?.has(projectId) ?? false,
+      hasFiledEstimate: estimateProjectIds?.has(projectId) ?? false,
     });
   }
 

@@ -167,7 +167,12 @@ export async function getDashboardData() {
   for (const emp of activeEmployees) {
     const status = todaysAvailability.get(emp.id);
     const loggedOff = todaysTimeOff.has(emp.id) || status === "day_off" || status === "vacation" || status === "unavailable";
-    if (workingIds.has(emp.id) && !loggedOff) staffWorking++;
+    // Confirmed working today (crew assignment, or a driver/office day
+    // explicitly checked Working) wins over a general time-off/availability
+    // flag — the schedule UI already lets the office check someone Working
+    // as a deliberate override while they're marked off, and that override
+    // should count here too, not silently flip them back to "Off".
+    if (workingIds.has(emp.id)) staffWorking++;
     else if (loggedOff) staffOff++;
     else staffAvailable++;
   }
