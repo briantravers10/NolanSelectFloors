@@ -134,6 +134,7 @@ export async function updateStaffAccessRoleAction(officeUserId: string, formData
   if (!ACCESS_ROLES.includes(access_role)) return;
   await updateOfficeUser(officeUserId, { access_role }, actingUser.fullName);
   revalidatePath(`/company-setup/staff-access/${officeUserId}`);
+  revalidatePath("/company-setup/staff-access");
 }
 
 export interface SetNewPasswordResult {
@@ -239,6 +240,7 @@ export async function giveEmployeeAccessAction(employeeId: string, formData: For
     if (email && !existing.email) await updateOfficeUser(existing.id, { email }, actingUser.fullName);
     revalidatePath(`/staff/${employeeId}`);
     revalidatePath("/company-setup/staff-access");
+    revalidatePath(`/company-setup/staff-access/${existing.id}`);
     return { officeUserId: existing.id, fullName: existing.full_name, email: existing.email ?? email, setupCode: (await getStaffSetupCode()) ?? undefined };
   }
   const tier = String(formData.get("access_role") ?? "field_employee") as AccessRole;

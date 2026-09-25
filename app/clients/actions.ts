@@ -209,9 +209,13 @@ export async function updateClientAction(clientId: string, formData: FormData) {
     phone: str(formData, "main_contact_phone") || undefined,
     email: str(formData, "main_contact_email") || undefined,
   };
+  const touchedBuildingIds = new Set<string>();
+  const touchedContactIds = new Set<string>();
+
   const existingMain = client.main_contact_id ? allContacts.find((c) => c.id === client.main_contact_id) : undefined;
   if (mainName && existingMain) {
     await updateContact(existingMain.id, mainPatch);
+    touchedContactIds.add(existingMain.id);
   } else if (mainName) {
     const main = await createContact({ client_company_id: clientId, ...mainPatch });
     await updateClientCompany(clientId, { main_contact_id: main.id });
@@ -240,6 +244,7 @@ export async function updateClientAction(clientId: string, formData: FormData) {
       const created = await createBuildingRecord({ client_company_id: clientId, ...fields, active: true });
       buildingId = created.id;
     }
+    touchedBuildingIds.add(buildingId);
 
     const existingLinks = allLinks.filter((l) => l.building_id === buildingId);
     const keptContactIds = new Set(b.contacts.map((c) => c.id).filter(Boolean));
@@ -258,6 +263,7 @@ export async function updateClientAction(clientId: string, formData: FormData) {
       let contactId = c.id && allContacts.some((x) => x.id === c.id) ? c.id : undefined;
       if (contactId) {
         await updateContact(contactId, patch);
+        touchedContactIds.add(contactId);
         const link = existingLinks.find((l) => l.contact_id === contactId);
         if (!link) await createBuildingContact({ building_id: buildingId, contact_id: contactId, role: roleFromTitle(c.title), is_primary: i === 0 });
       } else {
@@ -273,6 +279,8 @@ export async function updateClientAction(clientId: string, formData: FormData) {
   revalidatePath("/clients");
   revalidatePath(`/clients/${clientId}`);
   revalidatePath("/buildings");
+  for (const buildingId of touchedBuildingIds) revalidatePath(`/buildings/${buildingId}`);
+  for (const contactId of touchedContactIds) revalidatePath(`/contacts/${contactId}`);
   redirect(`/clients/${clientId}`);
 }
 

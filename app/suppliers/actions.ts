@@ -3,16 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { createProjectMaterial, deleteProjectMaterial, linkMaterialToProject, listProjectMaterials, logMaterialAdded, updateProjectMaterial } from "@/lib/db";
 import { uploadMaterialInvoice } from "@/lib/storage";
+import { supplierKey } from "@/lib/suppliers";
 import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
 
-function refresh(projectId?: string | null, previousProjectId?: string | null) {
+function refresh(projectId?: string | null, previousProjectId?: string | null, supplier?: string) {
   revalidatePath("/suppliers");
   revalidatePath("/materials");
   revalidatePath("/reports");
   revalidatePath("/dashboard");
   if (projectId) revalidatePath(`/projects/${projectId}`);
   if (previousProjectId) revalidatePath(`/projects/${previousProjectId}`);
+  revalidatePath(`/suppliers/${encodeURIComponent(supplierKey({ supplier }))}`);
 }
 
 /**
@@ -50,7 +52,7 @@ export async function addSupplierInvoiceAction(formData: FormData) {
     }
   }
   if (projectId) logMaterialAdded(projectId, description, 1, material.cost, supplier, actingUser.fullName);
-  refresh(projectId);
+  refresh(projectId, null, supplier);
 }
 
 /** Link (or unlink with an empty job) an invoice line to a job. */
@@ -59,15 +61,17 @@ export async function linkInvoiceToJobAction(materialId: string, previousProject
   const projectId = String(formData.get("project_id") ?? "").trim() || null;
   if (projectId === previousProjectId) return;
   const actingUser = await getActingUser();
+  const material = (await listProjectMaterials()).find((m) => m.id === materialId);
   await linkMaterialToProject(materialId, projectId, actingUser.fullName);
-  refresh(projectId, previousProjectId);
+  refresh(projectId, previousProjectId, material?.supplier);
 }
 
 export async function deleteSupplierInvoiceAction(materialId: string, projectId: string | null) {
   if (!(await canEdit("materials"))) return;
   const actingUser = await getActingUser();
+  const material = (await listProjectMaterials()).find((m) => m.id === materialId);
   await deleteProjectMaterial(materialId, actingUser.fullName);
-  refresh(projectId);
+  refresh(projectId, null, material?.supplier);
 }
 
 /**
@@ -112,6 +116,6 @@ export async function splitInvoiceAction(materialId: string, formData: FormData)
     logMaterialAdded(p.projectId, `${original.description} (split part)`, 1, p.amount, original.supplier, actingUser.fullName);
   }
   await deleteProjectMaterial(original.id, actingUser.fullName);
-  refresh(original.project_id);
+  refresh(original.project_id, null, original.supplier);
   for (const p of parts) revalidatePath(`/projects/${p.projectId}`);
 }

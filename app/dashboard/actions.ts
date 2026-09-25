@@ -14,6 +14,7 @@ export async function markInvoiceSentAction(projectId: string, sent: boolean) {
   revalidatePath("/projects");
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/schedule/completed");
+  revalidatePath("/schedule/friday-review");
 }
 
 /** Pick who in the office is sending a completed job's invoice. */
@@ -24,4 +25,5 @@ export async function assignInvoiceAction(projectId: string, formData: FormData)
   await setProjectInvoiceAssignee(projectId, who, actingUser.fullName);
   revalidatePath("/dashboard");
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/schedule/friday-review");
 }

@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createBuildingRecord, updateBuilding } from "@/lib/db";
+import { createBuildingRecord, getBuilding, updateBuilding } from "@/lib/db";
 import type { BuildingRegion } from "@/lib/types";
 import { canEdit } from "@/lib/permissions";
 
@@ -53,9 +53,12 @@ export async function setBuildingClientAction(buildingId: string, formData: Form
   if (!(await canEdit("buildings"))) return;
   const client_company_id = String(formData.get("client_company_id") ?? "");
   if (!client_company_id) return;
+  const before = await getBuilding(buildingId);
   await updateBuilding(buildingId, { client_company_id });
   revalidatePath(`/buildings/${buildingId}`);
   revalidatePath("/buildings");
   revalidatePath("/clients");
+  revalidatePath(`/clients/${client_company_id}`);
+  if (before?.client_company_id) revalidatePath(`/clients/${before.client_company_id}`);
   revalidatePath("/schedule");
 }

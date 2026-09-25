@@ -57,6 +57,7 @@ export async function createStaffAction(formData: FormData) {
     capabilities,
   });
   revalidatePath("/staff");
+  revalidatePath("/dashboard");
   // Optional "Give app access" section on the New Staff form (Owner/Admin
   // only): creates their login account with the chosen per-section grid.
   if (formData.get("give_access") === "1" && (await isOwnerActingUser(actingUser))) {
@@ -74,6 +75,7 @@ export async function setEmployeeActiveAction(employeeId: string, active: boolea
   revalidatePath(`/staff/${employeeId}`);
   revalidatePath("/staff");
   revalidatePath("/schedule");
+  revalidatePath("/dashboard");
 }
 
 /** Permanent delete — the confirm step lives in the client button. */
@@ -83,6 +85,7 @@ export async function deleteStaffAction(employeeId: string) {
   await deleteEmployee(employeeId, actingUser.fullName);
   revalidatePath("/staff");
   revalidatePath("/schedule");
+  revalidatePath("/dashboard");
   redirect("/staff");
 }
 
@@ -161,6 +164,7 @@ export async function addTimeOffAction(employeeId: string, formData: FormData) {
   revalidatePath(`/staff/${employeeId}`);
   revalidatePath("/staff");
   revalidatePath("/dashboard");
+  revalidatePath("/staff/time-off");
 }
 
 /**
@@ -182,6 +186,7 @@ export async function updateEmployeeTimeOffAllowanceAction(employeeId: string, f
   await updateEmployee(employeeId, { vacation_days_allowed, sick_days_allowed }, actingUser.fullName);
   revalidatePath(`/staff/${employeeId}`);
   revalidatePath("/staff");
+  revalidatePath("/staff/time-off");
 }
 
 export async function deleteTimeOffAction(employeeId: string, entryId: string) {
@@ -191,6 +196,7 @@ export async function deleteTimeOffAction(employeeId: string, entryId: string) {
   revalidatePath(`/staff/${employeeId}`);
   revalidatePath("/staff");
   revalidatePath("/dashboard");
+  revalidatePath("/staff/time-off");
 }
 
 /** Title, driver/office flags, typical office workdays and capabilities —
@@ -208,4 +214,6 @@ export async function updateEmployeeProfileAction(employeeId: string, formData: 
   revalidatePath(`/staff/${employeeId}`);
   revalidatePath("/staff");
   revalidatePath("/projects");
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/edit");
 }

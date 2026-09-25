@@ -51,6 +51,8 @@ function revalidateSchedule(projectId?: string) {
   revalidatePath("/schedule/review");
   revalidatePath("/schedule/history");
   revalidatePath("/schedule/completed");
+  revalidatePath("/schedule/print");
+  revalidatePath("/schedule/weekly");
   revalidatePath("/dashboard");
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
@@ -184,6 +186,7 @@ export async function deletePickupItemAction(id: string, projectId: string) {
   const actingUser = await getActingUser();
   await deleteSchedulePickupItem(id, actingUser.fullName);
   revalidateSchedule(projectId);
+  revalidatePath("/materials");
 }
 
 // ---------------------------------------------------------------------
@@ -351,8 +354,9 @@ export async function addActualLaborEntryAction(formData: FormData) {
 export async function deleteActualLaborEntryAction(id: string) {
   if (!(await canEdit("schedule"))) return;
   const actingUser = await getActingUser();
+  const entry = (await listActualLaborEntries()).find((e) => e.id === id);
   await deleteActualLaborEntry(id, actingUser.fullName);
-  revalidateSchedule();
+  revalidateSchedule(entry?.project_id ?? undefined);
 }
 
 // ---------------------------------------------------------------------
@@ -404,12 +408,24 @@ export async function saveCompletionNotesAction(projectId: string, formData: For
 // Work types admin (Company Setup)
 // ---------------------------------------------------------------------
 
+// Work type names/active-state show up as dropdown options and labels
+// well beyond Company Setup — every schedule view, pricing, and the
+// project page — so these revalidate broadly rather than just the admin
+// page they're edited from.
+function revalidateWorkTypeViews() {
+  revalidatePath("/company-setup");
+  revalidatePath("/pricing");
+  revalidatePath("/pricing/formulas/new");
+  revalidateSchedule();
+  revalidatePath("/schedule/friday-review");
+}
+
 export async function addWorkTypeAction(formData: FormData) {
   if (!(await canEdit("company_setup"))) return;
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   await createWorkType(name);
-  revalidatePath("/company-setup");
+  revalidateWorkTypeViews();
 }
 
 export async function renameWorkTypeAction(id: string, formData: FormData) {
@@ -417,13 +433,13 @@ export async function renameWorkTypeAction(id: string, formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   await updateWorkType(id, { name });
-  revalidatePath("/company-setup");
+  revalidateWorkTypeViews();
 }
 
 export async function toggleWorkTypeActiveAction(id: string, active: boolean) {
   if (!(await canEdit("company_setup"))) return;
   await updateWorkType(id, { active });
-  revalidatePath("/company-setup");
+  revalidateWorkTypeViews();
 }
 
 /**

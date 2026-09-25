@@ -233,6 +233,8 @@ export async function addProjectDrawingAction(projectId: string, formData: FormD
     supersedes_id: supersedesId,
   });
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/edit");
 }
 
 /** Saves a computed suggested price from the Estimate Calculator onto the
@@ -265,6 +267,8 @@ export async function renameProjectAction(projectId: string, formData: FormData)
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/projects");
   revalidatePath("/schedule");
+  revalidatePath("/schedule/edit");
+  revalidatePath("/dashboard");
 }
 
 /** Inline price on a Materials line (e.g. an item collected off the schedule). */
@@ -288,4 +292,5 @@ export async function deleteOutboundInvoiceAction(projectId: string, invoiceId: 
   await deleteProjectOutboundInvoice(invoiceId, actingUser.fullName);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/schedule");
+  revalidatePath("/schedule/edit");
 }
