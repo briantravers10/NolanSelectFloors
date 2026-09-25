@@ -47,6 +47,7 @@ import type { TimeOffType } from "@/lib/types";
 
 function revalidateSchedule(projectId?: string) {
   revalidatePath("/schedule");
+  revalidatePath("/schedule/edit");
   revalidatePath("/schedule/review");
   revalidatePath("/schedule/history");
   revalidatePath("/schedule/completed");
