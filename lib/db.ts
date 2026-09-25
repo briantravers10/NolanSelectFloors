@@ -3834,13 +3834,16 @@ export async function getLatestInboundEmailReceivedAt(): Promise<string | null> 
   return getStore().inboundEmails.map((e) => e.received_at).sort().at(-1) ?? null;
 }
 
-export async function listInboundEmails(): Promise<InboundEmail[]> {
+export async function listInboundEmails(options?: { filedProjectId?: string }): Promise<InboundEmail[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("inbound_emails").select("*").order("received_at", { ascending: false });
+    let query = client.from("inbound_emails").select("*").order("received_at", { ascending: false });
+    if (options?.filedProjectId) query = query.eq("filed_project_id", options.filedProjectId);
+    const { data, error } = await query;
     if (!error && data) return data as InboundEmail[];
   }
-  return [...getStore().inboundEmails].sort((a, b) => b.received_at.localeCompare(a.received_at));
+  const all = [...getStore().inboundEmails].sort((a, b) => b.received_at.localeCompare(a.received_at));
+  return options?.filedProjectId ? all.filter((e) => e.filed_project_id === options.filedProjectId) : all;
 }
 
 export async function createInboundEmail(input: Omit<InboundEmail, "id" | "company_id" | "created_at">): Promise<InboundEmail> {

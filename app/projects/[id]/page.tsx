@@ -56,9 +56,10 @@ import {
   saveProjectEstimateAction,
   deleteOutboundInvoiceAction,
 } from "../actions";
-import { PHOTO_CATEGORIES } from "@/lib/types";
-import { listPhotos, listProjectDrawings, listProjectOutboundInvoices } from "@/lib/db";
+import { INBOUND_KIND_LABELS, PHOTO_CATEGORIES } from "@/lib/types";
+import { listInboundEmails, listPhotos, listProjectDrawings, listProjectOutboundInvoices } from "@/lib/db";
 import { isPhotoStorageConfigured } from "@/lib/storage";
+import { mapWithConcurrency } from "@/lib/concurrency";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -100,6 +101,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     qbDocuments,
     qbConnection,
     outboundInvoices,
+    filedEmails,
     canEditProjects,
     canEditMaterials,
   ] = await Promise.all([
@@ -125,6 +127,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listQuickBooksDocumentsForProject(id),
     getQuickBooksConnection(),
     listProjectOutboundInvoices({ projectId: id }),
+    listInboundEmails({ filedProjectId: id }),
     canEdit("projects"),
     canEdit("materials"),
   ]);
@@ -134,7 +137,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   // Signed URLs are independent storage calls — batched instead of one
   // sequential await per file.
-  const [outboundInvoiceUrlPairs, drawingUrlPairs, invoiceUrlPairs] = await Promise.all([
+  const [outboundInvoiceUrlPairs, drawingUrlPairs, invoiceUrlPairs, filedEmailUrlPairs] = await Promise.all([
     Promise.all(
       outboundInvoices.map(async (inv) => (inv.file_reference ? ([inv.id, await signedFileUrl(inv.file_reference, "inbound-email")] as const) : null))
     ),
@@ -144,14 +147,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     Promise.all(
       projectMaterialsList.map(async (m) => (m.invoice_path ? ([m.id, await materialInvoiceUrl(m.invoice_path)] as const) : null))
     ),
+    mapWithConcurrency(
+      filedEmails.flatMap((e) => e.attachments.filter((a) => a.storage_path).map((a) => ({ e, a }))),
+      10,
+      async ({ e, a }) => [`${e.id}:${a.id}`, await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email")] as const
+    ),
   ]);
   const outboundInvoiceUrls = new Map(outboundInvoiceUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
+  const filedEmailUrls = new Map(filedEmailUrlPairs.filter(([, url]) => url !== null) as [string, string][]);
   const drawingUrls = new Map(drawingUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
   const invoiceUrls = new Map(invoiceUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
   // Change orders share the same table/storage as outbound invoices, but
   // are filed and shown separately so they never look like "the" invoice.
   const changeOrders = outboundInvoices.filter((inv) => inv.document_type === "change_order");
   const invoicesOnly = outboundInvoices.filter((inv) => inv.document_type !== "change_order");
+  // Bids/estimates and POs filed from email have no dedicated page section
+  // of their own on this job (unlike Drawings/Invoices/Change Orders
+  // above) — without this they were only ever visible in the Activity log.
+  const filedEmailsForOtherKinds = filedEmails.filter((e) => e.filed_kind === "bid" || e.filed_kind === "purchase_order");
 
   const building = buildings.find((b) => b.id === project.building_id);
   const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
@@ -662,6 +675,42 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                             </form>
                           </td>
                         )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Estimates &amp; Purchase Orders (From Email)</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Potential bids/estimates and purchase orders filed from Email Inbox onto this job — these don&apos;t have their own page section like
+              Drawings or Invoices, so they only ever showed up in the Activity log below without this.
+            </p>
+            {filedEmailsForOtherKinds.length === 0 ? (
+              <EmptyState message="Nothing filed here yet." />
+            ) : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {filedEmailsForOtherKinds.map((e) => {
+                    const attachment = e.attachments.find((a) => a.storage_path);
+                    const url = attachment ? filedEmailUrls.get(`${e.id}:${attachment.id}`) : undefined;
+                    return (
+                      <tr key={e.id} className="border-b border-slate-100 last:border-0">
+                        <td className="py-2 pr-2 w-28 text-xs">{formatDateLong((e.filed_at ?? e.received_at).slice(0, 10))}</td>
+                        <td className="py-2 pr-2">
+                          {url ? (
+                            <a href={url} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline font-medium">{e.subject || "Email"}</a>
+                          ) : (
+                            <span className="font-medium">{e.subject || "Email"}</span>
+                          )}
+                          <span className="ml-2 rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-[11px]">
+                            {INBOUND_KIND_LABELS[(e.filed_kind ?? "unknown") as keyof typeof INBOUND_KIND_LABELS] ?? e.filed_kind}
+                          </span>
+                          {e.filed_by && <div className="text-[11px] text-slate-400">filed by {e.filed_by}</div>}
+                        </td>
                       </tr>
                     );
                   })}

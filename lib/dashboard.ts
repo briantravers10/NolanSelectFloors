@@ -156,7 +156,11 @@ export async function getDashboardData() {
   // and still feeds this same stat, so both are honored: an employee counts
   // as "off" if EITHER says so.
   const todaysTimeOff = getTimeOffForDate(timeOffEntries, today);
-  const workingIds = new Set(todaysAssignments.map((a) => a.employee_id));
+  // Working = on a job's crew today OR a driver/office day-rate entry with
+  // no job (todaysBaseEntries above) — without the latter, a driver/office
+  // person marked Working showed up as "Available" instead, since they're
+  // never in schedule_assignments.
+  const workingIds = new Set([...todaysAssignments.map((a) => a.employee_id), ...todaysBaseEntries.map((e) => e.employee_id)]);
   let staffWorking = 0;
   let staffOff = 0;
   let staffAvailable = 0;
