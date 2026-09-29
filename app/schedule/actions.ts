@@ -32,8 +32,10 @@ import {
   listTimeOffEntries,
   listAgendaEvents,
   listOfficeUsers,
+  listEmployees,
   createAgendaEvent,
   updateAgendaEvent,
+  deleteAgendaEvent,
   setDriverWorkingDay,
   setOfficeWorkingDay,
   upsertScheduleDayNote,
@@ -203,18 +205,38 @@ export async function deletePickupItemAction(id: string, projectId: string) {
 // ---------------------------------------------------------------------
 
 /**
- * A schedule meeting also lands on the agenda (the owner's and the person
- * who set it up), linked back to the job, so it's in one place with the
- * rest of the day. Re-saving updates the same agenda entry.
+ * A schedule meeting also lands on the agenda of whoever's actually going
+ * (the crew assigned to that job/date) plus the person who set it up,
+ * linked back to the job, so it's in one place with the rest of their
+ * day. Re-saving updates the same agenda entry.
+ *
+ * Crew is tracked by employee, office logins by office_users — there's no
+ * shared id between the two, so a crew member is matched to their office
+ * account by first name (unique enough across current staff, and more
+ * reliable than a full-name match since last-name spelling can drift
+ * between the two records, e.g. "Hanuszewicz" vs "Hanuzewicz").
  */
 async function syncMeetingToAgenda(projectId: string, date: string, time: string | null, notes: string, actingUser: { id: string; fullName: string }) {
-  const [projects, buildings, events, officeUsers] = await Promise.all([listProjects(), listBuildings(), listAgendaEvents(), listOfficeUsers()]);
+  const [projects, buildings, events, officeUsers, employees, assignments] = await Promise.all([
+    listProjects(),
+    listBuildings(),
+    listAgendaEvents(),
+    listOfficeUsers(),
+    listEmployees(),
+    listScheduleAssignments(),
+  ]);
   const project = projects.find((p) => p.id === projectId);
   const building = project ? buildings.find((b) => b.id === project.building_id) : undefined;
   const title = `Meeting — ${building?.name ?? project?.name ?? "job"}${project?.unit_number ? ` Unit ${project.unit_number}` : ""}`;
-  const owners = new Set<string>(officeUsers.filter((u) => u.active && u.is_owner).map((u) => u.id));
-  owners.add(actingUser.id);
-  for (const ownerId of owners) {
+
+  const crewEmployeeIds = new Set(assignments.filter((a) => a.project_id === projectId && a.schedule_date === date).map((a) => a.employee_id));
+  const crewFirstNames = new Set(employees.filter((e) => crewEmployeeIds.has(e.id)).map((e) => e.first_name.trim().toLowerCase()));
+  const recipients = new Set<string>(
+    officeUsers.filter((u) => u.active && crewFirstNames.has(u.full_name.trim().split(" ")[0].toLowerCase())).map((u) => u.id)
+  );
+  recipients.add(actingUser.id);
+
+  for (const ownerId of recipients) {
     const existing = events.find((e) => e.owner_user_id === ownerId && e.related_type === "project" && e.related_id === projectId && e.event_date === date);
     if (existing) {
       if (existing.title !== title || (existing.start_time ?? null) !== time || (existing.notes ?? null) !== (notes || null)) {
@@ -233,6 +255,14 @@ async function syncMeetingToAgenda(projectId: string, date: string, time: string
         actorName: actingUser.fullName,
         created_by_name: actingUser.fullName,
       });
+    }
+  }
+  // Drop anyone this meeting was previously synced to but who isn't a
+  // recipient anymore (crew changed, or this used to broadcast to every
+  // Owner/Admin account before that was fixed).
+  for (const e of events) {
+    if (e.related_type === "project" && e.related_id === projectId && e.event_date === date && !recipients.has(e.owner_user_id)) {
+      await deleteAgendaEvent(e.id, actingUser.fullName);
     }
   }
   revalidatePath("/agenda");
