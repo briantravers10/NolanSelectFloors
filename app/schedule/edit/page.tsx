@@ -154,14 +154,18 @@ export default async function ScheduleEditPage({
   // they're on a job today. Marking one Working adds their day rate to
   // payroll (lib/db.ts#setDriverWorkingDay) via the SAME actual_labor_entries
   // row/rate-snapshot every other logged day uses — no job assignment, no
-  // separate payroll system. A driver already logged on a job today (any
-  // actual_labor_entries row for this date) is shown as already covered
-  // instead of an editable checkbox, so their day rate is never counted twice.
+  // separate payroll system. A driver already on a job today — confirmed
+  // hours (actual_labor_entries) OR simply assigned to a job's crew for
+  // the day (assignedIds, before hours are ever confirmed) — is shown as
+  // already covered instead of an editable checkbox, so their day rate is
+  // never counted twice (see lib/db.ts#createScheduleAssignment, which
+  // itself removes any stray day-rate placeholder the moment they're put
+  // on a crew).
   const drivers = activeEmployees
     .filter((e) => e.is_driver)
     .map((e) => {
       const mine = dayLaborEntries.filter((entry) => entry.employee_id === e.id);
-      const onJobToday = mine.some((entry) => entry.project_id !== null);
+      const onJobToday = mine.some((entry) => entry.project_id !== null) || assignedIds.has(e.id);
       const driverEntry = mine.find((entry) => entry.project_id === null);
       const timeOff = isEmployeeOffOn(timeOffEntries, e.id, date);
       return {
@@ -181,7 +185,7 @@ export default async function ScheduleEditPage({
     .filter((e) => e.is_office)
     .map((e) => {
       const mine = dayLaborEntries.filter((entry) => entry.employee_id === e.id);
-      const onJobToday = mine.some((entry) => entry.project_id !== null);
+      const onJobToday = mine.some((entry) => entry.project_id !== null) || assignedIds.has(e.id);
       const officeEntry = mine.find((entry) => entry.project_id === null);
       const timeOff = isEmployeeOffOn(timeOffEntries, e.id, date);
       return {
