@@ -254,7 +254,14 @@ export default async function ScheduleEditPage({
                   </span>
                 )}
                 {d.onJobToday ? (
-                  <span className="text-[11px] text-slate-500">Already on a job today</span>
+                  <label
+                    className="inline-flex items-center gap-1.5 cursor-default"
+                    title="Already counted once via today's job assignment — not a separate entry, so this can't be unchecked here"
+                  >
+                    <input type="checkbox" checked disabled className="rounded border-slate-400 w-4 h-4" />
+                    <span className="text-sm text-slate-800">Working</span>
+                    <span className="text-[11px] text-slate-500">(on a job)</span>
+                  </label>
                 ) : (
                   <DriverWorkingToggle employeeId={d.id} date={date} working={d.working} />
                 )}
@@ -277,7 +284,14 @@ export default async function ScheduleEditPage({
                   </span>
                 )}
                 {d.onJobToday ? (
-                  <span className="text-[11px] text-slate-500">Already on a job today</span>
+                  <label
+                    className="inline-flex items-center gap-1.5 cursor-default"
+                    title="Already counted once via today's job assignment — not a separate entry, so this can't be unchecked here"
+                  >
+                    <input type="checkbox" checked disabled className="rounded border-slate-400 w-4 h-4" />
+                    <span className="text-sm text-slate-800">Working</span>
+                    <span className="text-[11px] text-slate-500">(on a job)</span>
+                  </label>
                 ) : (
                   <OfficeWorkingToggle employeeId={d.id} date={date} working={d.working} />
                 )}
