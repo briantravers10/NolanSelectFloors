@@ -4,6 +4,7 @@ import { Card, PageHeader, Button, StatusBadge, EmptyState } from "@/components/
 import { EstimateCalculator } from "@/components/EstimateCalculator";
 import { formatCurrencyPrecise } from "@/lib/calculations";
 import { addFormulaComponentAction, removeFormulaComponentAction } from "../actions";
+import { JobPicker } from "@/components/JobPicker";
 
 export default async function PricingFormulaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -70,12 +71,14 @@ export default async function PricingFormulaDetailPage({ params }: { params: Pro
         <form action={addFormulaComponentAction.bind(null, formula.id)} className="flex flex-wrap gap-2 items-end border-t border-slate-100 pt-3">
           <div>
             <label className="block text-[11px] text-slate-500 uppercase mb-1">Material Rate Item</label>
-            <select name="material_rate_item_id" required className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm min-w-[220px]">
-              <option value="">Select…</option>
-              {availableItems.map((i) => (
-                <option key={i.id} value={i.id}>{i.name} ({i.unit} — {formatCurrencyPrecise(i.unit_cost)})</option>
-              ))}
-            </select>
+            <div className="min-w-[220px]">
+              <JobPicker
+                name="material_rate_item_id"
+                jobs={availableItems.map((i) => ({ id: i.id, label: `${i.name} (${i.unit} — ${formatCurrencyPrecise(i.unit_cost)})` }))}
+                required
+                placeholder="Type to search materials…"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-[11px] text-slate-500 uppercase mb-1">Qty per sqft</label>

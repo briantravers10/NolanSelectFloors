@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
+import { JobPicker } from "@/components/JobPicker";
 import { addSupplierInvoiceAction } from "@/app/suppliers/actions";
 
 export interface JobOption {
@@ -54,12 +55,7 @@ export function AddSupplierInvoiceForm({ suppliers, jobs, storageConfigured, def
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-[11px] text-slate-500 uppercase mb-1">Job <span className="normal-case text-slate-400">(optional)</span></label>
-          <select name="project_id" defaultValue="" className={input}>
-            <option value="">No job — supplier only</option>
-            {jobs.map((j) => (
-              <option key={j.id} value={j.id}>{j.label}</option>
-            ))}
-          </select>
+          <JobPicker name="project_id" jobs={jobs} placeholder="No job — type to search, or leave blank" />
           <div className="text-[11px] text-slate-500 mt-1">Leave blank for stock or tools. It still counts under the supplier, and you can link it to a job later.</div>
         </div>
         <div>

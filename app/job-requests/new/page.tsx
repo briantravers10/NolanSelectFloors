@@ -4,6 +4,7 @@ import { Card, PageHeader, Button, AlertPill } from "@/components/ui";
 import { formatJobNumber } from "@/lib/calculations";
 import { createJobRequestAction } from "../actions";
 import { BuildingSelectWithReminder } from "./BuildingSelectWithReminder";
+import { JobPicker } from "@/components/JobPicker";
 
 export default async function NewJobRequestPage({
   searchParams,
@@ -90,14 +91,12 @@ export default async function NewJobRequestPage({
           />
           <div>
             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Contact (optional)</label>
-            <select name="contact_id" defaultValue={sp.contact_id} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <option value="">Select a contact…</option>
-              {contacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.first_name} {c.last_name} — {c.title}
-                </option>
-              ))}
-            </select>
+            <JobPicker
+              name="contact_id"
+              jobs={contacts.map((c) => ({ id: c.id, label: `${c.first_name} ${c.last_name} — ${c.title}` }))}
+              defaultValue={sp.contact_id}
+              placeholder="Type to search contacts…"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 uppercase mb-1">Unit / Location</label>

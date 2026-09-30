@@ -17,6 +17,7 @@ import type { Building } from "@/lib/types";
 import { UNASSIGNED_CLIENT_NAME } from "@/lib/types";
 import { canEdit } from "@/lib/permissions";
 import { setBuildingClientAction } from "../actions";
+import { JobPicker } from "@/components/JobPicker";
 
 const FIELD_LABELS: { key: keyof Building; label: string }[] = [
   { key: "access_instructions", label: "Access Instructions" },
@@ -89,14 +90,18 @@ export default async function BuildingDetailPage({ params }: { params: Promise<{
             <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
               {isUnassigned ? "No management company yet — file this building under:" : "Management company:"}
             </label>
-            <select name="client_company_id" defaultValue={building.client_company_id} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm min-w-[220px]">
-              {clients
-                .filter((c) => c.name !== UNASSIGNED_CLIENT_NAME || c.id === building.client_company_id)
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-            </select>
+            <div className="min-w-[220px]">
+              <JobPicker
+                name="client_company_id"
+                jobs={clients
+                  .filter((c) => c.name !== UNASSIGNED_CLIENT_NAME || c.id === building.client_company_id)
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((c) => ({ id: c.id, label: c.name }))}
+                defaultValue={building.client_company_id}
+                required
+                placeholder="Type to search management companies…"
+              />
+            </div>
             <button type="submit" className="rounded-lg bg-slate-800 text-white px-3 py-1.5 text-sm font-medium hover:bg-slate-900">
               {isUnassigned ? "Assign" : "Move"}
             </button>
