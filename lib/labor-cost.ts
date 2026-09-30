@@ -228,3 +228,19 @@ export function payRateLabel(employee: Pick<Employee, "pay_type" | "daily_rate" 
   }
   return employee.daily_rate != null ? `$${employee.daily_rate}/day` : "—";
 }
+
+/**
+ * A day's pay at this employee's CURRENT rate — for planned-cost estimates
+ * (Crew Requirement calculator, schedule assignment snapshots) that need
+ * one number regardless of pay_type. NOT for historical accuracy: an
+ * already-logged actual_labor_entries/schedule_assignments row keeps its
+ * own frozen snapshot forever (see createActualLaborEntry/
+ * createScheduleAssignment) and must never be recomputed from this.
+ * Falls back to the legacy `day_rate` field only for anyone who somehow
+ * has neither daily_rate nor hourly_rate set (day_rate predates the
+ * pay_type split and the pay-rate edit form no longer writes to it).
+ */
+export function effectiveDayRate(employee: Pick<Employee, "pay_type" | "daily_rate" | "hourly_rate" | "day_rate">): number {
+  if (employee.pay_type === "hourly") return (employee.hourly_rate ?? 0) * 8;
+  return employee.daily_rate ?? employee.day_rate ?? 0;
+}

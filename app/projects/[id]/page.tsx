@@ -19,7 +19,7 @@ import {
   listScheduleAssignments,
 } from "@/lib/db";
 import { canManageQuickBooksDocuments, canViewJobFinancials, canViewLaborCost, canViewQuickBooks, getActingUser } from "@/lib/current-user";
-import { jobLaborSummary } from "@/lib/labor-cost";
+import { effectiveDayRate, jobLaborSummary } from "@/lib/labor-cost";
 import { Card, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { EditableTitle } from "@/components/projects/EditableTitle";
 import { CrewRequirementForm } from "@/components/projects/CrewRequirementForm";
@@ -208,9 +208,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   for (const sk of employeeSkills) skillsByEmployee.set(sk.employee_id, [...(skillsByEmployee.get(sk.employee_id) ?? []), sk.capability]);
   const crewPicks = employees
     .filter((e) => e.active)
-    .map((e) => ({ id: e.id, first_name: e.first_name, last_name: e.last_name, nickname: e.nickname, capabilities: skillsByEmployee.get(e.id) ?? [], dayRate: canViewRates ? e.day_rate ?? null : null }));
+    .map((e) => ({ id: e.id, first_name: e.first_name, last_name: e.last_name, nickname: e.nickname, capabilities: skillsByEmployee.get(e.id) ?? [], dayRate: canViewRates ? effectiveDayRate(e) : null }));
   const crewEstimateTotal = projectCrewReqs.reduce((sum, r) => {
-    const perDay = (r.employee_ids ?? []).reduce((s2, eid) => s2 + (employeeById.get(eid)?.day_rate ?? 0), 0);
+    const perDay = (r.employee_ids ?? []).reduce((s2, eid) => {
+      const emp = employeeById.get(eid);
+      return s2 + (emp ? effectiveDayRate(emp) : 0);
+    }, 0);
     return sum + perDay * (r.estimated_days ?? 0);
   }, 0);
   const canViewCost = canViewLaborCost(actingUser);
@@ -313,7 +316,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <tbody>
                   {projectCrewReqs.map((r) => {
                     const people = (r.employee_ids ?? []).map((eid) => employeeById.get(eid)).filter(Boolean);
-                    const perDay = people.reduce((sum, e) => sum + (e!.day_rate ?? 0), 0);
+                    const perDay = people.reduce((sum, e) => sum + effectiveDayRate(e!), 0);
                     const days = r.estimated_days ?? 0;
                     return (
                       <tr key={r.id} className="border-b border-slate-100 last:border-0 align-top">

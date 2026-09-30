@@ -13,6 +13,7 @@ import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
 import { mapJobStatusToPipelineStage, scheduleNoteMarker } from "./schedule";
 import { isEmployeeOffOn } from "./time-off";
+import { effectiveDayRate } from "./labor-cost";
 import { weekdayAbbrev } from "./dates";
 import type {
   ActivityLogEntry,
@@ -2633,6 +2634,11 @@ export async function createScheduleAssignment(input: {
   const employee = (await listEmployees()).find((e) => e.id === input.employee_id);
   if (!employee) throw new Error("Employee not found");
   const rate_multiplier = input.time_and_half ? 1.5 : 1.0;
+  // Same pay_type-aware rate createActualLaborEntry snapshots — NOT the
+  // legacy `day_rate` field, which predates the daily_rate/hourly_rate
+  // split (build 6, Labor Cost Tracking) and is never updated by the pay
+  // rate edit form.
+  const dailyEquivalent = effectiveDayRate(employee);
   const record: ScheduleAssignment = {
     id: randomUUID(),
     company_id: getCurrentCompanyId(),
@@ -2640,11 +2646,11 @@ export async function createScheduleAssignment(input: {
     employee_id: input.employee_id,
     schedule_date: input.schedule_date,
     role_on_job: input.role_on_job,
-    base_day_rate: employee.day_rate,
+    base_day_rate: dailyEquivalent,
     rate_multiplier,
     time_and_half: input.time_and_half,
     // Snapshotted now — never recalculated from the employee's current rate later.
-    assignment_cost: Math.round(employee.day_rate * rate_multiplier * 100) / 100,
+    assignment_cost: Math.round(dailyEquivalent * rate_multiplier * 100) / 100,
     call_time: input.call_time ?? "7:00 AM",
     notes: input.notes,
     created_at: new Date().toISOString(),
