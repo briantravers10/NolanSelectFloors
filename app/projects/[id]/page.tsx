@@ -28,7 +28,8 @@ import { drawingFileUrl, isFileStorageConfigured, materialInvoiceUrl, signedFile
 import { canEdit } from "@/lib/permissions";
 import { markInvoiceSentAction } from "@/app/dashboard/actions";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
-import { MoveFiledEmailToJobForm } from "@/components/projects/MoveFiledEmailToJobForm";
+import { MoveToJobPicker } from "@/components/projects/MoveToJobPicker";
+import { moveFiledEmailToProjectAction } from "@/app/inbox/actions";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
 import { FinancialSummaryCard } from "@/components/quickbooks/FinancialSummaryCard";
 import { computeFinancialSummary } from "@/lib/financials";
@@ -57,6 +58,9 @@ import {
   movePipelineStageFormAction,
   saveProjectEstimateAction,
   deleteOutboundInvoiceAction,
+  moveOutboundInvoiceToProjectAction,
+  moveProjectDrawingToProjectAction,
+  moveProjectCoiToProjectAction,
 } from "../actions";
 import { INBOUND_KIND_LABELS, PHOTO_CATEGORIES } from "@/lib/types";
 import { listInboundEmails, listPhotos, listProjectDrawings, listProjectOutboundInvoices } from "@/lib/db";
@@ -139,7 +143,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   // Signed URLs are independent storage calls — batched instead of one
   // sequential await per file.
-  const [outboundInvoiceUrlPairs, drawingUrlPairs, invoiceUrlPairs, filedEmailUrlPairs] = await Promise.all([
+  const [outboundInvoiceUrlPairs, drawingUrlPairs, invoiceUrlPairs, filedEmailUrlPairs, coiUrl] = await Promise.all([
     Promise.all(
       outboundInvoices.map(async (inv) => (inv.file_reference ? ([inv.id, await signedFileUrl(inv.file_reference, "inbound-email")] as const) : null))
     ),
@@ -154,6 +158,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       10,
       async ({ e, a }) => [`${e.id}:${a.id}`, await signedFileUrl(`inbound-email:${a.storage_path}`, "inbound-email")] as const
     ),
+    project.coi_file_reference ? signedFileUrl(project.coi_file_reference, "inbound-email") : Promise.resolve(null),
   ]);
   const outboundInvoiceUrls = new Map(outboundInvoiceUrlPairs.filter((p): p is readonly [string, string] => p !== null && p[1] !== null));
   const filedEmailUrls = new Map(filedEmailUrlPairs.filter(([, url]) => url !== null) as [string, string][]);
@@ -638,11 +643,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                         </td>
                         <td className="py-2 pr-2 text-right font-semibold tabular-nums">{inv.amount != null ? formatCurrency(inv.amount) : "—"}</td>
                         {canEditProjects && (
-                          <td className="py-2 text-right w-8">
-                            <form action={deleteOutboundInvoiceAction.bind(null, project.id, inv.id)}>
-                              <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove this invoice" title="Remove">✕</button>
-                            </form>
-                          </td>
+                          <>
+                            <td className="py-2 pl-2 w-[180px] text-right">
+                              <MoveToJobPicker action={moveOutboundInvoiceToProjectAction.bind(null, project.id, inv.id)} jobs={jobOptions} excludeProjectId={project.id} />
+                            </td>
+                            <td className="py-2 pl-1 text-right w-8">
+                              <form action={deleteOutboundInvoiceAction.bind(null, project.id, inv.id)}>
+                                <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove this invoice" title="Remove">✕</button>
+                              </form>
+                            </td>
+                          </>
                         )}
                       </tr>
                     );
@@ -678,11 +688,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                         </td>
                         <td className="py-2 pr-2 text-right font-semibold tabular-nums">{co.amount != null ? formatCurrency(co.amount) : "—"}</td>
                         {canEditProjects && (
-                          <td className="py-2 text-right w-8">
-                            <form action={deleteOutboundInvoiceAction.bind(null, project.id, co.id)}>
-                              <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove this change order" title="Remove">✕</button>
-                            </form>
-                          </td>
+                          <>
+                            <td className="py-2 pl-2 w-[180px] text-right">
+                              <MoveToJobPicker action={moveOutboundInvoiceToProjectAction.bind(null, project.id, co.id)} jobs={jobOptions} excludeProjectId={project.id} />
+                            </td>
+                            <td className="py-2 pl-1 text-right w-8">
+                              <form action={deleteOutboundInvoiceAction.bind(null, project.id, co.id)}>
+                                <button type="submit" className="text-slate-400 hover:text-rose-600" aria-label="Remove this change order" title="Remove">✕</button>
+                              </form>
+                            </td>
+                          </>
                         )}
                       </tr>
                     );
@@ -722,7 +737,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                         </td>
                         {canEditProjects && (
                           <td className="py-2 pl-2 w-[180px] text-right">
-                            <MoveFiledEmailToJobForm emailId={e.id} currentProjectId={id} jobs={jobOptions} />
+                            <MoveToJobPicker action={moveFiledEmailToProjectAction.bind(null, e.id, id)} jobs={jobOptions} excludeProjectId={id} />
                           </td>
                         )}
                       </tr>
@@ -773,7 +788,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                           </div>
                           <div className="text-xs text-slate-500">Current — v{d.version} · {formatDateLong(d.uploaded_at.slice(0, 10))} · {d.uploaded_by ?? "—"}</div>
                         </div>
-                        <span className="text-[11px] font-semibold uppercase text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 shrink-0">Current</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[11px] font-semibold uppercase text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">Current</span>
+                          {canEditProjects && (
+                            <MoveToJobPicker action={moveProjectDrawingToProjectAction.bind(null, project.id, d.id)} jobs={jobOptions} excludeProjectId={project.id} />
+                          )}
+                        </div>
                       </div>
                       {d.notes && <p className="text-sm text-slate-700 mb-1">{d.notes}</p>}
                       {d.storage_unavailable || !d.file_reference ? (
@@ -805,6 +825,30 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Certificate of Insurance</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Filed from Email Inbox as a COI. The &ldquo;COI&rdquo; quick link on the schedule opens this file.
+            </p>
+            {!project.coi_file_reference ? (
+              <EmptyState message="No COI on file yet. Forward the COI email to the office inbox and file it as a COI on this job." />
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  {coiUrl ? (
+                    <a href={coiUrl} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline font-medium text-sm">{project.coi_file_name ?? "COI"}</a>
+                  ) : (
+                    <span className="font-medium text-sm">{project.coi_file_name ?? "COI"}</span>
+                  )}
+                  {project.coi_received_at && <div className="text-[11px] text-slate-400">received {formatDateLong(project.coi_received_at.slice(0, 10))}</div>}
+                </div>
+                {canEditProjects && (
+                  <MoveToJobPicker action={moveProjectCoiToProjectAction.bind(null, project.id)} jobs={jobOptions} excludeProjectId={project.id} />
+                )}
               </div>
             )}
           </Card>

@@ -20,6 +20,9 @@ import {
   saveProjectEstimatedValue,
   updateBidStatus,
   updateProjectPipelineStage,
+  moveOutboundInvoiceToProject,
+  moveProjectDrawingToProject,
+  moveProjectCoiToProject,
 } from "@/lib/db";
 import { uploadMaterialInvoice, uploadProjectDrawing, uploadProjectPhoto } from "@/lib/storage";
 import { getActingUser } from "@/lib/current-user";
@@ -237,6 +240,21 @@ export async function addProjectDrawingAction(projectId: string, formData: FormD
   revalidatePath("/schedule/edit");
 }
 
+/** "Move to job..." on a Drawings row — the fix for the wrong job/unit
+ * being picked when filing from Email Inbox. */
+export async function moveProjectDrawingToProjectAction(currentProjectId: string, drawingId: string, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
+  const newProjectId = String(formData.get("project_id") ?? "").trim();
+  if (!newProjectId || newProjectId === currentProjectId) return;
+  const actingUser = await getActingUser();
+  await moveProjectDrawingToProject(drawingId, newProjectId, actingUser.fullName);
+  revalidatePath(`/projects/${currentProjectId}`);
+  revalidatePath(`/projects/${newProjectId}`);
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/edit");
+  revalidatePath("/drawings");
+}
+
 /** Saves a computed suggested price from the Estimate Calculator onto the
  * project's `project_value` field. */
 export async function saveProjectEstimateAction(id: string, value: number) {
@@ -291,6 +309,35 @@ export async function deleteOutboundInvoiceAction(projectId: string, invoiceId: 
   const actingUser = await getActingUser();
   await deleteProjectOutboundInvoice(invoiceId, actingUser.fullName);
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/edit");
+}
+
+/** "Move to job..." on an Invoice Sent to Customer / Change Orders
+ * (Outbound) row — the fix for the wrong job/unit being picked when
+ * filing from Email Inbox. */
+export async function moveOutboundInvoiceToProjectAction(currentProjectId: string, invoiceId: string, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
+  const newProjectId = String(formData.get("project_id") ?? "").trim();
+  if (!newProjectId || newProjectId === currentProjectId) return;
+  const actingUser = await getActingUser();
+  await moveOutboundInvoiceToProject(invoiceId, newProjectId, actingUser.fullName);
+  revalidatePath(`/projects/${currentProjectId}`);
+  revalidatePath(`/projects/${newProjectId}`);
+  revalidatePath("/schedule");
+  revalidatePath("/schedule/edit");
+}
+
+/** "Move to job..." for the COI file — the fix for the wrong job/unit
+ * being picked when filing from Email Inbox. */
+export async function moveProjectCoiToProjectAction(currentProjectId: string, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
+  const newProjectId = String(formData.get("project_id") ?? "").trim();
+  if (!newProjectId || newProjectId === currentProjectId) return;
+  const actingUser = await getActingUser();
+  await moveProjectCoiToProject(currentProjectId, newProjectId, actingUser.fullName);
+  revalidatePath(`/projects/${currentProjectId}`);
+  revalidatePath(`/projects/${newProjectId}`);
   revalidatePath("/schedule");
   revalidatePath("/schedule/edit");
 }

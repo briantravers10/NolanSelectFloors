@@ -3973,6 +3973,126 @@ export async function deleteProjectOutboundInvoice(id: string, actorName: string
 }
 
 /**
+ * Moves an outbound invoice or change order onto a different job — the fix
+ * for a wrong job/unit picked when filing from Email Inbox. An "invoice"
+ * carries the same is_current handling createProjectOutboundInvoice/
+ * deleteProjectOutboundInvoice use: it becomes the new job's current
+ * invoice (demoting whatever was), and the old job's newest remaining
+ * invoice (if any) is promoted back to current. A "change order" never
+ * touches is_current, so it's a plain move.
+ */
+export async function moveOutboundInvoiceToProject(id: string, newProjectId: string, actorName: string): Promise<void> {
+  const all = await listProjectOutboundInvoices();
+  const target = all.find((r) => r.id === id);
+  if (!target) throw new Error("Invoice not found");
+  const oldProjectId = target.project_id;
+  if (oldProjectId === newProjectId) return;
+  const client = sb();
+  const isInvoice = target.document_type === "invoice";
+
+  if (isInvoice) {
+    if (client) {
+      const { error } = await client.from("project_outbound_invoices").update({ is_current: false }).eq("project_id", newProjectId).eq("is_current", true);
+      if (error) throw error;
+    } else {
+      for (const r of getStore().projectOutboundInvoices) if (r.project_id === newProjectId) r.is_current = false;
+    }
+  }
+  if (client) {
+    const { error } = await client.from("project_outbound_invoices").update({ project_id: newProjectId, is_current: isInvoice ? true : target.is_current }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const r = getStore().projectOutboundInvoices.find((x) => x.id === id);
+    if (r) {
+      r.project_id = newProjectId;
+      if (isInvoice) r.is_current = true;
+    }
+  }
+  if (isInvoice) {
+    const next = all
+      .filter((r) => r.project_id === oldProjectId && r.id !== id && r.document_type === "invoice")
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    if (next) {
+      if (client) {
+        const { error } = await client.from("project_outbound_invoices").update({ is_current: true }).eq("id", next.id);
+        if (error) throw error;
+      } else {
+        const r = getStore().projectOutboundInvoices.find((x) => x.id === next.id);
+        if (r) r.is_current = true;
+      }
+    }
+  }
+  logActivity({
+    action: isInvoice ? "Outbound invoice moved to a different job" : "Change order (outbound) moved to a different job",
+    related_type: "project",
+    related_id: newProjectId,
+    actor_name: actorName,
+    detail: target.file_name ?? target.notes ?? (isInvoice ? "Invoice" : "Change order"),
+  });
+}
+
+/**
+ * Moves a drawing onto a different job — the fix for a wrong job/unit
+ * picked when filing from Email Inbox. Version history is grouped by
+ * (drawing_name, drawing_number) scoped to whichever job is currently
+ * being viewed, so moving a row just detaches it from one job's history
+ * and attaches it to another's — nothing else to reconcile.
+ */
+export async function moveProjectDrawingToProject(id: string, newProjectId: string, actorName: string): Promise<void> {
+  const drawing = (await listProjectDrawings()).find((d) => d.id === id);
+  if (!drawing) throw new Error("Drawing not found");
+  if (drawing.project_id === newProjectId) return;
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("project_drawings").update({ project_id: newProjectId }).eq("id", id);
+    if (error) throw error;
+  } else {
+    const r = getStore().projectDrawings.find((x) => x.id === id);
+    if (r) r.project_id = newProjectId;
+  }
+  logActivity({
+    action: "Drawing moved to a different job",
+    related_type: "project",
+    related_id: newProjectId,
+    actor_name: actorName,
+    detail: `${drawing.drawing_name}${drawing.drawing_number ? ` (${drawing.drawing_number})` : ""}`,
+  });
+}
+
+/**
+ * Moves the COI file onto a different job — the fix for a wrong job/unit
+ * picked when filing from Email Inbox. The COI isn't a row of its own,
+ * just fields on the project (see setProjectCoiFile), so this copies the
+ * file onto the new job (via the same setProjectCoiFile that approves its
+ * upcoming schedule days) and clears it off the old one. The old job's
+ * already-set COI status per schedule day is left alone — that's a
+ * separate, manually editable field, and clearing it automatically here
+ * could undo an approval nothing to do with this specific file.
+ */
+export async function moveProjectCoiToProject(fromProjectId: string, toProjectId: string, actorName: string): Promise<void> {
+  if (fromProjectId === toProjectId) return;
+  const project = (await listProjects()).find((p) => p.id === fromProjectId);
+  if (!project?.coi_file_reference) throw new Error("No COI on file for this job");
+  await setProjectCoiFile(toProjectId, project.coi_file_reference, project.coi_file_name ?? "COI", actorName);
+  const client = sb();
+  const clearPatch = { coi_file_reference: null, coi_file_name: null, coi_received_at: null };
+  if (client) {
+    const { error } = await client.from("projects").update(clearPatch).eq("id", fromProjectId);
+    if (error) throw error;
+  } else {
+    const p = getStore().projects.find((x) => x.id === fromProjectId);
+    if (p) Object.assign(p, clearPatch);
+  }
+  logActivity({
+    action: "COI moved to a different job",
+    related_type: "project",
+    related_id: toProjectId,
+    actor_name: actorName,
+    detail: project.coi_file_name ?? "COI",
+  });
+}
+
+/**
  * Files a forwarded email. A drawing goes onto the job's Drawings; an
  * invoice becomes ONE materials line (the single spend record) under the
  * supplier, linked to a job only when one is given — never two records,
