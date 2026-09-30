@@ -1488,6 +1488,11 @@ export async function setDriverWorkingDay(employeeId: string, workDate: string, 
 
   if (working) {
     if (mine.length > 0) return; // already has a base-pay entry for this date (driver day or a job) — no-op
+    // Also already on a job's crew today (schedule_assignments) — that
+    // assignment is this day's pay record; never stack a second, separate
+    // day-rate claim on top of it (see createScheduleAssignment).
+    const onCrewToday = (await listScheduleAssignments()).some((a) => a.employee_id === employeeId && a.schedule_date === workDate);
+    if (onCrewToday) return;
     await createActualLaborEntry({
       employee_id: employeeId,
       project_id: null,
@@ -1549,8 +1554,16 @@ export async function ensureDriverWorkingDefaults(date: string, actorName: strin
     if (seededDriverDefaultDatesFallback.has(`${companyId}__${date}`)) return;
   }
 
-  const [employees, dayEntries, timeOffEntries] = await Promise.all([listEmployees(), listActualLaborEntriesForDate(date), listTimeOffEntries()]);
-  const alreadyCovered = new Set(dayEntries.map((e) => e.employee_id));
+  const [employees, dayEntries, timeOffEntries, dayAssignments] = await Promise.all([
+    listEmployees(),
+    listActualLaborEntriesForDate(date),
+    listTimeOffEntries(),
+    listScheduleAssignments(),
+  ]);
+  // Also skip anyone already on a job's crew today — that assignment is
+  // their day's pay record; never stack a separate day-rate claim on top
+  // of it (see createScheduleAssignment).
+  const alreadyCovered = new Set([...dayEntries.map((e) => e.employee_id), ...dayAssignments.filter((a) => a.schedule_date === date).map((a) => a.employee_id)]);
   const drivers = employees.filter((e) => e.is_driver && e.active && !alreadyCovered.has(e.id) && !isEmployeeOffOn(timeOffEntries, e.id, date));
   for (const driver of drivers) {
     await createActualLaborEntry({
@@ -1586,6 +1599,11 @@ export async function setOfficeWorkingDay(employeeId: string, workDate: string, 
 
   if (working) {
     if (mine.length > 0) return; // already has a base-pay entry for this date — no-op
+    // Also already on a job's crew today (schedule_assignments) — that
+    // assignment is this day's pay record; never stack a second, separate
+    // day-rate claim on top of it (see createScheduleAssignment).
+    const onCrewToday = (await listScheduleAssignments()).some((a) => a.employee_id === employeeId && a.schedule_date === workDate);
+    if (onCrewToday) return;
     await createActualLaborEntry({
       employee_id: employeeId,
       project_id: null,
@@ -1624,8 +1642,16 @@ export async function ensureOfficeWorkingDefaults(date: string, actorName: strin
   const client = sb();
   const todayAbbrev = weekdayAbbrev(date);
 
-  const [employees, dayEntries, timeOffEntries] = await Promise.all([listEmployees(), listActualLaborEntriesForDate(date), listTimeOffEntries()]);
-  const alreadyCovered = new Set(dayEntries.map((e) => e.employee_id));
+  const [employees, dayEntries, timeOffEntries, dayAssignments] = await Promise.all([
+    listEmployees(),
+    listActualLaborEntriesForDate(date),
+    listTimeOffEntries(),
+    listScheduleAssignments(),
+  ]);
+  // Also skip anyone already on a job's crew today — that assignment is
+  // their day's pay record; never stack a separate day-rate claim on top
+  // of it (see createScheduleAssignment).
+  const alreadyCovered = new Set([...dayEntries.map((e) => e.employee_id), ...dayAssignments.filter((a) => a.schedule_date === date).map((a) => a.employee_id)]);
   const candidates = employees.filter(
     (e) => e.is_office && e.active && !alreadyCovered.has(e.id) && (e.office_workdays ?? []).includes(todayAbbrev) && !isEmployeeOffOn(timeOffEntries, e.id, date)
   );
@@ -2669,6 +2695,19 @@ export async function createScheduleAssignment(input: {
     actor_name: input.actorName,
     detail: `${employee.first_name} ${employee.last_name} on ${input.schedule_date} as ${input.role_on_job}`,
   });
+  // Never pay someone twice for one day: if they had a generic "working,
+  // no job" day-rate placeholder for this date (Office/Driver Working
+  // Today, see setOfficeWorkingDay/setDriverWorkingDay), it's now
+  // redundant — this real job assignment is their day's pay record
+  // instead. Without this, both would exist side by side, which
+  // computeActualLaborCosts would still cap at one day's rate (it groups
+  // and splits same-employee/same-day entries), but only once actual
+  // hours get logged against the job — until then the assignment and the
+  // placeholder would silently disagree about where the day's pay comes
+  // from.
+  const dayEntries = await listActualLaborEntriesForDate(input.schedule_date);
+  const placeholder = dayEntries.find((e) => e.employee_id === input.employee_id && e.project_id === null);
+  if (placeholder) await deleteActualLaborEntry(placeholder.id, input.actorName ?? "system");
   return record;
 }
 
