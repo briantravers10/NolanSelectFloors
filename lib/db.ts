@@ -4078,6 +4078,30 @@ export async function fileInboundEmail(id: string, opts: FileInboundOptions, act
   });
 }
 
+/**
+ * Re-points an already-filed "bid" or "purchase_order" email at a
+ * different job — for when the job picker in Email Inbox only offered one
+ * match (e.g. a building with several units all sharing one address) and
+ * the wrong one got picked. Both kinds have no separate record of their
+ * own (unlike a drawing or invoice, which create their own row) — the
+ * email's filed_project_id IS the link — so this is a straight update,
+ * nothing else to move.
+ */
+export async function moveFiledEmailToProject(id: string, newProjectId: string, actorName: string): Promise<void> {
+  const email = (await listInboundEmails()).find((e) => e.id === id);
+  if (!email) throw new Error("Email not found");
+  if (email.filed_kind !== "bid" && email.filed_kind !== "purchase_order") throw new Error("Only a filed bid or purchase order can be moved this way");
+  const fromProjectId = email.filed_project_id;
+  await updateInboundEmail(id, { filed_project_id: newProjectId });
+  logActivity({
+    action: email.filed_kind === "bid" ? "Potential bid moved to a different job" : "Purchase order moved to a different job",
+    related_type: "project",
+    related_id: newProjectId,
+    actor_name: actorName,
+    detail: `${email.subject || "Email"}${fromProjectId ? ` — moved from another job` : ""}`,
+  });
+}
+
 /** Link a materials/invoice line to a job (or unlink with null). Same record, so cost is never duplicated. */
 export async function linkMaterialToProject(id: string, projectId: string | null, actorName: string): Promise<void> {
   const before = (await listProjectMaterials()).find((m) => m.id === id);

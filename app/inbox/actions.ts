@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createQuickProject, fileInboundEmail, getOrCreateProjectScheduleDay, listInboundEmails, updateInboundEmail, updateProjectScheduleDay } from "@/lib/db";
+import { createQuickProject, fileInboundEmail, getOrCreateProjectScheduleDay, listInboundEmails, moveFiledEmailToProject, updateInboundEmail, updateProjectScheduleDay } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { canEdit } from "@/lib/permissions";
 import { resolveQuickJobBuilding } from "@/lib/quick-job";
@@ -100,6 +100,23 @@ export async function setBidStatusAction(emailId: string, formData: FormData) {
   const bid_notes = formData.has("bid_notes") ? String(formData.get("bid_notes") ?? "").trim() || null : undefined;
   await updateInboundEmail(emailId, { bid_status: status, ...(bid_notes !== undefined ? { bid_notes } : {}) });
   revalidatePath("/bids");
+}
+
+/**
+ * Move an already-filed bid/estimate or purchase order to a different job
+ * — the fix for "the job picker only offered one address and it was the
+ * wrong unit." Shown on the project page's "Estimates & Purchase Orders
+ * (From Email)" card.
+ */
+export async function moveFiledEmailToProjectAction(emailId: string, fromProjectId: string | null, formData: FormData) {
+  if (!(await canEdit("projects"))) return;
+  const newProjectId = String(formData.get("project_id") ?? "").trim();
+  if (!newProjectId || newProjectId === fromProjectId) return;
+  const actingUser = await getActingUser();
+  await moveFiledEmailToProject(emailId, newProjectId, actingUser.fullName);
+  revalidatePath("/inbox");
+  revalidatePath(`/projects/${newProjectId}`);
+  if (fromProjectId) revalidatePath(`/projects/${fromProjectId}`);
 }
 
 /** Take an email back out of Purchase Orders / Bids (it returns to Unfiled). */

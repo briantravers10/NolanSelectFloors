@@ -28,6 +28,7 @@ import { drawingFileUrl, isFileStorageConfigured, materialInvoiceUrl, signedFile
 import { canEdit } from "@/lib/permissions";
 import { markInvoiceSentAction } from "@/app/dashboard/actions";
 import { EstimateCalculator } from "@/components/EstimateCalculator";
+import { MoveFiledEmailToJobForm } from "@/components/projects/MoveFiledEmailToJobForm";
 import { QuickBooksDocumentList } from "@/components/quickbooks/QuickBooksDocumentList";
 import { FinancialSummaryCard } from "@/components/quickbooks/FinancialSummaryCard";
 import { computeFinancialSummary } from "@/lib/financials";
@@ -41,6 +42,7 @@ import {
   formatCurrency,
   formatJobNumber,
   formatPercent,
+  projectDisplayName,
 } from "@/lib/calculations";
 import { formatDateLong } from "@/lib/dates";
 import { scheduleNoteDate } from "@/lib/schedule";
@@ -165,6 +167,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // of their own on this job (unlike Drawings/Invoices/Change Orders
   // above) — without this they were only ever visible in the Activity log.
   const filedEmailsForOtherKinds = filedEmails.filter((e) => e.filed_kind === "bid" || e.filed_kind === "purchase_order");
+  // For the "Move to job" picker on those rows — every job, in case the
+  // wrong one (e.g. the wrong unit in the same building) was picked when
+  // filing from Email Inbox.
+  const buildingByIdForJobOptions = new Map(buildings.map((b) => [b.id, b]));
+  const jobOptions = [...projects]
+    .map((p) => ({ id: p.id, label: `#${p.job_number} — ${projectDisplayName(p, buildingByIdForJobOptions.get(p.building_id)?.name)}` }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   const building = buildings.find((b) => b.id === project.building_id);
   const client = building ? clients.find((c) => c.id === building.client_company_id) : undefined;
@@ -711,6 +720,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                           </span>
                           {e.filed_by && <div className="text-[11px] text-slate-400">filed by {e.filed_by}</div>}
                         </td>
+                        {canEditProjects && (
+                          <td className="py-2 pl-2 w-[180px] text-right">
+                            <MoveFiledEmailToJobForm emailId={e.id} currentProjectId={id} jobs={jobOptions} />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
