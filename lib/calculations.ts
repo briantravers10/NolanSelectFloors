@@ -219,15 +219,27 @@ export interface ProjectCosting {
   grossMarginPct: number | null;
 }
 
-/** Full project costing: labor + materials + other vs. contract value. */
+/**
+ * Full project costing: labor + materials + other vs. contract value.
+ *
+ * `laborCostOverride` lets a caller that already has actual_labor_entries
+ * in hand (see lib/labor-cost.ts#jobLaborSummary) swap in the real cost
+ * for whatever's been confirmed so far, instead of the plain PLANNED
+ * figure from schedule_assignments — the planned total silently misses
+ * any day someone logged hours on this job without ever having been
+ * added to that day's crew in the schedule (e.g. hours confirmed in End
+ * of Day Review after the fact), understating both Total Cost and Gross
+ * Margin, not just the Labor line.
+ */
 export function computeProjectCosting(
   project: Pick<Project, "project_value" | "other_cost">,
   assignments: ScheduleAssignment[],
   projectMaterials: ProjectMaterial[],
   projectId: string,
-  extraMaterialCost = 0
+  extraMaterialCost = 0,
+  laborCostOverride?: number
 ): ProjectCosting {
-  const laborCost = projectLaborCost(assignments, projectId);
+  const laborCost = laborCostOverride ?? projectLaborCost(assignments, projectId);
   const materialCost = round2(
     projectMaterials.filter((m) => m.project_id === projectId).reduce((sum, m) => sum + m.cost, 0) + extraMaterialCost
   );

@@ -198,7 +198,18 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     drawingsByName.get(key)!.push(d);
   }
 
-  const costing = computeProjectCosting(project, assignments, projectMaterialsList, id);
+  // Computed before costing so its real total (when there's any confirmed
+  // actual-hours activity at all) can override the plain planned figure —
+  // see computeProjectCosting's laborCostOverride.
+  const laborSummary = jobLaborSummary(id, actualLaborEntries, employees);
+  const costing = computeProjectCosting(
+    project,
+    assignments,
+    projectMaterialsList,
+    id,
+    0,
+    laborSummary.rows.length > 0 ? laborSummary.totalLaborCost : undefined
+  );
   // One day rate per person per day — a double-booked person's day is split
   // between their jobs, so this project only carries its share.
   const plannedShares = plannedAssignmentShares(assignments);
@@ -217,7 +228,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     return sum + perDay * (r.estimated_days ?? 0);
   }, 0);
   const canViewCost = canViewLaborCost(actingUser);
-  const laborSummary = jobLaborSummary(id, actualLaborEntries, employees);
   const canQBView = canViewQuickBooks(actingUser);
   const canQBManage = canManageQuickBooksDocuments(actingUser);
   const canFinancials = canViewJobFinancials(actingUser);
