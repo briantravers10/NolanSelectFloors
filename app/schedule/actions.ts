@@ -413,12 +413,51 @@ export async function setOfficeWorkingAction(employeeId: string, workDate: strin
 // End-of-day review / confirm day
 // ---------------------------------------------------------------------
 
+/**
+ * Confirm Day doubles as a safety net for whatever End of Day Review wasn't
+ * touched: for each job scheduled that date with NO actual_labor_entries
+ * yet (meaning nobody hit "Save hours" on its card — the office only does
+ * that when hours differ from the schedule), it saves the scheduled crew at
+ * the same default hours the review card would've shown (one day, split
+ * across jobs for anyone double-booked that date). A job someone already
+ * reviewed — saved hours, or marked an absence that cleared its entries —
+ * is left completely alone; this never overwrites real review work, it
+ * only catches jobs that matched the schedule exactly and so were never
+ * individually saved.
+ */
+async function autoSaveUnreviewedJobHours(workDate: string, actorName: string) {
+  const [assignments, entries] = await Promise.all([listScheduleAssignments({ maxDate: workDate }), listActualLaborEntries()]);
+  const dayAssignments = assignments.filter((a) => a.schedule_date === workDate);
+  const dayEntries = entries.filter((e) => e.work_date === workDate);
+  const reviewedProjectIds = new Set(dayEntries.map((e) => e.project_id));
+
+  const jobsPerEmployee = new Map<string, number>();
+  for (const a of dayAssignments) jobsPerEmployee.set(a.employee_id, (jobsPerEmployee.get(a.employee_id) ?? 0) + 1);
+
+  const byProject = new Map<string, typeof dayAssignments>();
+  for (const a of dayAssignments) {
+    if (reviewedProjectIds.has(a.project_id)) continue;
+    if (!byProject.has(a.project_id)) byProject.set(a.project_id, []);
+    byProject.get(a.project_id)!.push(a);
+  }
+
+  for (const [projectId, crew] of byProject) {
+    for (const a of crew) {
+      const jobCount = Math.max(1, jobsPerEmployee.get(a.employee_id) ?? 1);
+      await createActualLaborEntry({ employee_id: a.employee_id, project_id: projectId, work_date: workDate, hours: 8 / jobCount, actorName });
+    }
+  }
+}
+
 export async function confirmDayAction(workDate: string, formData: FormData) {
   if (!(await canEdit("schedule"))) return;
   const notes = String(formData.get("notes") ?? "") || undefined;
   const actingUser = await getActingUser();
+  await autoSaveUnreviewedJobHours(workDate, actingUser.fullName);
   await confirmDay(workDate, actingUser.fullName, notes);
   revalidateSchedule();
+  revalidatePath("/schedule/review");
+  revalidatePath("/payroll");
 }
 
 // ---------------------------------------------------------------------
