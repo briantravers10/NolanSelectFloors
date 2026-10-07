@@ -19,7 +19,7 @@ import {
   listScheduleAssignments,
 } from "@/lib/db";
 import { canManageQuickBooksDocuments, canViewJobFinancials, canViewLaborCost, canViewQuickBooks, getActingUser } from "@/lib/current-user";
-import { effectiveDayRate, jobLaborSummary } from "@/lib/labor-cost";
+import { effectiveDayRate, jobLaborSummary, projectEffectiveLaborCost } from "@/lib/labor-cost";
 import { Card, StatusBadge, Button, EmptyState, Stat } from "@/components/ui";
 import { EditableTitle } from "@/components/projects/EditableTitle";
 import { CrewRequirementForm } from "@/components/projects/CrewRequirementForm";
@@ -198,18 +198,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     drawingsByName.get(key)!.push(d);
   }
 
-  // Computed before costing so its real total (when there's any confirmed
-  // actual-hours activity at all) can override the plain planned figure —
-  // see computeProjectCosting's laborCostOverride.
+  // Computed before costing so the real, day-by-day labor total (confirmed
+  // hours where they exist, planned cost only for days nobody's confirmed
+  // yet) can override the plain all-planned figure — see
+  // computeProjectCosting's laborCostOverride and
+  // lib/labor-cost.ts#projectEffectiveLaborCost.
   const laborSummary = jobLaborSummary(id, actualLaborEntries, employees);
-  const costing = computeProjectCosting(
-    project,
-    assignments,
-    projectMaterialsList,
-    id,
-    0,
-    laborSummary.rows.length > 0 ? laborSummary.totalLaborCost : undefined
-  );
+  const effectiveLaborCost = projectEffectiveLaborCost(id, assignments, actualLaborEntries);
+  const costing = computeProjectCosting(project, assignments, projectMaterialsList, id, 0, effectiveLaborCost);
   // One day rate per person per day — a double-booked person's day is split
   // between their jobs, so this project only carries its share.
   const plannedShares = plannedAssignmentShares(assignments);
@@ -232,7 +228,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canQBManage = canManageQuickBooksDocuments(actingUser);
   const canFinancials = canViewJobFinancials(actingUser);
   const qbConnected = isQuickBooksConnected(qbConnection);
-  const financialSummary = computeFinancialSummary(project, assignments, projectMaterialsList, qbDocuments, qbConnected);
+  const financialSummary = computeFinancialSummary(project, assignments, projectMaterialsList, qbDocuments, qbConnected, effectiveLaborCost);
 
   return (
     <div>
@@ -267,7 +263,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <Stat label="Project Value" value={formatCurrency(costing.projectValue)} />
-        <Stat label={laborSummary.rows.length > 0 ? "Labor Cost (actual hours)" : "Labor Cost (planned)"} value={formatCurrency(laborSummary.rows.length > 0 ? laborSummary.totalLaborCost : costing.laborCost)} />
+        <Stat label="Labor Cost" value={formatCurrency(costing.laborCost)} />
         <Stat label="Total Cost" value={formatCurrency(costing.totalCost)} />
         <Stat label="Gross Margin" value={formatPercent(costing.grossMarginPct)} tone={costing.grossMarginPct !== null && costing.grossMarginPct < 20 ? "bad" : "good"} />
       </div>
@@ -909,7 +905,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           )}
         </Card>
 
-        {canFinancials && <FinancialSummaryCard summary={financialSummary} canViewLaborCost={canViewCost} />}
+        {canFinancials && (
+          <FinancialSummaryCard
+            summary={financialSummary}
+            canViewLaborCost={canViewCost}
+            onEditEstimate={saveProjectEstimateAction.bind(null, project.id)}
+          />
+        )}
 
         <Card className="p-4 space-y-3 lg:col-span-3">
           <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-1">Estimate Calculator</h2>

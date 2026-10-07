@@ -27,6 +27,13 @@ export interface FinancialSummary {
   totalTrackedCost: number;
   grossJobProfit: number | null;
   grossMarginPct: number | null;
+  // Estimate balance (Estimated Value − Total Tracked Cost) — available
+  // with or without QuickBooks, unlike grossJobProfit above which is
+  // against the actual INVOICED amount and so only means anything once
+  // QuickBooks is connected. This is the number to use when all you have
+  // is a manually-entered estimate and no invoice yet.
+  estimateBalance: number;
+  estimateMarginPct: number | null;
   invoiceCount: number;
   estimateCount: number;
 }
@@ -43,9 +50,10 @@ export function computeFinancialSummary(
   assignments: Parameters<typeof computeProjectCosting>[1],
   projectMaterials: ProjectMaterial[],
   qbDocuments: QuickBooksDocument[],
-  quickBooksConnected: boolean
+  quickBooksConnected: boolean,
+  laborCostOverride?: number
 ): FinancialSummary {
-  const costing = computeProjectCosting(project, assignments, projectMaterials, project.id);
+  const costing = computeProjectCosting(project, assignments, projectMaterials, project.id, 0, laborCostOverride);
   const invoices = qbDocuments.filter((d) => d.entity_type === "Invoice");
   const estimates = qbDocuments.filter((d) => d.entity_type === "Estimate");
   const invoiced = quickBooksConnected ? round2(invoices.reduce((s, d) => s + d.amount, 0)) : null;
@@ -65,6 +73,8 @@ export function computeFinancialSummary(
     totalTrackedCost: costing.totalCost,
     grossJobProfit,
     grossMarginPct,
+    estimateBalance: costing.grossProfit,
+    estimateMarginPct: costing.grossMarginPct,
     invoiceCount: invoices.length,
     estimateCount: estimates.length,
   };

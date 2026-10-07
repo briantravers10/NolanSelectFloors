@@ -1,20 +1,37 @@
 import type { FinancialSummary } from "@/lib/financials";
 import { Card } from "@/components/ui";
 import { formatCurrency, formatPercent } from "@/lib/calculations";
+import { EditEstimateValueButton } from "@/components/projects/EditEstimateValueButton";
 
 /**
  * Financial Summary — Estimated/Contract Value, Invoiced, Paid,
  * Outstanding (from QuickBooks), Labor Cost (from lib/labor-cost.ts,
- * gated separately), Other Tracked Costs, Total Tracked Cost, Gross Job
- * Profit, Gross Margin. Only computes/displays the QuickBooks-derived
- * fields when actually connected — otherwise shows an honest
- * "Not connected to QuickBooks" state rather than a misleading "$0".
+ * gated separately), Other Tracked Costs, Total Tracked Cost, Balance
+ * (Estimate − Total Tracked Cost, always available), Gross Job Profit
+ * (vs. actual INVOICED amount, QuickBooks only). Only computes/displays
+ * the QuickBooks-derived fields when actually connected — otherwise
+ * shows an honest "Not connected to QuickBooks" state rather than a
+ * misleading "$0".
  */
-export function FinancialSummaryCard({ summary, canViewLaborCost }: { summary: FinancialSummary; canViewLaborCost: boolean }) {
+export function FinancialSummaryCard({
+  summary,
+  canViewLaborCost,
+  onEditEstimate,
+}: {
+  summary: FinancialSummary;
+  canViewLaborCost: boolean;
+  onEditEstimate?: (value: number) => Promise<void>;
+}) {
   return (
     <Card className="p-4 space-y-3">
       <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Financial Summary</h2>
-      <Row label="Estimated / Contract Value" value={formatCurrency(summary.estimatedValue)} />
+      <div className="flex justify-between items-center text-sm">
+        <span className="text-slate-500">Estimated / Contract Value</span>
+        <div className="flex items-center gap-2">
+          <span className="text-slate-800">{formatCurrency(summary.estimatedValue)}</span>
+          {onEditEstimate && <EditEstimateValueButton action={onEditEstimate} currentValue={summary.estimatedValue} />}
+        </div>
+      </div>
       {summary.quickBooksConnected ? (
         <>
           <Row label={`Invoiced (${summary.invoiceCount} invoice${summary.invoiceCount === 1 ? "" : "s"})`} value={formatCurrency(summary.invoiced)} />
@@ -31,6 +48,15 @@ export function FinancialSummaryCard({ summary, canViewLaborCost }: { summary: F
       {canViewLaborCost && (
         <div className="border-t border-slate-200 pt-2">
           <Row label="Total Tracked Cost" value={formatCurrency(summary.totalTrackedCost)} bold />
+        </div>
+      )}
+      {canViewLaborCost && (
+        <div className="border-t border-slate-200 pt-2">
+          <Row label="Balance (Estimate − Tracked Cost)" value={formatCurrency(summary.estimateBalance)} bold tone={summary.estimateBalance >= 0 ? "good" : "bad"} />
+          <div className="flex justify-between text-sm mt-1">
+            <span className="text-slate-500">Margin</span>
+            <span className="font-semibold text-slate-800">{formatPercent(summary.estimateMarginPct)}</span>
+          </div>
         </div>
       )}
       {canViewLaborCost && summary.quickBooksConnected && (

@@ -137,6 +137,38 @@ export function jobLaborSummary(projectId: string, entries: ActualLaborEntry[], 
   };
 }
 
+/**
+ * The real labor cost for a job, day by day: for each (employee, date)
+ * with EITHER confirmed actual hours or a planned schedule assignment on
+ * this job, confirmed hours win whenever they exist for that day (costed
+ * exactly like Payroll — split across every job that employee logged
+ * that day, via computeActualLaborCosts over the FULL entries list, not
+ * just this job's) and the planned assignment cost is used only as a
+ * fallback for a day nobody's confirmed hours for yet. Never an
+ * all-or-nothing switch at the job level — a job with some days
+ * confirmed and others still only scheduled correctly adds both
+ * together, instead of one replacing the other.
+ */
+export function projectEffectiveLaborCost(projectId: string, assignments: ScheduleAssignment[], allActualLaborEntries: ActualLaborEntry[]): number {
+  const costByEntry = laborCostByEntryId(allActualLaborEntries);
+  const projectEntries = allActualLaborEntries.filter((e) => e.project_id === projectId);
+  const confirmedKeys = new Set(projectEntries.map((e) => `${e.employee_id}__${e.work_date}`));
+  const actualTotal = projectEntries.reduce((sum, e) => sum + (costByEntry.get(e.id) ?? 0), 0);
+
+  const plannedOnlyByEmployeeDate = new Map<string, ScheduleAssignment[]>();
+  for (const a of assignments) {
+    if (a.project_id !== projectId) continue;
+    const key = `${a.employee_id}__${a.schedule_date}`;
+    if (confirmedKeys.has(key)) continue; // confirmed hours already cover this day — don't also add the planned estimate
+    if (!plannedOnlyByEmployeeDate.has(key)) plannedOnlyByEmployeeDate.set(key, []);
+    plannedOnlyByEmployeeDate.get(key)!.push(a);
+  }
+  let plannedOnlyTotal = 0;
+  for (const group of plannedOnlyByEmployeeDate.values()) plannedOnlyTotal += Math.max(0, ...group.map((a) => a.assignment_cost));
+
+  return round2(actualTotal + plannedOnlyTotal);
+}
+
 // ---------------------------------------------------------------------
 // PER-DAY LABOR COST TOTAL — across ALL jobs for a given day.
 // ---------------------------------------------------------------------
