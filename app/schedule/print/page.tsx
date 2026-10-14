@@ -51,6 +51,7 @@ export default async function PrintForJohnPage({ searchParams }: { searchParams:
         <Link href={`/schedule?view=day&date=${date}`} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm">← Back to schedule</Link>
         <Link href={`/schedule/print?date=${date}`} className="hidden" aria-hidden />
         <PrintButton label="Print" />
+        <a href={`/schedule/export?date=${date}`} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm">📊 Export to Excel</a>
       </div>
 
       <h1 className="text-3xl font-bold leading-tight">{dayLabel(date)}</h1>
