@@ -14,6 +14,7 @@ import {
   listAgendaEventsForOwner,
   listNavSectionsLastSeen,
   markNavSectionSeen,
+  listBugReports,
 } from "./db";
 import { compareCrewForProjectDate } from "./calculations";
 import { computeTimeOffUsageByEmployee } from "./time-off";
@@ -79,6 +80,7 @@ async function resolveNavBadgeCounts(): Promise<Record<string, number>> {
     actualLaborEntries,
     agendaEvents,
     lastSeen,
+    bugReports,
   ] = await Promise.all([
     listJobRequests(),
     listProjects(),
@@ -92,6 +94,7 @@ async function resolveNavBadgeCounts(): Promise<Record<string, number>> {
     listActualLaborEntries(),
     listAgendaEventsForOwner(actingUser.id),
     listNavSectionsLastSeen(actingUser.id),
+    listBugReports(),
   ]);
 
   const since = (href: string) => lastSeen[href] ?? EPOCH;
@@ -205,6 +208,11 @@ async function resolveNavBadgeCounts(): Promise<Record<string, number>> {
   const agendaSeenToday = since("/agenda") >= startOfTodayIso();
   const agendaCount = agendaSeenToday ? 0 : agendaEvents.filter((e) => e.event_date === today && !e.completed_at).length;
 
+  // ---- AI Support: unresolved bug reports right now — a to-do count, not
+  // a "new since last visit" stream, so it doesn't clear on just opening
+  // the page and reset to 0 the moment something's still outstanding ----
+  const aiSupportCount = bugReports.filter((r) => r.status !== "Resolved").length;
+
   return {
     "/job-requests": jobRequestsCount,
     "/bids": bidsCount,
@@ -218,6 +226,7 @@ async function resolveNavBadgeCounts(): Promise<Record<string, number>> {
     "/inbox": inboxCount,
     "/payroll": payrollCount,
     "/agenda": agendaCount,
+    "/ai-support": aiSupportCount,
     "/dashboard": jobRequestsCount + projectsCount + scheduleCount + materialsCount,
   };
 }

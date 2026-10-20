@@ -22,7 +22,9 @@ export function MobileNav({ access, badgeCounts, isOwner }: { access: Record<Sec
   // "More" tile badge — everything not already surfaced by its own bottom
   // bar icon (Dashboard/Schedule/Projects/Staff), so nothing is double-counted.
   const bottomHrefs = new Set(bottomItems.map((i) => i.href));
-  const moreBadgeTotal = moreItems.reduce((sum, item) => (bottomHrefs.has(item.href) ? sum : sum + (badgeCounts[item.href] ?? 0)), 0);
+  const moreBadgeTotal =
+    moreItems.reduce((sum, item) => (bottomHrefs.has(item.href) ? sum : sum + (badgeCounts[item.href] ?? 0)), 0) +
+    (isOwner ? badgeCounts["/ai-support"] ?? 0 : 0);
 
   return (
     <>
@@ -74,8 +76,13 @@ export function MobileNav({ access, badgeCounts, isOwner }: { access: Record<Sec
                 <Link
                   href="/ai-support"
                   onClick={() => setMoreOpen(false)}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 py-3 text-slate-700 active:bg-slate-50"
+                  className="relative flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 py-3 text-slate-700 active:bg-slate-50"
                 >
+                  {!!badgeCounts["/ai-support"] && (
+                    <span className="absolute top-1.5 right-1.5">
+                      <NavBadge count={badgeCounts["/ai-support"]} />
+                    </span>
+                  )}
                   <Icon name="settings" className="w-5 h-5" />
                   <span className="text-[11px] font-medium text-center leading-tight">AI Support</span>
                 </Link>
