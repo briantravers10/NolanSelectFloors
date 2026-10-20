@@ -6,6 +6,7 @@ import { Icon } from "@/components/Icon";
 import { StatusBadge } from "@/components/ui";
 import { submitBugReportAction, listMyBugReportsAction } from "@/app/support/actions";
 import { getLastSentryEventId } from "@/lib/sentry-scrub";
+import { formatDateTime } from "@/lib/dates";
 import type { BugReport } from "@/lib/types";
 
 /**
@@ -139,7 +140,7 @@ export function ReportProblemPanel() {
                     <p className="text-xs text-slate-800 leading-snug line-clamp-2">{r.description}</p>
                     <StatusBadge status={r.status} />
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1">{r.page_path} · {new Date(r.created_at).toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">{r.page_path} · {formatDateTime(r.created_at)}</p>
                 </li>
               ))}
             </ul>

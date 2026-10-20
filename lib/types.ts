@@ -1259,6 +1259,8 @@ export interface ProjectOutboundInvoice {
 // ---------------------------------------------------------------------
 export const BUG_REPORT_STATUSES = ["Open", "Investigating", "Fix Proposed", "Resolved"] as const;
 export type BugReportStatus = (typeof BUG_REPORT_STATUSES)[number];
+export const BUG_REPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"] as const;
+export type BugReportPriority = (typeof BUG_REPORT_PRIORITIES)[number];
 
 export interface BugReport {
   id: string;
@@ -1279,7 +1281,7 @@ export interface BugReport {
   status: BugReportStatus;
   // Phase 4 fields — unused by Phase 3's submit flow, always null until
   // the admin dashboard sets them.
-  priority?: "Low" | "Medium" | "High" | "Urgent" | null;
+  priority?: BugReportPriority | null;
   admin_notes?: string | null;
   github_pr_url?: string | null;
   created_at: string;

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createBugReport, listBugReportsForUser, updateBugReport } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { isOwnerActingUser } from "@/lib/permissions";
-import type { BugReport } from "@/lib/types";
+import { BUG_REPORT_STATUSES, BUG_REPORT_PRIORITIES, type BugReport } from "@/lib/types";
 
 /**
  * "Report a Problem" (Phase 3 of the AI bug monitoring/support system —
@@ -43,10 +43,26 @@ export async function listMyBugReportsAction(): Promise<BugReport[]> {
   return (await listBugReportsForUser(actingUser.id)).slice(0, 10);
 }
 
-/** Admin triage — Phase 4 will call this from the AI Support dashboard. */
-export async function updateBugReportStatusAction(id: string, status: "Open" | "Investigating" | "Fix Proposed" | "Resolved") {
+/**
+ * Admin triage from the "AI Support" dashboard (Phase 4) — status,
+ * priority, investigation notes, and a linked GitHub PR once a fix
+ * exists. Owner/Admin only; silently no-ops for anyone else (the page
+ * itself is already gated the same way, so this is a second check, not
+ * the only one — never trust a hidden nav link as the real boundary).
+ */
+export async function updateBugReportAdminAction(id: string, formData: FormData) {
   const actingUser = await getActingUser();
   if (!(await isOwnerActingUser(actingUser))) return;
-  await updateBugReport(id, { status }, actingUser.fullName);
+
+  const statusRaw = String(formData.get("status") ?? "");
+  const priorityRaw = String(formData.get("priority") ?? "");
+  const patch: Parameters<typeof updateBugReport>[1] = {
+    admin_notes: String(formData.get("admin_notes") ?? "").trim() || undefined,
+    github_pr_url: String(formData.get("github_pr_url") ?? "").trim() || undefined,
+  };
+  if ((BUG_REPORT_STATUSES as readonly string[]).includes(statusRaw)) patch.status = statusRaw as (typeof BUG_REPORT_STATUSES)[number];
+  if ((BUG_REPORT_PRIORITIES as readonly string[]).includes(priorityRaw)) patch.priority = priorityRaw as (typeof BUG_REPORT_PRIORITIES)[number];
+
+  await updateBugReport(id, patch, actingUser.fullName);
   revalidatePath("/ai-support");
 }

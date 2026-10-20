@@ -9,8 +9,9 @@ import { NavBadge } from "./NavBadge";
 import type { SectionAccessLevel, SectionKey } from "@/lib/types";
 
 /** `access` (build 11) — see components/Sidebar.tsx for the write-up.
- * `badgeCounts` — see lib/nav-badges.ts. */
-export function MobileNav({ access, badgeCounts }: { access: Record<SectionKey, SectionAccessLevel>; badgeCounts: Record<string, number> }) {
+ * `badgeCounts` — see lib/nav-badges.ts. `isOwner` — gates the "AI
+ * Support" tile in the More menu, same as Sidebar.tsx. */
+export function MobileNav({ access, badgeCounts, isOwner }: { access: Record<SectionKey, SectionAccessLevel>; badgeCounts: Record<string, number>; isOwner: boolean }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreItems = NAV_ITEMS.filter((item) => !item.sectionKey || access[item.sectionKey] !== "none");
@@ -69,6 +70,16 @@ export function MobileNav({ access, badgeCounts }: { access: Record<SectionKey, 
                   <span className="text-[11px] font-medium text-center leading-tight">{item.label}</span>
                 </Link>
               ))}
+              {isOwner && (
+                <Link
+                  href="/ai-support"
+                  onClick={() => setMoreOpen(false)}
+                  className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 py-3 text-slate-700 active:bg-slate-50"
+                >
+                  <Icon name="settings" className="w-5 h-5" />
+                  <span className="text-[11px] font-medium text-center leading-tight">AI Support</span>
+                </Link>
+              )}
             </div>
           </div>
         </div>
