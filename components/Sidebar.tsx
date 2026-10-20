@@ -91,6 +91,7 @@ export function Sidebar({
           >
             <Icon name="settings" className="w-4.5 h-4.5 shrink-0" />
             <span className="flex-1">AI Support</span>
+            <NavBadge count={badgeCounts["/ai-support"]} />
           </Link>
         )}
       </nav>
