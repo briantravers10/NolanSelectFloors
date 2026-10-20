@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const nextConfig: NextConfig = {
   // Sidebar "needs attention" badges (lib/nav-badges.ts) are computed fresh
@@ -16,4 +17,17 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Only wraps the build with Sentry's plugin (source-map upload etc.) when
+// a build-time auth token is actually configured — without one (every
+// environment today, including this preview branch) the build is exactly
+// what it was before Sentry was added, byte for byte.
+export default process.env.SENTRY_AUTH_TOKEN
+  ? withSentryConfig(nextConfig, {
+      org: "travers-group-llc",
+      project: process.env.SENTRY_PROJECT ?? "nolan-select-floors",
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      silent: true,
+      widenClientFileUpload: true,
+      webpack: { automaticVercelMonitors: false },
+    })
+  : nextConfig;
