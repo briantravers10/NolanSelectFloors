@@ -8,6 +8,7 @@ import { addDays, isoDate, startOfWeek } from "./dates";
 import type {
   ActivityLogEntry,
   ActualLaborEntry,
+  BugReport,
   AgendaEvent,
   Building,
   BuildingRegion,
@@ -1166,6 +1167,9 @@ export function buildSeedData() {
   const quickbooksDocuments: QuickBooksDocument[] = [];
   const quickbooksWebhookEvents: QuickBooksWebhookEvent[] = [];
   const quickbooksSyncLog: QuickBooksSyncLogEntry[] = [];
+  // AI Bug Monitoring & Support (Phase 3) — empty seed, same as inboundEmails
+  // above: no fake bug reports to clear out, starts truly empty either way.
+  const bugReports: BugReport[] = [];
 
   // ---------------------------------------------------------------------
   // PRICING & ESTIMATING FORMULAS
@@ -1286,6 +1290,7 @@ export function buildSeedData() {
     quickbooksDocuments,
     quickbooksWebhookEvents,
     quickbooksSyncLog,
+    bugReports,
     sectionPermissions,
     weekStart: isoDate(monday),
   };

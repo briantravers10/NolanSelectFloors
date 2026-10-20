@@ -1247,3 +1247,44 @@ export interface ProjectOutboundInvoice {
   // link — see lib/db.ts#createProjectOutboundInvoice.
   document_type: "invoice" | "change_order";
 }
+
+// ---------------------------------------------------------------------
+// AI BUG MONITORING & SUPPORT — "Report a Problem" (Phase 3) + the
+// admin "AI Support" dashboard (Phase 4, not yet built). One table
+// covers both: Phase 3 only ever writes/reads reported_by*, page_path,
+// description, additional_details, sentry_event_id, status,
+// created_at/updated_at. priority/admin_notes/github_pr_url exist now so
+// Phase 4 doesn't need a second migration, but stay null/unused until
+// that admin page is built.
+// ---------------------------------------------------------------------
+export const BUG_REPORT_STATUSES = ["Open", "Investigating", "Fix Proposed", "Resolved"] as const;
+export type BugReportStatus = (typeof BUG_REPORT_STATUSES)[number];
+export const BUG_REPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"] as const;
+export type BugReportPriority = (typeof BUG_REPORT_PRIORITIES)[number];
+
+export interface BugReport {
+  id: string;
+  company_id: string;
+  // ActingUser.id (office_users.id, or the OWNER_ACTING_ID sentinel) —
+  // same plain-text "who" convention as agenda_events.owner_user_id and
+  // nav_badge_seen.user_key, since there's no single users table.
+  reported_by_user_id: string;
+  reported_by_name: string;
+  page_path: string;
+  description: string;
+  additional_details?: string | null;
+  // Links this report to a Sentry issue when the report was filed with an
+  // error already captured client-side (lib/sentry-scrub.ts/instrumentation
+  // files) — null for a plain "something seems off" report with no
+  // specific error attached.
+  sentry_event_id?: string | null;
+  status: BugReportStatus;
+  // Phase 4 fields — unused by Phase 3's submit flow, always null until
+  // the admin dashboard sets them.
+  priority?: BugReportPriority | null;
+  admin_notes?: string | null;
+  github_pr_url?: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string | null;
+}

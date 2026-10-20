@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { getActingUser } from "@/lib/current-user";
 import { getCurrentSession, isRealAuthConfigured } from "@/lib/auth";
 import { ASSISTANT_GUIDE } from "@/lib/assistant-guide";
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
     if (!res.ok) {
       const text = await res.text();
       console.error("assistant: Anthropic API error", res.status, text.slice(0, 300));
+      Sentry.captureMessage(`assistant: Anthropic API error ${res.status}`, { level: "error", tags: { feature: "ai-assistant" } });
       return NextResponse.json({ reply: "Sorry — the assistant couldn't answer just now. Try again in a moment." });
     }
     const data = (await res.json()) as { content?: { type: string; text?: string }[] };
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ reply, configured: true });
   } catch (err) {
     console.error("assistant: request failed", err);
+    Sentry.captureException(err, { tags: { feature: "ai-assistant" } });
     return NextResponse.json({ reply: "Sorry — the assistant couldn't answer just now. Try again in a moment." });
   }
 }

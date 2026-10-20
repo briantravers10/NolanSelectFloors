@@ -17,10 +17,15 @@ export function Sidebar({
   access,
   realAuthOn,
   badgeCounts,
+  isOwner,
 }: {
   access: Record<SectionKey, SectionAccessLevel>;
   realAuthOn: boolean;
   badgeCounts: Record<string, number>;
+  /** Owner/Admin only — gates the "AI Support" link below. Not part of
+   * NAV_ITEMS' section-permission system since it isn't grantable through
+   * that grid; see app/ai-support/page.tsx. */
+  isOwner: boolean;
 }) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.sectionKey || access[item.sectionKey] !== "none");
@@ -47,6 +52,19 @@ export function Sidebar({
               </button>
             );
           }
+          if (item.href === "#report-problem") {
+            return (
+              <button
+                key={item.href}
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("nsf:report-problem", { detail: "open" }))}
+                className="w-full flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors text-rose-300 hover:bg-slate-800/60 hover:text-white border-l-2 border-transparent"
+              >
+                <Icon name={item.icon} className="w-4.5 h-4.5 shrink-0" />
+                <span>{item.label}</span>
+              </button>
+            );
+          }
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
@@ -62,6 +80,19 @@ export function Sidebar({
             </Link>
           );
         })}
+        {isOwner && (
+          <Link
+            href="/ai-support"
+            className={`flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors ${
+              pathname === "/ai-support" || pathname.startsWith("/ai-support/")
+                ? "bg-slate-800 text-white border-l-2 border-sky-400"
+                : "text-slate-300 hover:bg-slate-800/60 hover:text-white border-l-2 border-transparent"
+            }`}
+          >
+            <Icon name="settings" className="w-4.5 h-4.5 shrink-0" />
+            <span className="flex-1">AI Support</span>
+          </Link>
+        )}
       </nav>
       <div className="px-5 py-4 border-t border-slate-800 text-xs text-slate-500">
         {realAuthOn ? "Signed in" : "No login required — single-company demo mode."}
