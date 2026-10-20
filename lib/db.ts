@@ -1223,6 +1223,52 @@ export async function cancelProjectScheduleDay(projectId: string, date: string, 
   });
 }
 
+/**
+ * Completing a job early shouldn't leave it haunting days it was
+ * pre-scheduled for before anyone knew it'd finish ahead of time — crew is
+ * routinely added for a whole week upfront. buildScheduleJobRows only skips
+ * FUTURE days for a Completed job when it's falling back to a
+ * carried-forward display (no real row of its own that day) — a day with
+ * its own real schedule_assignments/project_schedule_days row (because it
+ * was pre-scheduled) renders regardless of job_status, so it just sits
+ * there looking like the job was never actually completed. Called whenever
+ * a day's job_status is set to Complete: drops every crew assignment and
+ * schedule day row for this project dated AFTER the completed day, so it
+ * actually comes off the schedule. Never touches the completed day itself
+ * or anything before it — those stay as history.
+ */
+async function clearScheduleAfterDate(projectId: string, afterDate: string, actorName: string): Promise<void> {
+  const [days, assignments] = await Promise.all([listProjectScheduleDays(), listScheduleAssignments()]);
+  const futureDayIds = days.filter((d) => d.project_id === projectId && d.schedule_date > afterDate).map((d) => d.id);
+  const futureAssignmentIds = assignments.filter((a) => a.project_id === projectId && a.schedule_date > afterDate).map((a) => a.id);
+  if (futureDayIds.length === 0 && futureAssignmentIds.length === 0) return;
+  const client = sb();
+  if (client) {
+    if (futureAssignmentIds.length) {
+      const { error } = await client.from("schedule_assignments").delete().in("id", futureAssignmentIds);
+      if (error) throw error;
+    }
+    if (futureDayIds.length) {
+      const { error } = await client.from("project_schedule_days").delete().in("id", futureDayIds);
+      if (error) throw error;
+    }
+  } else {
+    const store = getStore();
+    const dayIdSet = new Set(futureDayIds);
+    const asgIdSet = new Set(futureAssignmentIds);
+    store.scheduleAssignments = store.scheduleAssignments.filter((a) => !asgIdSet.has(a.id));
+    store.schedulePickupItems = store.schedulePickupItems.filter((i) => !dayIdSet.has(i.project_schedule_day_id));
+    store.projectScheduleDays = store.projectScheduleDays.filter((d) => !dayIdSet.has(d.id));
+  }
+  logActivity({
+    action: "Cleared future schedule after completion",
+    related_type: "project",
+    related_id: projectId,
+    actor_name: actorName,
+    detail: `Completed on ${afterDate} — removed ${futureAssignmentIds.length} crew assignment${futureAssignmentIds.length === 1 ? "" : "s"} and ${futureDayIds.length} schedule day${futureDayIds.length === 1 ? "" : "s"} that were still pre-scheduled after that date.`,
+  });
+}
+
 export async function updateProjectScheduleDay(id: string, patch: ScheduleDayPatch, actorName: string): Promise<ProjectScheduleDay> {
   const rows = await listProjectScheduleDays();
   const before = rows.find((d) => d.id === id);
@@ -1261,6 +1307,9 @@ export async function updateProjectScheduleDay(id: string, patch: ScheduleDayPat
 
   if (patch.job_status && patch.job_status !== "Cancelled") {
     await updateProjectPipelineStage(before.project_id, mapJobStatusToPipelineStage(patch.job_status));
+  }
+  if (patch.job_status === "Complete") {
+    await clearScheduleAfterDate(before.project_id, before.schedule_date, actorName);
   }
 
   return client ? { ...before, ...fullPatch } as ProjectScheduleDay : before;

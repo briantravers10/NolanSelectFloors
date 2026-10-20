@@ -357,9 +357,15 @@ export async function saveScheduleEntryAction(formData: FormData) {
     }
   }
 
-  // Stay on Create/Edit so the change is visible right away in the
-  // day's list next to the form (View Schedule is still one tab away).
-  redirect(`/schedule/edit?date=${schedule_date}`);
+  // Stay on Create/Edit so the change is visible right away in the day's
+  // list next to the form (View Schedule is still one tab away) — and keep
+  // this SAME job selected/loaded (not reset to a blank "new entry") so
+  // adding more crew or making another change is a straight re-save, not a
+  // re-pick-the-job-from-the-list detour. Dropping `project=` here used to
+  // reset the form to "new entry" after every single save, which is very
+  // likely why crew kept getting repeatedly removed and re-added — see the
+  // Confirm Day/schedule save investigation, Oct 2026.
+  redirect(`/schedule/edit?date=${schedule_date}&project=${project_id}`);
 }
 
 // ---------------------------------------------------------------------
