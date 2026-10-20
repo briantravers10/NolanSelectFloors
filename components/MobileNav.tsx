@@ -38,15 +38,17 @@ export function MobileNav({ access, badgeCounts }: { access: Record<SectionKey, 
               </button>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {moreItems.map((item) => item.href === "#assistant" ? (
+              {moreItems.map((item) => item.href === "#assistant" || item.href === "#report-problem" ? (
                 <button
                   key={item.href}
                   type="button"
                   onClick={() => {
                     setMoreOpen(false);
-                    window.dispatchEvent(new CustomEvent("nsf:assistant", { detail: "open" }));
+                    window.dispatchEvent(new CustomEvent(item.href === "#assistant" ? "nsf:assistant" : "nsf:report-problem", { detail: "open" }));
                   }}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 py-3 text-sky-800 active:bg-sky-100"
+                  className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 ${
+                    item.href === "#assistant" ? "border-sky-200 bg-sky-50 text-sky-800 active:bg-sky-100" : "border-rose-200 bg-rose-50 text-rose-800 active:bg-rose-100"
+                  }`}
                 >
                   <Icon name={item.icon} className="w-5 h-5" />
                   <span className="text-[11px] font-medium text-center leading-tight">{item.label}</span>

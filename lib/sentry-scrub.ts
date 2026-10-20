@@ -24,10 +24,23 @@ function scrubValue(value: unknown, depth = 0): unknown {
   return value;
 }
 
+// Last error this BROWSER TAB captured, if any — read by the "Report a
+// Problem" panel (components/support/ReportProblemPanel.tsx) so an
+// employee reporting a bug right after seeing one can optionally attach it
+// (Phase 3 requirement: "attach relevant error information when
+// available"), without the app needing its own separate error-tracking
+// plumbing. Module-scoped per runtime: harmless no-op when this file runs
+// server/edge-side, since nothing ever reads it there.
+let lastClientEventId: string | undefined;
+export function getLastSentryEventId(): string | undefined {
+  return lastClientEventId;
+}
+
 /** Sentry event `beforeSend` hook — scrubs `extra`, `contexts`, and request data. */
-export function scrubSentryEvent<T extends { extra?: unknown; contexts?: unknown; request?: { data?: unknown; cookies?: unknown; headers?: unknown } }>(
+export function scrubSentryEvent<T extends { event_id?: string; extra?: unknown; contexts?: unknown; request?: { data?: unknown; cookies?: unknown; headers?: unknown } }>(
   event: T
 ): T {
+  if (event.event_id) lastClientEventId = event.event_id;
   if (event.extra) event.extra = scrubValue(event.extra) as T["extra"];
   if (event.contexts) event.contexts = scrubValue(event.contexts) as T["contexts"];
   if (event.request) {

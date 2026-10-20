@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { MobileNav } from "@/components/MobileNav";
 import { TopBar } from "@/components/TopBar";
 import { AssistantPanel } from "@/components/assistant/AssistantPanel";
+import { ReportProblemPanel } from "@/components/support/ReportProblemPanel";
 import { getActingUser } from "@/lib/current-user";
 import { getAllSectionAccess } from "@/lib/permissions";
 import { isRealAuthConfigured } from "@/lib/auth";
@@ -60,6 +61,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         </div>
         <MobileNav access={access} badgeCounts={badgeCounts} />
         <AssistantPanel />
+        <ReportProblemPanel />
       </body>
     </html>
   );

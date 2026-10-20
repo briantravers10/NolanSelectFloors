@@ -23,6 +23,7 @@ import type {
   BidStatus,
   Building,
   BuildingContact,
+  BugReport,
   ClientCompany,
   Communication,
   CompanySetupAnswer,
@@ -4526,5 +4527,82 @@ export async function markNavSectionSeen(userKey: string, section: string): Prom
     if (error) throw error;
   } else {
     navBadgeSeenFallback.set(`${userKey}__${section}`, now);
+  }
+}
+
+// ---------------------------------------------------------------------
+// AI BUG MONITORING & SUPPORT — "Report a Problem" (Phase 3). See
+// supabase/migrations/0038_bug_reports.sql (not applied to production)
+// and docs/ai-bug-support/architecture-notes.md.
+// ---------------------------------------------------------------------
+
+export async function listBugReports(): Promise<BugReport[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("bug_reports").select("*").order("created_at", { ascending: false });
+    if (!error && data) return data as BugReport[];
+  }
+  return [...getStore().bugReports].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+/** Just the current user's own reports, for the "Your reports" list in the
+ * Report a Problem panel — not the full company-wide list Phase 4's admin
+ * dashboard will show. */
+export async function listBugReportsForUser(userId: string): Promise<BugReport[]> {
+  return (await listBugReports()).filter((r) => r.reported_by_user_id === userId);
+}
+
+export async function createBugReport(input: {
+  reported_by_user_id: string;
+  reported_by_name: string;
+  page_path: string;
+  description: string;
+  additional_details?: string;
+  sentry_event_id?: string;
+}): Promise<BugReport> {
+  const now = new Date().toISOString();
+  const record: BugReport = {
+    id: randomUUID(),
+    company_id: getCurrentCompanyId(),
+    reported_by_user_id: input.reported_by_user_id,
+    reported_by_name: input.reported_by_name,
+    page_path: input.page_path,
+    description: input.description,
+    additional_details: input.additional_details || undefined,
+    sentry_event_id: input.sentry_event_id || undefined,
+    status: "Open",
+    created_at: now,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("bug_reports").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().bugReports.push(record);
+  }
+  logActivity({
+    action: "Bug report submitted",
+    actor_name: input.reported_by_name,
+    detail: `${input.page_path}: ${input.description.slice(0, 200)}`,
+  });
+  return record;
+}
+
+/** Admin-side status/triage update (Phase 4) — kept here now so the admin
+ * dashboard doesn't need its own data-access layer later. */
+export async function updateBugReport(id: string, patch: Partial<Pick<BugReport, "status" | "priority" | "admin_notes" | "github_pr_url">>, actorName: string): Promise<void> {
+  const now = new Date().toISOString();
+  const fullPatch = { ...patch, updated_at: now, ...(patch.status === "Resolved" ? { resolved_at: now } : {}) };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("bug_reports").update(fullPatch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const r = getStore().bugReports.find((x) => x.id === id);
+    if (r) Object.assign(r, fullPatch);
+  }
+  if (patch.status) {
+    logActivity({ action: "Bug report status changed", actor_name: actorName, detail: `Status → ${patch.status}` });
   }
 }
