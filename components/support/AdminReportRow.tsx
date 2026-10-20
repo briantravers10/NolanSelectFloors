@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useTransition } from "react";
 import { StatusBadge } from "@/components/ui";
-import { updateBugReportAdminAction } from "@/app/support/actions";
+import { updateBugReportAdminAction, requestAiInvestigationAction } from "@/app/support/actions";
 import { BUG_REPORT_STATUSES, BUG_REPORT_PRIORITIES, type BugReport } from "@/lib/types";
 import { formatDateTime } from "@/lib/dates";
 
@@ -21,6 +21,7 @@ const PRIORITY_CLASSES: Record<string, string> = {
  */
 export function AdminReportRow({ report }: { report: BugReport }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const [isPending, startTransition] = useTransition();
 
   return (
     <form ref={formRef} action={updateBugReportAdminAction.bind(null, report.id)} className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-2.5">
@@ -29,7 +30,20 @@ export function AdminReportRow({ report }: { report: BugReport }) {
           <p className="text-sm text-slate-900 leading-snug whitespace-pre-wrap">{report.description}</p>
           {report.additional_details && <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{report.additional_details}</p>}
         </div>
-        <StatusBadge status={report.status} />
+        <div className="flex items-center gap-2 shrink-0">
+          {report.status !== "Resolved" && (
+            <button
+              type="button"
+              disabled={isPending}
+              title="Phase 5 infrastructure only — logs the request, doesn't yet investigate automatically. See docs/ai-bug-support/phase-5-claude-investigation-workflow.md."
+              onClick={() => startTransition(() => requestAiInvestigationAction(report.id))}
+              className="rounded-full border border-indigo-300 bg-indigo-50 text-indigo-700 px-2.5 py-1 text-[11px] font-medium hover:bg-indigo-100 disabled:opacity-50"
+            >
+              {isPending ? "Requesting…" : "✨ Investigate with AI"}
+            </button>
+          )}
+          <StatusBadge status={report.status} />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">

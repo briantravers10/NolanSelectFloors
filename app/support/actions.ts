@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createBugReport, listBugReportsForUser, updateBugReport } from "@/lib/db";
+import { createBugReport, listBugReports, listBugReportsForUser, updateBugReport } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { isOwnerActingUser } from "@/lib/permissions";
 import { BUG_REPORT_STATUSES, BUG_REPORT_PRIORITIES, type BugReport } from "@/lib/types";
@@ -64,5 +64,30 @@ export async function updateBugReportAdminAction(id: string, formData: FormData)
   if ((BUG_REPORT_PRIORITIES as readonly string[]).includes(priorityRaw)) patch.priority = priorityRaw as (typeof BUG_REPORT_PRIORITIES)[number];
 
   await updateBugReport(id, patch, actingUser.fullName);
+  revalidatePath("/ai-support");
+}
+
+/**
+ * "Investigate with AI" (Phase 5 — see
+ * docs/ai-bug-support/phase-5-claude-investigation-workflow.md). This is
+ * the trigger point, not the workflow itself: no GitHub credential is
+ * configured, so there's nothing here that reads code, writes a fix, or
+ * opens a PR. It moves the report to Investigating and records a
+ * timestamped, attributed note — both in admin_notes (visible on the
+ * dashboard immediately) and in Change History (logActivity, inside
+ * updateBugReport) — so every investigation request has an audit trail
+ * from day one, per the "secure credentials, limited permissions and
+ * audit logs" requirement, well before the automated half of this exists.
+ */
+export async function requestAiInvestigationAction(id: string) {
+  const actingUser = await getActingUser();
+  if (!(await isOwnerActingUser(actingUser))) return;
+
+  const report = (await listBugReports()).find((r) => r.id === id);
+  if (!report) return;
+  const note = `[${new Date().toISOString()}] AI investigation requested by ${actingUser.fullName}. Automated investigation isn't wired up yet (Phase 5 infrastructure only) — see docs/ai-bug-support/phase-5-claude-investigation-workflow.md for what's needed to go live.`;
+  const admin_notes = [report.admin_notes, note].filter(Boolean).join("\n\n");
+
+  await updateBugReport(id, { status: "Investigating", admin_notes }, actingUser.fullName);
   revalidatePath("/ai-support");
 }
