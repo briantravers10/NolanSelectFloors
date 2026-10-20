@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 import { createBugReport, listBugReports, listBugReportsForUser, updateBugReport } from "@/lib/db";
 import { getActingUser } from "@/lib/current-user";
 import { isOwnerActingUser } from "@/lib/permissions";
+import { sendEmail } from "@/lib/email";
 import { BUG_REPORT_STATUSES, BUG_REPORT_PRIORITIES, type BugReport } from "@/lib/types";
+
+/** Where new bug-report notifications go — see the chat where this was
+ * confirmed. Not an env var: there's exactly one recipient today and no
+ * admin UI to manage a list, so a constant is simpler than config nobody
+ * can change without redeploying anyway. */
+const BUG_REPORT_NOTIFY_EMAIL = "brian@traversgroupllc.com";
 
 /**
  * "Report a Problem" (Phase 3 of the AI bug monitoring/support system —
@@ -33,6 +40,22 @@ export async function submitBugReportAction(formData: FormData) {
   // so nothing to revalidate besides wherever this was submitted from —
   // the panel re-fetches its own "Your reports" list client-side instead.
   revalidatePath("/");
+
+  // Best-effort notification so the Owner doesn't have to keep checking
+  // the AI Support dashboard — see the chat where this was confirmed.
+  // Never throws (sendEmail swallows its own errors) and never blocks the
+  // report from being saved if it fails.
+  await sendEmail(
+    BUG_REPORT_NOTIFY_EMAIL,
+    `New bug report: ${pagePath}`,
+    [
+      `${actingUser.fullName} reported a problem on ${pagePath}:`,
+      "",
+      description,
+      additionalDetails ? `\nAdditional details:\n${additionalDetails}` : "",
+      "\nReview it in AI Support on the Nolan Select Floors app.",
+    ].join("\n")
+  );
 }
 
 /** The current user's own recent reports + status, for the Report a
