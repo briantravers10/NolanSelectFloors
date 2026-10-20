@@ -56,9 +56,14 @@ export async function updateBugReportAdminAction(id: string, formData: FormData)
 
   const statusRaw = String(formData.get("status") ?? "");
   const priorityRaw = String(formData.get("priority") ?? "");
+  const prUrlRaw = String(formData.get("github_pr_url") ?? "").trim();
+  // Rendered directly as an <a href> on the dashboard — only accept
+  // http(s) so a `javascript:` (or other) URI can never get saved and
+  // later clicked by another admin viewing this report.
+  const prUrl = /^https?:\/\//i.test(prUrlRaw) ? prUrlRaw : undefined;
   const patch: Parameters<typeof updateBugReport>[1] = {
     admin_notes: String(formData.get("admin_notes") ?? "").trim() || undefined,
-    github_pr_url: String(formData.get("github_pr_url") ?? "").trim() || undefined,
+    github_pr_url: prUrl,
   };
   if ((BUG_REPORT_STATUSES as readonly string[]).includes(statusRaw)) patch.status = statusRaw as (typeof BUG_REPORT_STATUSES)[number];
   if ((BUG_REPORT_PRIORITIES as readonly string[]).includes(priorityRaw)) patch.priority = priorityRaw as (typeof BUG_REPORT_PRIORITIES)[number];

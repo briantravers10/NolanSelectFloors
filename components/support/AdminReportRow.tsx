@@ -117,7 +117,7 @@ export function AdminReportRow({ report }: { report: BugReport }) {
         <button type="submit" className="rounded-md bg-slate-800 text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-900">
           Save
         </button>
-        {report.github_pr_url && (
+        {report.github_pr_url && /^https?:\/\//i.test(report.github_pr_url) && (
           <a href={report.github_pr_url} target="_blank" rel="noreferrer" className="text-xs text-sky-600 hover:underline">
             Open PR →
           </a>
