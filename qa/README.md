@@ -140,8 +140,9 @@ monitor's own boundaries are covered by `authenticated.spec.ts`).
 - **Real-auth path** — the app run with `NSF_REAL_AUTH_ENABLED=true`
   against `qa/mock/supabase-mock.mts` (a read-only PostgREST/GoTrue
   stand-in over the seed store). Unauthenticated → 307 to `/login`;
-  Playwright signs in through the real form; 70/70 readonly tests pass
-  signed in; monitor POST → 403, GET → 200; a normal staff session
+  Playwright signs in through the real form; readonly tier signed in:
+  57 passed, 0 failed, 13 skipped (the demo-only persona tests), zero
+  write attempts recorded by the mock; monitor POST → 403, GET → 200; a normal staff session
   POST → 200 (control); wrong password → `/login?mode=error`.
 - **Isolation guards** — both negative cases above.
 - **Isolated full suite** — 85 passed, 13 skipped (the skips are the
