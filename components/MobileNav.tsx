@@ -87,6 +87,16 @@ export function MobileNav({ access, badgeCounts, isOwner }: { access: Record<Sec
                   <span className="text-[11px] font-medium text-center leading-tight">AI Support</span>
                 </Link>
               )}
+              {isOwner && (
+                <Link
+                  href="/qa"
+                  onClick={() => setMoreOpen(false)}
+                  className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 py-3 text-slate-700 active:bg-slate-50"
+                >
+                  <Icon name="clipboard" className="w-5 h-5" />
+                  <span className="text-[11px] font-medium text-center leading-tight">QA Testing</span>
+                </Link>
+              )}
             </div>
           </div>
         </div>

@@ -94,6 +94,19 @@ export function Sidebar({
             <NavBadge count={badgeCounts["/ai-support"]} />
           </Link>
         )}
+        {isOwner && (
+          <Link
+            href="/qa"
+            className={`flex items-center gap-3 px-5 py-2.5 text-sm font-medium transition-colors ${
+              pathname === "/qa" || pathname.startsWith("/qa/")
+                ? "bg-slate-800 text-white border-l-2 border-sky-400"
+                : "text-slate-300 hover:bg-slate-800/60 hover:text-white border-l-2 border-transparent"
+            }`}
+          >
+            <Icon name="clipboard" className="w-4.5 h-4.5 shrink-0" />
+            <span className="flex-1">QA Testing</span>
+          </Link>
+        )}
       </nav>
       <div className="px-5 py-4 border-t border-slate-800 text-xs text-slate-500">
         {realAuthOn ? "Signed in" : "No login required — single-company demo mode."}
