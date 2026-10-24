@@ -8,7 +8,13 @@ import { test, expect } from "@playwright/test";
  * and no access to anything else — see lib/seed-data.ts). Setting a cookie
  * and loading pages is a read, never a mutation.
  */
+// The demo "acting as" cookie is ignored once real auth is on — there the
+// signed-in QA monitor is the persona, and its own permission boundaries
+// are asserted in authenticated.spec.ts instead.
+const realAuth = Boolean(process.env.QA_MONITOR_EMAIL && process.env.QA_MONITOR_PASSWORD);
+
 test.describe("non-owner (field employee) access", () => {
+  test.skip(realAuth, "demo-mode persona switching only — covered by authenticated.spec.ts under real auth");
   test.beforeEach(async ({ context, baseURL }) => {
     const url = new URL(baseURL!);
     await context.addCookies([{ name: "nsf_acting_user", value: "ou-3", domain: url.hostname, path: "/" }]);

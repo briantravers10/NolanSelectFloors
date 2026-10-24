@@ -1,217 +1,212 @@
 # Autonomous QA Testing Agent
 
-Built per the "Build an Autonomous QA Testing Agent" request, then
-revised per a follow-up safety/coverage review — see the chat where both
-were scoped. This file is the design doc and operating manual.
+Design doc + operating manual. Built per the original request, revised
+after two review rounds (see the chat). Every claim below about
+production was verified read-only against the live project, and every
+security control has an automated test in this repo that runs on every
+pull request.
 
-## 1. What actually happens today when an employee reports a bug
+## 1. What happens today when an employee reports a bug
 
-Audited directly against the code (`app/support/actions.ts`,
-`app/ai-support/page.tsx`) rather than assumed. Exactly this, and nothing
-more:
+Audited directly against `app/support/actions.ts` and
+`app/ai-support/page.tsx`:
 
-1. An employee clicks "Report a Problem" anywhere in the app, types a
-   description, and submits (`submitBugReportAction`).
-2. A row is written to `bug_reports` with `status: "Open"`, and an email
-   goes to the configured recipient (`sendEmail`, `app/support/actions.ts`).
-3. An Owner/Admin sees it on `/ai-support`, with a button labeled
-   "✨ Investigate with AI".
-4. Clicking that button calls `requestAiInvestigationAction`. Reading
-   that function's actual body: it sets `status` to `"Investigating"` and
-   appends one hardcoded sentence to `admin_notes`:
-   *"Automated investigation isn't wired up yet (Phase 5 infrastructure
-   only)..."*. **That is the entire effect of the button.** It does not
-   read code, does not call Claude or any other model, does not look at
-   the report, does not propose a diff, and does not open a PR.
+1. An employee clicks "Report a Problem", types a description, submits.
+2. A `bug_reports` row is written (`status: "Open"`) and an email goes
+   to the configured recipient.
+3. An Owner/Admin sees it on `/ai-support`, with a "✨ Investigate with
+   AI" button.
+4. That button (`requestAiInvestigationAction`) sets `status` to
+   `"Investigating"` and appends one hardcoded sentence to
+   `admin_notes`. **That is its entire effect.** It reads no code, calls
+   no model, proposes no fix, opens no PR.
 
-**What's missing** for the request's description of "an AI agent that
-receives bug reports, investigates problems, prepares a fix plan, and
-waits for approval" to be real:
+**Missing** for the "investigates and proposes a fix for approval" agent
+described in the request: a trigger that starts an investigation when a
+report arrives; a repo-scoped credential for it to open PRs; and a
+decision on how much autonomy it gets (an earlier attempt to set up a
+recurring unattended trigger was refused by this environment's own
+safety classifier). This QA agent integrates with what exists — the
+`bug_reports` table and `/ai-support` — filing findings exactly as an
+employee's report would. The automated-fix pipeline is separate, later
+work.
 
-- A trigger that starts an investigation session when a report comes in
-  (nothing currently starts one — a human has to separately open Claude
-  Code and ask it to look at `/ai-support`, same as happened twice this
-  week for the two real bugs that got fixed).
-- A credential for that session to read/write this repo (scoped to this
-  repo only, ideally) and open PRs on its own.
-- Somewhere for it to post back a fix plan / PR link for approval — the
-  `github_pr_url` / `admin_notes` fields on `bug_reports` already exist
-  and already render on `/ai-support` for exactly this, but nothing
-  writes to them automatically today.
-- An explicit decision from you about how much autonomy that session
-  gets (an earlier attempt this week to set up a recurring, unattended,
-  permission-free trigger was refused by this environment's own safety
-  classifier — "Create Unsafe Agents" — so this is a real open question,
-  not a trivial wiring task).
+## 2. Identities (two, deliberately separate)
 
-This QA agent integrates with the **real** thing that exists — the
-`bug_reports` table and `/ai-support` dashboard, filing findings exactly
-the way an employee's own report would — not the automated
-investigate-and-fix pipeline described in the request, which doesn't
-exist yet. Building that pipeline is a separate, later piece of work.
+| | QA **results writer** | QA **monitor** |
+|---|---|---|
+| What it is | A Supabase Auth user, **no** `office_users` row — cannot log into the app at all | A Supabase Auth user **with** a view-only `office_users` row (`is_owner=false`, `access_role=field_employee`) |
+| Used by | `qa/lib/report-results.mjs` after each CI run | `production-monitor` job, via the real `/login` form |
+| Can do | Insert/update/select `qa_test_runs`, `qa_findings`; **insert only** a `bug_reports` row tagged `reported_by_user_id='qa-agent'` | GET pages its section grants allow (dashboard, schedule, projects, staff, materials, clients, buildings, job requests, reports) |
+| Cannot do | Read/update/delete any bug report; touch any other table | Any non-GET request (403 at the edge); owner-only pages; pay-rate figures (`field_employee` tier) |
+| Enforced by | Postgres RLS — `supabase/migrations/0039`, `0040` | `lib/supabase/middleware.ts` + `lib/qa-monitor.ts` (API layer), plus the existing `canEdit()` gating on every mutating Server Action |
+| Secret held by | GitHub Actions: `QA_RESULTS_WRITER_EMAIL/_PASSWORD` | GitHub Actions: `QA_MONITOR_EMAIL/_PASSWORD`; Vercel: `QA_MONITOR_EMAIL` |
 
-## 2. Architecture
+### Why this and not anon-key RLS or a service-role key
 
-### Two Playwright tiers, enforced by directory
+The previous design granted policies to the `anon` role. The anon key
+is public (it ships in the app's client bundle), so "anyone with the
+key" meant anyone — forged runs, rewritten history, fake reports. A
+service-role key bypasses RLS entirely and can't be scoped. The results
+writer instead holds an ordinary `authenticated` token **minted by
+Supabase itself** on password login; what the policies check is one
+claim Supabase embeds in every access token, `app_metadata.qa_role`.
+`app_metadata` can only be set with the Admin API / dashboard / SQL —
+never by the user — so the claim can't be self-assigned (tested:
+putting it in `user_metadata` is refused). Nothing custom is signed, so
+no JWT-secret handling and no dependency on which signing scheme the
+project uses.
 
-- **`qa/tests/readonly/`** — navigation + GET requests only, nothing that
-  could mutate data (now including role-based access checks, which only
-  read a cookie and a page — see `permissions.spec.ts`).
-- **`qa/tests/workflow/`** and **`qa/tests/regression/`** — creates/edits
-  data (Quick Jobs, filing email, submitting bug reports, filing bids).
-- **`qa/tests/unit/`** — no browser at all; calls the actual calculation
-  functions (`lib/payroll.ts`, `lib/labor-cost.ts`) directly with
-  synthetic data. The right tool for payroll correctness specifically —
-  precise and fast, with none of a browser test's incidental flakiness.
+Verified read-only on the live project before implementing: `auth.jwt()`,
+`auth.uid()`, the `anon`/`authenticated`/`authenticator` roles exist;
+**every one of the 50 public tables has RLS enabled with zero policies**,
+so an `authenticated` identity inherits nothing anywhere else; 7 real
+staff accounts exist and `NSF_REAL_AUTH_ENABLED` is on (`/dashboard`
+redirects to `/login`).
 
-### Two GitHub Actions jobs, never mixed (the safety fix from review)
+### Why the monitor's write block is at the API layer, not the database
 
-- **`production-monitor`** — runs **only** `qa/tests/readonly`, against
-  the real live app (`QA_BASE_URL` = production). Fires on the
-  twice-daily schedule and on manual dispatch. **Never** fires on a pull
-  request, and the workflow/regression/unit tiers never run in this job
-  — there is no code path in it that could mutate production data, not
-  just a convention that it doesn't.
-- **`full-suite`** — runs everything (unit + readonly + workflow +
-  regression), against the app started **locally on the GitHub Actions
-  runner** with no Supabase credentials in its environment at all, so
-  `lib/db.ts`'s dual-mode data layer falls back to the in-memory seed
-  store automatically — the same mechanism every Vercel preview
-  deployment already relies on. Fires on every pull request targeting
-  `main` (main auto-deploys, so this is the practical "before it reaches
-  production" gate) and on manual dispatch. **Never** fires on the
-  schedule, and never points at a URL with real credentials behind it.
+The app's own data layer talks to Postgres with the service-role key on
+behalf of every user, so per-user database enforcement isn't possible
+without re-architecting the app. The hard stop is therefore the HTTP
+API layer: every Server Action and form submit in this app arrives as a
+POST, and the middleware refuses any non-GET from the monitor's session
+with 403 **before any page, action or route code runs**. Underneath it,
+independently, the account is view-only so every mutating action's own
+`canEdit()` check refuses too, and `markNavSectionSeen` is a no-op for
+it so even viewing a page writes nothing. During the validated
+signed-in run, the mock API recorded **zero write attempts**.
 
-The "Run QA Tests Now" button (`/qa`) dispatches `workflow_dispatch`,
-which runs **both** jobs — a comprehensive on-demand check.
+## 3. Test tiers and the two hard isolation guards
 
-### The core safety mechanism — reused, not invented
+| Tier | Browser | Where it may run |
+|---|---|---|
+| `qa/tests/readonly/` | yes | anywhere, incl. production (signed in as the monitor) |
+| `qa/tests/unit/` | no | anywhere |
+| `qa/tests/security/` | no — embedded Postgres (PGlite) | anywhere |
+| `qa/tests/workflow/`, `qa/tests/regression/` | yes | **isolated environments only** |
 
-The app already has a dual-mode data layer (`lib/db.ts#sb`): every read/
-write checks for Supabase credentials first, and transparently falls
-back to an in-memory seed store when none are configured. `full-suite`
-starts the app with no such credentials, so there is no credential for
-the workflow/regression tier to misuse even if an AI instruction or bug
-told it to — it structurally cannot reach production data.
+Both guards are in code (`playwright.config.ts`, `qa/tests/isolation.check.ts`)
+— no env var enables the write tiers against a real database:
 
-A small QA-only endpoint, `app/api/qa/seed/route.ts`, lets tests set up
-scenarios the UI can't quickly create. It 404s immediately if a real
-Supabase project is configured.
+1. The write tiers are only **registered as Playwright projects** when
+   the target is `localhost`/`127.0.0.1`, or exactly the URL in
+   `QA_ISOLATED_ENV_URL`. Otherwise there is no project to run. Verified:
+   `--list` with the production URL shows no workflow/regression projects.
+2. Even then they **depend on** `isolation-check`, which asks the app
+   whether it's isolated. `app/api/qa/seed/route.ts` answers only when
+   running on the in-memory store and 404s whenever any Supabase project
+   is configured. Verified: pointed at a server with a configured
+   database, the probe failed and all write tests "did not run".
 
-### Credential model for writing results (revised after review)
+The workflow file adds a third, earlier stop (fails if the full-suite
+job has a non-local target or any Supabase credential in its env) and
+has no workflow-level `env:` — secrets go only to the steps that use them.
 
-**No Supabase service-role key is used anywhere in this workflow.**
-`qa/lib/report-results.mjs` — the only thing that writes to production —
-uses the **public anon key** (the same `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-value the app's own client bundle already ships; not a secret), and is
-restricted entirely by Postgres Row-Level Security policies:
+## 4. Workflow (`.github/workflows/qa.yml`)
 
-- `qa_test_runs` / `qa_findings` (migration `0039`): this key may insert,
-  update, and select — nothing sensitive lives in either table (test
-  names, page paths, counts, generic error text).
-- `bug_reports` (migration `0040`): this key may **only insert**, and
-  **only** a row where `reported_by_user_id = 'qa-agent'`. There is no
-  select, update, or delete policy for it on this table **at all** — it
-  cannot read any report (QA-filed or human-filed), cannot change
-  `status`/`admin_notes`/`priority` on anything, and cannot touch an
-  existing row in any way. This is enforced by Postgres itself, not by
-  this branch's code — even a future bug in `report-results.mjs` that
-  tried to read or edit a `bug_reports` row with this key would be
-  refused by the database.
+- **`production-monitor`** — `--project=readonly` only (its sign-in
+  setup runs as a dependency) against the live app. Schedule (8am/8pm
+  America/New_York, DST-correct via a runtime clock check) + manual.
+  Never on a pull request.
+- **`full-suite`** — everything against the app started locally with no
+  Supabase credentials. Pull requests to `main` + manual. Never on the
+  schedule.
 
-This is a genuine restriction, not a scoped-by-convention promise: if
-this key leaked, the worst it can do is insert low-value rows into two
-operational tables and file spurious bug reports — it cannot read a
-customer's data, a pay rate, or any other report, and cannot modify or
-delete anything that exists.
+## 5. What the production monitor actually tests (signed in)
 
-## 3. Schedule
+Every page in `pages-load.spec.ts` (26 routes) now asserts it did **not**
+land on `/login`; `console-errors`, `performance`, `navigation`,
+`quickbooks-health` run as the monitor; `authenticated.spec.ts` asserts
+the real app shell on 9 business pages, in-app navigation, the 403 write
+block, owner-page denial, and no pay-rate figures. Pages the monitor has
+no grant for (pricing, company setup, QuickBooks, AI Support, QA) show
+the access-denied state — tested as such, not as a pass-through.
 
-Four UTC cron firings a day; a `should-run` gate checks the actual
-`America/New_York` clock and only lets the relevant job proceed at real
-local 8am/8pm, so it self-corrects across DST without the file ever
-needing an edit. `production-monitor` runs then; `full-suite` runs on
-pull requests and on demand instead.
+**Only with demo data (never against production):** every business
+workflow — Quick Job creation, inbox filing, bid filing, bug-report
+submission, the two regression tests, payroll math. `permissions.spec.ts`'s
+persona-switching tests are demo-only (skipped under real auth; the
+monitor's own boundaries are covered by `authenticated.spec.ts`).
 
-## 4. Coverage
+## 6. Validation performed locally (no production account, no paid branch)
 
-Built this round: page-load/console-and-network-error/performance smoke
-tests across every major page; nav-link checks; role-based access
-control (an unprivileged demo user is denied the pages it should be,
-and never sees a pay-rate figure); payroll calculation correctness as
-direct unit tests (hourly, daily-rate proportional splitting across
-same-day jobs, the schedule-fallback-before-confirmation path, the
-double-booking-still-one-day-rate rule, tax-status grouping); the two
-real bugs fixed earlier this week as permanent regression tests (Inbox
-pagination, schedule carry-over color); Quick Job creation; Report a
-Problem → AI Support; inbox filing; bid filing and its duplicate-filing
-invariant; QuickBooks's disconnected-state health (its real testable
-surface today — no fake "connected" state is simulated, per the app's
-own "never fake success" principle already in `lib/seed-data.ts`).
+- **RLS** — the actual migration files 0038/0039/0040 run in PGlite with
+  Supabase's `auth.*` helpers, default grants, and per-request role +
+  JWT-claims emulation: 15 abuse attempts (forged runs, unauthorized
+  updates/deletes, fake and impersonated bug reports, self-assigned
+  claim, reading other tables) all refused; the writer's permitted
+  operations all succeed. `qa/tests/security/rls-policies.spec.ts`.
+- **Real-auth path** — the app run with `NSF_REAL_AUTH_ENABLED=true`
+  against `qa/mock/supabase-mock.mts` (a read-only PostgREST/GoTrue
+  stand-in over the seed store). Unauthenticated → 307 to `/login`;
+  Playwright signs in through the real form; 70/70 readonly tests pass
+  signed in; monitor POST → 403, GET → 200; a normal staff session
+  POST → 200 (control); wrong password → `/login?mode=error`.
+- **Isolation guards** — both negative cases above.
+- **Isolated full suite** — 85 passed, 13 skipped (the skips are the
+  signed-in checks, which need a login that demo mode doesn't have).
 
-**A real finding from writing the payroll tests, flagged for a product
-decision rather than silently "fixed":** `time_and_half` only affects
-the *planned* `schedule_assignments.assignment_cost` figure
-(`createScheduleAssignment`, `lib/db.ts`), used as payroll's fallback
-*before* hours are confirmed. Once real hours are confirmed
-(`createActualLaborEntry`), the entry only snapshots the employee's
-plain `hourly_rate`/`daily_rate` — the 1.5× multiplier is never carried
-over into confirmed payroll. `qa/tests/unit/payroll.spec.ts` pins this
-down as current, tested behavior so a future change to it is deliberate.
-Whether confirmed hours *should* also apply time-and-half is a business
-question for you, not something this QA pass changed.
+**Not yet validated, by necessity:** the two production accounts don't
+exist yet (creating them is a production credential change), so the
+first real signed-in run against production is step 6 below — before
+the schedule is relied on.
 
-**Still not covered**: estimate-to-invoice linking depth beyond basic
-bid filing, QuickBooks sync *with* a real/sandboxed connection (not
-achievable without real or sandboxed OAuth credentials), job-number
-uniqueness under concurrent creation. Per "gradually improve coverage,"
-the plan stays the same as the two regression tests already added: when
-a real bug is found and fixed, it gets a permanent test here.
+## 7. Activation — exact order
 
-## 5. Will the dashboard, schedule, and "Run Now" button actually work after deployment?
+Nothing below has been done. Steps 2–5 are production changes; do them
+in this order.
 
-Walked through directly against the code, not assumed:
+1. **Merge PR #9.** Safe on its own: additive code; `/qa` shows an empty
+   state; `production-monitor` will start firing but, with no monitor
+   credentials, its sign-in setup fails and the run is simply red in
+   Actions — it still never touches data.
+2. **Apply migrations** `0039_qa_tracking.sql` then
+   `0040_qa_agent_bug_report_policy.sql` (Supabase SQL editor or CLI).
+3. **Create the results writer** (Supabase → Authentication → Add user,
+   email + strong password, auto-confirm). Then set its claim — either
+   in the user's "App metadata" in the dashboard, or in SQL:
+   ```sql
+   update auth.users set raw_app_meta_data = coalesce(raw_app_meta_data,'{}'::jsonb) || '{"qa_role":"results_writer"}'
+   where email = 'qa-results-writer@<your-domain>';
+   ```
+   Do **not** create an `office_users` row for it.
+4. **Create the monitor**: in the app, Company Setup → Staff Access →
+   add a staff member (e.g. "QA Monitor", `qa-monitor@<your-domain>`,
+   Field/Employee, **not** Owner), grant **View** on: dashboard, job
+   requests, projects, schedule, staff, materials, clients, buildings,
+   reports — nothing else. Then create its Supabase Auth user with the
+   same email (or use the app's "Set up your password" flow with the
+   staff setup code) so `office_users.auth_user_id` is linked.
+5. **Credentials**: GitHub Actions secrets `SUPABASE_URL`,
+   `SUPABASE_ANON_KEY` (public anon key — only used to call the auth
+   endpoint), `QA_RESULTS_WRITER_EMAIL`, `QA_RESULTS_WRITER_PASSWORD`,
+   `QA_MONITOR_EMAIL`, `QA_MONITOR_PASSWORD`. Vercel env var
+   `QA_MONITOR_EMAIL` (same value) + redeploy so the middleware block is
+   armed. Optional `QA_GITHUB_DISPATCH_TOKEN` (Vercel) for the "Run QA
+   Tests Now" button; optional `QA_PRODUCTION_URL` repo variable.
+6. **First real run**: Actions → "Autonomous QA Testing Agent" → Run
+   workflow. Confirm in the log that `authenticated.spec.ts` passed
+   (real pages, 403 on POST) and that a row appeared on `/qa`. Only then
+   treat the schedule as live.
 
-- **`/qa` dashboard** — `listQaTestRuns`/`listQaFindings` follow the
-  exact same pattern as every other dual-mode read in `lib/db.ts`: if
-  Supabase is configured but the query errors (e.g. the table doesn't
-  exist yet because migration `0039` isn't applied), it falls through to
-  the in-memory store and returns an empty list rather than crashing —
-  this is the same proven pattern `bug_reports` used before `0038` was
-  applied, and it worked. **So: merging this branch before the migration
-  runs is safe — the dashboard just shows an empty state until then.**
-- **Scheduled runs** — once this merges to `main`, the cron schedule
-  starts firing on its own; GitHub only needs the workflow file to exist
-  on the default branch, nothing else. `production-monitor` will start
-  actually testing the live app immediately. It just won't be able to
-  *write* results to `/qa` until `SUPABASE_URL`/`SUPABASE_ANON_KEY` are
-  added as repo secrets — until then, results are visible in the GitHub
-  Actions run log only (the step is designed to degrade this way, not
-  fail).
-- **"Run QA Tests Now" button** — calls GitHub's `workflow_dispatch` API
-  for `qa.yml` on `ref: main`. This can only succeed once the workflow
-  file exists on `main` — i.e. **after this PR merges**, not before.
-  Before that (or before `QA_GITHUB_DISPATCH_TOKEN` is set), it shows a
-  clear "not configured" / "GitHub declined the request" message instead
-  of silently failing — already built and covered by
-  `components/qa/RunQaTestsButton.tsx`.
+Employee impact of all of the above: none — additive tables, a new
+read-only account, a middleware branch that only affects that account.
+The monitor's twice-daily load is ~70 page GETs.
 
-## 6. Setup required before this is fully live
+## 8. Remaining risks (honest list)
 
-1. **Apply `supabase/migrations/0039_qa_tracking.sql` and
-   `0040_qa_agent_bug_report_policy.sql`** to production, in that order.
-2. **GitHub Actions secrets**: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (the
-   public anon key — not sensitive, but kept as a secret for tidiness;
-   see "Credential model" above for exactly what it can do).
-3. **`QA_GITHUB_DISPATCH_TOKEN`** (Vercel env var) — a GitHub PAT scoped
-   to `Actions: write` on this repo only, for the "Run QA Tests Now"
-   button.
-4. Optional: a `QA_PRODUCTION_URL` repository variable, if the
-   production URL ever changes — defaults to
-   `https://nolan-select-floors.vercel.app` otherwise.
-
-None of the above blocks merging this branch — the app, dashboard, and
-test suite all work today without any of it; they just show empty
-states / clear "not configured" messages, and `production-monitor`
-simply won't persist results anywhere but the Actions log, until it's
-set up.
+- Step 4 depends on the Owner granting exactly those View permissions;
+  a broader grant widens what the monitor can *see* (never what it can
+  change). `authenticated.spec.ts` asserts owner pages stay denied.
+- If `QA_MONITOR_EMAIL` is not set on Vercel, the edge block is inactive
+  and the monitor is "only" a view-only user gated by `canEdit()` — the
+  readonly tests still make no writes, but the hard stop is missing.
+  The 403 test in `authenticated.spec.ts` fails loudly in that case.
+- Performance budgets were calibrated on demo data; expect to loosen
+  after the first real runs.
+- Dedupe of re-filed findings is time-window based (3 days) because the
+  writer deliberately can't read `bug_reports.status`.
+- Payroll time-and-a-half behavior is documented in
+  `qa/tests/unit/payroll.spec.ts` as current behavior only — untouched,
+  per instruction.

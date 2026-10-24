@@ -12,7 +12,11 @@ import { test, expect } from "@playwright/test";
 test("QuickBooks settings page loads and shows a disconnected state without crashing", async ({ page }) => {
   const response = await page.goto("/company-setup/quickbooks");
   expect(response!.status()).toBeLessThan(500);
-  await expect(page.getByRole("button", { name: /connect quickbooks/i })).toBeVisible();
+  // Demo persona (Owner) sees the Connect button; the read-only QA monitor
+  // has no QuickBooks access by design and sees the access-denied state.
+  // Either is the correct, non-crashing outcome — a login redirect is not.
+  expect(new URL(page.url()).pathname).not.toMatch(/^\/login/);
+  await expect(page.getByRole("button", { name: /connect quickbooks/i }).or(page.getByText(/don't have access/i))).toBeVisible();
 });
 
 test("QuickBooks sync log page loads without a server error", async ({ page }) => {
