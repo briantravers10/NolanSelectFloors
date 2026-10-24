@@ -25,6 +25,12 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { action?: string; count?: number };
   const store = getStore();
 
+  // Answered by qa/global-setup.ts before any write-capable test runs:
+  // reaching this line at all means no real database is configured.
+  if (body.action === "probe") {
+    return Response.json({ ok: true, isolated: true });
+  }
+
   if (body.action === "seed-unfiled-emails") {
     const count = Math.min(Math.max(body.count ?? 30, 1), 500);
     const now = Date.now();

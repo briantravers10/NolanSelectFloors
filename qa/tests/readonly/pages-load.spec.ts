@@ -40,5 +40,8 @@ for (const path of PAGES) {
     const response = await page.goto(path, { waitUntil: "domcontentloaded" });
     expect(response, `no response for ${path}`).toBeTruthy();
     expect(response!.status(), `${path} returned ${response!.status()}`).toBeLessThan(500);
+    // Against production this must be the real page, not a redirect to
+    // /login — otherwise the check is only testing the login screen.
+    expect(new URL(page.url()).pathname, `${path} redirected to the login page`).not.toMatch(/^\/login/);
   });
 }

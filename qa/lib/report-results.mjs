@@ -5,21 +5,25 @@
 // and the AI Support admin page already use — see
 // app/support/actions.ts and app/ai-support/page.tsx).
 //
-// CREDENTIAL MODEL: this script uses the public Supabase anon key
-// (SUPABASE_ANON_KEY — the same NEXT_PUBLIC_SUPABASE_ANON_KEY value the
-// app's own client bundle already ships; not a secret), restricted
-// entirely by RLS policies — see supabase/migrations/0039_qa_tracking.sql
-// and 0040_qa_agent_bug_report_policy.sql. This is a real, database-
-// enforced restriction: this credential can insert/update/select
-// qa_test_runs and qa_findings, and can ONLY insert a bug_reports row
-// tagged reported_by_user_id='qa-agent' — nothing else, on any table,
-// under any circumstance, independent of anything this script does.
-// There is deliberately no code path here that reads, updates, or
-// deletes an existing bug_reports row (the credential couldn't anyway).
+// IDENTITY: this script signs in as the dedicated "QA results writer"
+// Supabase Auth user (QA_RESULTS_WRITER_EMAIL / _PASSWORD — GitHub Actions
+// secrets). The session token Supabase mints for it carries the admin-set
+// claim app_metadata.qa_role = 'results_writer', which is the ONLY thing
+// the RLS policies in supabase/migrations/0039 and 0040 accept. No
+// service-role key is used, and the public anon key alone is granted
+// nothing (it's only used here as the API key supabase-js needs to call
+// the auth endpoint — that's what it's for; it unlocks no table).
 //
-// If SUPABASE_URL/SUPABASE_ANON_KEY are missing, this still exits 0
-// after printing a summary — a QA run that can't file its findings
-// should never itself fail the workflow or block a deploy.
+// What this identity can do, enforced by Postgres (see the migrations):
+// insert/update/select qa_test_runs + qa_findings, and insert — only — a
+// bug_reports row tagged reported_by_user_id='qa-agent'. It cannot read,
+// update or delete any bug report, and has no policy on any other table.
+// There is deliberately no code path here that tries anything else; if a
+// future change did, the database would refuse it.
+//
+// If credentials are missing, this still exits 0 after printing a summary
+// — a QA run that can't file its findings must never itself fail the
+// workflow or block a deploy.
 import { randomUUID } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { createClient } from "@supabase/supabase-js";
@@ -33,17 +37,17 @@ const RUN_URL =
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : null;
 
-// A finding that's already been filed and re-filed within this window is
-// treated as "still being tracked" and skipped, rather than duplicated.
-// This credential can't read bug_reports.status to know if it was
-// resolved and reopened — so after this window, a still-failing (or
-// freshly-failing-again) test gets a fresh report. That's a deliberate
-// trade-off for a credential this narrow, not an oversight.
+// A finding that's already been filed within this window is treated as
+// "still being tracked" and skipped, rather than duplicated. This
+// identity can't read bug_reports.status to know if it was resolved and
+// reopened — so after this window, a still-failing (or freshly-failing-
+// again) test gets a fresh report. A deliberate trade-off for an identity
+// this narrow, not an oversight.
 const DEDUPE_WINDOW_DAYS = 3;
 
 function severityFor(testFile) {
   if (testFile.includes("/regression/")) return "High"; // a bug that already shipped once
-  if (testFile.includes("/workflow/") || testFile.includes("/unit/")) return "High"; // a real user workflow or calculation is broken
+  if (testFile.includes("/workflow/") || testFile.includes("/unit/") || testFile.includes("/security/")) return "High";
   return "Medium"; // readonly tier — page load / perf / console noise
 }
 
@@ -78,6 +82,28 @@ function summarize(json) {
   return { total, passed, failed, skipped, failures };
 }
 
+export async function signInAsResultsWriter(env = process.env) {
+  const url = env.SUPABASE_URL;
+  const anonKey = env.SUPABASE_ANON_KEY;
+  const email = env.QA_RESULTS_WRITER_EMAIL;
+  const password = env.QA_RESULTS_WRITER_PASSWORD;
+  if (!url || !anonKey || !email || !password) return null;
+  const supabase = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error || !data.session) {
+    console.error("QA results writer sign-in failed:", error?.message ?? "no session");
+    return null;
+  }
+  const claim = data.user?.app_metadata?.qa_role;
+  if (claim !== "results_writer") {
+    // The policies would refuse every write anyway; say so plainly here
+    // instead of producing a wall of RLS errors below.
+    console.error(`QA results writer account is missing app_metadata.qa_role='results_writer' (got ${JSON.stringify(claim)}) — set it in Supabase Auth → user → App Metadata.`);
+    return null;
+  }
+  return supabase;
+}
+
 async function main() {
   if (!existsSync(RESULTS_PATH)) {
     console.log(`No results file at ${RESULTS_PATH} — nothing to report (the run likely crashed before producing one).`);
@@ -89,13 +115,11 @@ async function main() {
   console.log(`QA run (${TRIGGER}${RUN_NOTES ? `, ${RUN_NOTES}` : ""}): ${passed}/${total} passed, ${failed} failed, ${skipped} skipped.`);
   for (const f of failures) console.log(`  FAIL ${f.test_name} (${f.page_path})`);
 
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    console.log("SUPABASE_URL/SUPABASE_ANON_KEY not set — skipping dashboard/bug-report filing (results above are the full record of this run; see the job log).");
+  const supabase = await signInAsResultsWriter();
+  if (!supabase) {
+    console.log("QA results writer credentials not configured or sign-in failed — skipping dashboard/bug-report filing (results above are the full record of this run; see the job log).");
     return;
   }
-  const supabase = createClient(url, key);
 
   const runId = randomUUID();
   const { error: runErr } = await supabase.from("qa_test_runs").insert({
@@ -113,7 +137,7 @@ async function main() {
     notes: RUN_NOTES,
   });
   if (runErr) {
-    console.error("Failed to write qa_test_runs row (has the migration been applied?):", runErr.message);
+    console.error("Failed to write qa_test_runs row (migration 0039 applied? claim set?):", runErr.message);
     return;
   }
   console.log(`Recorded run ${runId} on the QA dashboard.`);
@@ -123,10 +147,6 @@ async function main() {
   for (const f of failures) {
     const severity = severityFor(f.file);
 
-    // Duplicate check: scoped to qa_findings only (this credential can't
-    // read bug_reports — see the credential-model note above). A finding
-    // for the same test, already filed, within the dedupe window counts
-    // as still being tracked.
     const { data: existing } = await supabase
       .from("qa_findings")
       .select("id, bug_report_id")
@@ -170,8 +190,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  // A reporting failure must never fail the workflow or look like a
-  // deploy-blocking error — it's logged and the run ends quietly.
-  console.error("QA result reporting failed (non-fatal):", err);
-});
+if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+  main().catch((err) => {
+    // A reporting failure must never fail the workflow or look like a
+    // deploy-blocking error — it's logged and the run ends quietly.
+    console.error("QA result reporting failed (non-fatal):", err);
+  });
+}

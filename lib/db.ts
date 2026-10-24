@@ -9,6 +9,7 @@
 // file.
 import { randomUUID } from "crypto";
 import { getSupabaseClient } from "./supabaseClient";
+import { isQaMonitorEmail } from "./qa-monitor";
 import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
 import { mapJobStatusToPipelineStage, scheduleNoteMarker } from "./schedule";
@@ -4522,6 +4523,12 @@ export async function getNavSectionLastSeen(userKey: string, section: string): P
  * currently in it will show as "New" again unless something arrives after
  * this call. */
 export async function markNavSectionSeen(userKey: string, section: string): Promise<void> {
+  // The read-only QA monitor (see lib/qa-monitor.ts) writes nothing —
+  // not even its own "last seen" bookkeeping row, which this would
+  // otherwise upsert as a side effect of merely viewing a page.
+  const viewer = (await listOfficeUsers()).find((u) => u.id === userKey);
+  if (isQaMonitorEmail(viewer?.email)) return;
+
   const now = new Date().toISOString();
   const client = sb();
   if (client) {
