@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isBlockedQaMonitorRequest } from "@/lib/qa-monitor";
 
 /**
  * Refreshes the Supabase Auth session cookie on every request, and enforces
@@ -77,6 +78,17 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // QA production monitor (see lib/qa-monitor.ts and qa/README.md): that
+  // account's session may only ever READ. Every Server Action and form
+  // submit arrives as a POST, so refusing non-GET here — before any page,
+  // action or route code runs — is the hard stop that guarantees the
+  // monitoring job cannot create, edit or delete anything, whatever a
+  // test does. Its view-only office_users row (canEdit() false
+  // everywhere) is the second, independent layer underneath this.
+  if (isBlockedQaMonitorRequest(request.method, user?.email)) {
+    return new NextResponse("QA monitor account is read-only.", { status: 403 });
+  }
 
   if (!user && !isLoginPage) {
     // Bootstrap window: NSF_REAL_AUTH_ENABLED=true alone would otherwise
