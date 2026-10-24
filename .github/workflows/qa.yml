@@ -1,28 +1,41 @@
 name: Autonomous QA Testing Agent
 
-# Three ways this runs, all documented in qa/README.md:
-#   1. Scheduled, twice daily (8am/8pm America/New_York, DST-aware — see
-#      the "should-run" job below, since GitHub cron is UTC-only).
-#   2. On every pull request targeting main — i.e. before the change that
-#      PR represents ever reaches production, since main auto-deploys.
-#   3. On demand, via workflow_dispatch — this is what the "Run QA Tests
-#      Now" button on /qa calls (see app/qa/actions.ts).
+# Two independent jobs, per the safety review (see the chat where this
+# was raised) — never mixed into one:
 #
-# Every run starts the app LOCALLY on the runner with no Supabase
-# credentials in its environment, so lib/db.ts's dual-mode data layer
-# falls back to the in-memory seed store automatically — the same
-# mechanism every preview deployment already relies on. There is no
-# secret or code path in this workflow that can reach the production
-# database, QuickBooks, or Resend email for anything the tests DO. The
-# only production credential used anywhere here is a Supabase
-# service-role key, used ONLY by qa/lib/report-results.mjs, ONLY to
-# write to qa_test_runs / qa_findings / bug_reports — see that file.
+#   production-monitor  — read-only tier ONLY (qa/tests/readonly), run
+#                          directly against the real live app
+#                          (QA_BASE_URL=production). No test in this job
+#                          can create, edit, or delete anything — see
+#                          qa/tests/readonly's own file header. Runs on
+#                          the twice-daily schedule and on demand.
+#
+#   full-suite           — everything (unit + readonly + workflow +
+#                          regression), run against the app started
+#                          LOCALLY on the runner with NO Supabase
+#                          credentials in its environment, so
+#                          lib/db.ts's dual-mode data layer falls back to
+#                          the in-memory seed store automatically — the
+#                          same mechanism every Vercel preview deployment
+#                          already relies on. This is where every
+#                          write-based simulation (Quick Job creation,
+#                          filing email, submitting bug reports) lives;
+#                          it NEVER runs with QA_BASE_URL pointed at
+#                          production. Runs on every pull request
+#                          targeting main (main auto-deploys, so this is
+#                          the practical "before it reaches production"
+#                          gate) and on demand.
+#
+# Both jobs call qa/lib/report-results.mjs afterward with the public
+# Supabase anon key (not a secret, not a service-role key) — see that
+# script's header and supabase/migrations/0039 and 0040 for exactly what
+# that credential can and cannot do, enforced by Postgres RLS.
 
 on:
   schedule:
     # 8:00am/8:00pm in both EDT (UTC-4) and EST (UTC-5) — the should-run
-    # job below is the actual DST-correct gate; the other three firings
-    # each day exit immediately without starting a browser.
+    # job below is the actual DST-correct gate; the other two firings
+    # each day exit immediately without hitting production.
     - cron: "0 12 * * *" # 8am EDT
     - cron: "0 13 * * *" # 8am EST
     - cron: "0 0 * * *" # 8pm EDT
@@ -59,24 +72,60 @@ jobs:
             echo "go=false" >> "$GITHUB_OUTPUT"
           fi
 
-  qa:
+  production-monitor:
     needs: should-run
-    if: needs.should-run.outputs.go == 'true'
+    if: needs.should-run.outputs.go == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Run read-only checks against production
+        id: tests
+        run: npx playwright test qa/tests/readonly
+        continue-on-error: true
+        env:
+          QA_BASE_URL: ${{ vars.QA_PRODUCTION_URL || 'https://nolan-select-floors.vercel.app' }}
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+      - name: Report results
+        if: always()
+        run: node qa/lib/report-results.mjs
+        env:
+          QA_TRIGGER: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
+          QA_RUN_NOTES: "production read-only monitor"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-production-monitor-${{ github.run_id }}
+          path: qa/results/
+          retention-days: 30
+
+      - name: Fail the workflow if production checks failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+
+  full-suite:
+    needs: should-run
+    if: needs.should-run.outputs.go == 'true' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
 
       - name: Build app (no Supabase credentials — forces in-memory test data)
         run: npm run build
@@ -98,24 +147,24 @@ jobs:
           echo "App never came up" >&2
           exit 1
 
-      - name: Run QA test suite
+      - name: Run full QA suite (unit + readonly + workflow + regression)
         id: tests
         run: npx playwright test
-        continue-on-error: true # always report results, even on failure — never let this step silently stop the workflow
+        continue-on-error: true
 
-      - name: Report results (dashboard + bug reports)
+      - name: Report results
         if: always()
         run: node qa/lib/report-results.mjs
         env:
-          QA_TRIGGER: ${{ github.event_name == 'schedule' && 'scheduled' || github.event_name == 'pull_request' && 'deployment' || 'manual' }}
+          QA_TRIGGER: ${{ github.event_name == 'pull_request' && 'deployment' || 'manual' }}
+          QA_RUN_NOTES: "full suite (isolated, in-memory)"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Upload test artifacts (screenshots, traces)
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: qa-results-${{ github.run_id }}
+          name: qa-full-suite-${{ github.run_id }}
           path: qa/results/
           retention-days: 30
 

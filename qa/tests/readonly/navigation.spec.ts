@@ -4,13 +4,8 @@ import { test, expect } from "@playwright/test";
  * will. Clicking a Link is navigation, never a mutation. */
 test("sidebar links navigate to their pages", async ({ page }) => {
   await page.goto("/dashboard");
-  const checks: { label: string; href: string }[] = [
-    { label: "Schedule", href: "/schedule" },
-    { label: "Projects", href: "/projects" },
-    { label: "Staff", href: "/staff" },
-    { label: "Materials", href: "/materials" },
-  ];
-  for (const { label, href } of checks) {
+  const checks: { href: string }[] = [{ href: "/schedule" }, { href: "/projects" }, { href: "/staff" }, { href: "/materials" }];
+  for (const { href } of checks) {
     await page.goto("/dashboard");
     await page.locator(`aside a[href="${href}"]`).first().click();
     await expect(page).toHaveURL(new RegExp(href.replace(/\//g, "\\/")));

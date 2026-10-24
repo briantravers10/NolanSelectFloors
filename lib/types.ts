@@ -1327,7 +1327,7 @@ export const QA_FINDING_SEVERITIES = ["Low", "Medium", "High", "Critical"] as co
 export type QaFindingSeverity = (typeof QA_FINDING_SEVERITIES)[number];
 
 /** One failing test from a QaTestRun. Mirrors the shape needed to file a
- * bug_reports row (see lib/qa.ts#reportQaFinding) without duplicating one
+ * bug_reports row (see qa/lib/report-results.mjs) without duplicating one
  * for a finding already reported and still unresolved. */
 export interface QaFinding {
   id: string;
