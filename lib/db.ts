@@ -9,6 +9,7 @@
 // file.
 import { randomUUID } from "crypto";
 import { getSupabaseClient } from "./supabaseClient";
+import { isQaMonitorEmail } from "./qa-monitor";
 import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
 import { mapJobStatusToPipelineStage, scheduleNoteMarker } from "./schedule";
@@ -23,6 +24,9 @@ import type {
   BidStatus,
   Building,
   BuildingContact,
+  BugReport,
+  QaTestRun,
+  QaFinding,
   ClientCompany,
   Communication,
   CompanySetupAnswer,
@@ -4519,6 +4523,12 @@ export async function getNavSectionLastSeen(userKey: string, section: string): P
  * currently in it will show as "New" again unless something arrives after
  * this call. */
 export async function markNavSectionSeen(userKey: string, section: string): Promise<void> {
+  // The read-only QA monitor (see lib/qa-monitor.ts) writes nothing —
+  // not even its own "last seen" bookkeeping row, which this would
+  // otherwise upsert as a side effect of merely viewing a page.
+  const viewer = (await listOfficeUsers()).find((u) => u.id === userKey);
+  if (isQaMonitorEmail(viewer?.email)) return;
+
   const now = new Date().toISOString();
   const client = sb();
   if (client) {
@@ -4527,4 +4537,161 @@ export async function markNavSectionSeen(userKey: string, section: string): Prom
   } else {
     navBadgeSeenFallback.set(`${userKey}__${section}`, now);
   }
+}
+
+// ---------------------------------------------------------------------
+// AI BUG MONITORING & SUPPORT — "Report a Problem" (Phase 3). See
+// supabase/migrations/0038_bug_reports.sql (not applied to production)
+// and docs/ai-bug-support/architecture-notes.md.
+// ---------------------------------------------------------------------
+
+export async function listBugReports(): Promise<BugReport[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("bug_reports").select("*").order("created_at", { ascending: false });
+    if (!error && data) return data as BugReport[];
+  }
+  return [...getStore().bugReports].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+/** Just the current user's own reports, for the "Your reports" list in the
+ * Report a Problem panel — not the full company-wide list Phase 4's admin
+ * dashboard will show. */
+export async function listBugReportsForUser(userId: string): Promise<BugReport[]> {
+  return (await listBugReports()).filter((r) => r.reported_by_user_id === userId);
+}
+
+export async function createBugReport(input: {
+  reported_by_user_id: string;
+  reported_by_name: string;
+  page_path: string;
+  description: string;
+  additional_details?: string;
+  sentry_event_id?: string;
+}): Promise<BugReport> {
+  const now = new Date().toISOString();
+  const record: BugReport = {
+    id: randomUUID(),
+    company_id: getCurrentCompanyId(),
+    reported_by_user_id: input.reported_by_user_id,
+    reported_by_name: input.reported_by_name,
+    page_path: input.page_path,
+    description: input.description,
+    additional_details: input.additional_details || undefined,
+    sentry_event_id: input.sentry_event_id || undefined,
+    status: "Open",
+    created_at: now,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("bug_reports").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().bugReports.push(record);
+  }
+  logActivity({
+    action: "Bug report submitted",
+    actor_name: input.reported_by_name,
+    detail: `${input.page_path}: ${input.description.slice(0, 200)}`,
+  });
+  return record;
+}
+
+/** Admin-side status/triage update (Phase 4) — kept here now so the admin
+ * dashboard doesn't need its own data-access layer later. */
+export async function updateBugReport(id: string, patch: Partial<Pick<BugReport, "status" | "priority" | "admin_notes" | "github_pr_url">>, actorName: string): Promise<void> {
+  const now = new Date().toISOString();
+  const fullPatch = { ...patch, updated_at: now, ...(patch.status === "Resolved" ? { resolved_at: now } : {}) };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("bug_reports").update(fullPatch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const r = getStore().bugReports.find((x) => x.id === id);
+    if (r) Object.assign(r, fullPatch);
+  }
+  if (patch.status) {
+    logActivity({ action: "Bug report status changed", actor_name: actorName, detail: `Status → ${patch.status}` });
+  }
+}
+
+// ---------------------------------------------------------------------
+// AUTONOMOUS QA TESTING AGENT — see qa/README.md and
+// supabase/migrations/0040_qa_tracking.sql (not applied to production).
+// Read-only history for the admin QA dashboard (app/qa/page.tsx); every
+// write here comes from the GitHub Actions QA workflow via a
+// service-role key, never from anything employees or the live app do.
+// ---------------------------------------------------------------------
+
+export async function listQaTestRuns(limit = 30): Promise<QaTestRun[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("qa_test_runs").select("*").order("started_at", { ascending: false }).limit(limit);
+    if (!error && data) return data as QaTestRun[];
+  }
+  return [...getStore().qaTestRuns].sort((a, b) => b.started_at.localeCompare(a.started_at)).slice(0, limit);
+}
+
+export async function createQaTestRun(input: { trigger: QaTestRun["trigger"]; commit_sha?: string; github_run_url?: string }): Promise<QaTestRun> {
+  const record: QaTestRun = {
+    id: randomUUID(),
+    company_id: getCurrentCompanyId(),
+    trigger: input.trigger,
+    status: "running",
+    total_tests: 0,
+    passed_tests: 0,
+    failed_tests: 0,
+    skipped_tests: 0,
+    started_at: new Date().toISOString(),
+    commit_sha: input.commit_sha,
+    github_run_url: input.github_run_url,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("qa_test_runs").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().qaTestRuns.push(record);
+  }
+  return record;
+}
+
+export async function finishQaTestRun(
+  id: string,
+  patch: Pick<QaTestRun, "status" | "total_tests" | "passed_tests" | "failed_tests" | "skipped_tests"> & { notes?: string }
+): Promise<void> {
+  const fullPatch = { ...patch, finished_at: new Date().toISOString() };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("qa_test_runs").update(fullPatch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const r = getStore().qaTestRuns.find((x) => x.id === id);
+    if (r) Object.assign(r, fullPatch);
+  }
+}
+
+export async function listQaFindings(runId?: string): Promise<QaFinding[]> {
+  const client = sb();
+  if (client) {
+    let query = client.from("qa_findings").select("*").order("created_at", { ascending: false });
+    if (runId) query = query.eq("run_id", runId);
+    const { data, error } = await query;
+    if (!error && data) return data as QaFinding[];
+  }
+  const all = [...getStore().qaFindings].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return runId ? all.filter((f) => f.run_id === runId) : all;
+}
+
+export async function createQaFinding(input: Omit<QaFinding, "id" | "company_id" | "created_at">): Promise<QaFinding> {
+  const record: QaFinding = { id: randomUUID(), company_id: getCurrentCompanyId(), created_at: new Date().toISOString(), ...input };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("qa_findings").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().qaFindings.push(record);
+  }
+  return record;
 }

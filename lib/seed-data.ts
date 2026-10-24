@@ -8,6 +8,9 @@ import { addDays, isoDate, startOfWeek } from "./dates";
 import type {
   ActivityLogEntry,
   ActualLaborEntry,
+  BugReport,
+  QaTestRun,
+  QaFinding,
   AgendaEvent,
   Building,
   BuildingRegion,
@@ -1166,6 +1169,13 @@ export function buildSeedData() {
   const quickbooksDocuments: QuickBooksDocument[] = [];
   const quickbooksWebhookEvents: QuickBooksWebhookEvent[] = [];
   const quickbooksSyncLog: QuickBooksSyncLogEntry[] = [];
+  // AI Bug Monitoring & Support (Phase 3) — empty seed, same as inboundEmails
+  // above: no fake bug reports to clear out, starts truly empty either way.
+  const bugReports: BugReport[] = [];
+  // Autonomous QA agent (see qa/README.md) — empty until the migration is
+  // applied and the first scheduled run reports in.
+  const qaTestRuns: QaTestRun[] = [];
+  const qaFindings: QaFinding[] = [];
 
   // ---------------------------------------------------------------------
   // PRICING & ESTIMATING FORMULAS
@@ -1286,6 +1296,9 @@ export function buildSeedData() {
     quickbooksDocuments,
     quickbooksWebhookEvents,
     quickbooksSyncLog,
+    bugReports,
+    qaTestRuns,
+    qaFindings,
     sectionPermissions,
     weekStart: isoDate(monday),
   };

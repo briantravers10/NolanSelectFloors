@@ -57,6 +57,9 @@ export const NAV_ITEMS: NavItem[] = [
   // member's page.
   // Opens the floating helper (see components/assistant/AssistantPanel.tsx).
   { href: "#assistant", label: "AI Assistant", icon: "spark" },
+  // Opens the floating bug/issue reporter (see
+  // components/support/ReportProblemPanel.tsx).
+  { href: "#report-problem", label: "Report a Problem", icon: "alert" },
 ];
 
 // Subset shown in the mobile bottom bar — keep it to 5 for tap-target size.

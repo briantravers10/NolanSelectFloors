@@ -63,7 +63,15 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const kindLabel = (k?: string | null) => INBOUND_KIND_LABELS[(k ?? "unknown") as InboundKind] ?? k ?? "Filed";
 
   const matched = emails.filter((e) => e.status === "matched");
-  const unfiled = emails.filter((e) => e.status === "unfiled");
+  // Real mailbox volume can leave hundreds of these waiting at once — same
+  // unpaginated-list bug that made "Filed & ignored" cap itself to 20
+  // below. Without a cap here, a big backlog renders a full filing form
+  // (plus a signed-URL fetch per attachment) for every single one, which
+  // on a phone is enormous and sluggish enough to feel like the page
+  // won't respond to a tap at all. Newest first (already the list's
+  // order) so what's actionable now shows before the capped-off rest.
+  const unfiledAll = emails.filter((e) => e.status === "unfiled");
+  const unfiled = unfiledAll.slice(0, show === "all" ? undefined : 20);
   const done = emails.filter((e) => e.status !== "unfiled" && e.status !== "matched").slice(0, show === "all" ? undefined : 20);
 
   // Opening this page marks it seen — the sidebar badge (unfiled count)
@@ -175,14 +183,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Unfiled — {unfiled.length}</h2>
-        {editable && unfiled.length > 0 && (
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Unfiled — {unfiledAll.length}</h2>
+        {editable && unfiledAll.length > 0 && (
           <form action={ignoreAllUnfiledAction}>
-            <Button type="submit" variant="secondary">Ignore all {unfiled.length}</Button>
+            <Button type="submit" variant="secondary">Ignore all {unfiledAll.length}</Button>
           </form>
         )}
       </div>
-      {unfiled.length === 0 ? (
+      {unfiledAll.length === 0 ? (
         <Card className="p-6 mb-6"><EmptyState message="Nothing waiting. New emails with attachments will show up here within a minute of arriving." /></Card>
       ) : (
         <div className="space-y-3 mb-6">
@@ -243,6 +251,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             );
           })}
         </div>
+      )}
+      {show !== "all" && unfiledAll.length > 20 && (
+        <div className="text-right -mt-4 mb-6"><Link href="/inbox?show=all" className="text-xs text-sky-600 hover:underline">Show all {unfiledAll.length}</Link></div>
       )}
 
       <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-2">Filed &amp; ignored</h2>

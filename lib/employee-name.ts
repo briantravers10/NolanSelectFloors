@@ -17,3 +17,15 @@ export function employeeDisplayName(e: NameParts): string {
 export function employeeSearchText(e: NameParts): string {
   return `${e.first_name} ${e.last_name} ${e.nickname ?? ""}`.toLowerCase();
 }
+
+/**
+ * Nickname alone when one is set, otherwise the full name — no "(nickname)"
+ * suffix. Used for the schedule's Excel export only (see the chat where
+ * this was requested): legal names stay off that sheet for anyone who's
+ * given a nickname; anyone without one still shows their name as normal
+ * rather than being left blank.
+ */
+export function employeeExportName(e: NameParts): string {
+  const nick = e.nickname?.trim();
+  return nick || `${e.first_name} ${e.last_name}`;
+}

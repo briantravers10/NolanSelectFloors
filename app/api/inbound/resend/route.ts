@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import PostalMime from "postal-mime";
+import * as Sentry from "@sentry/nextjs";
 import { createInboundEmail, listBuildings, listInboundEmails, listProjects, updateInboundEmail } from "@/lib/db";
 import { uploadInboundAttachment } from "@/lib/storage";
 import { classifyInbound, matchInboundToJob } from "@/lib/inbound";
@@ -104,8 +105,9 @@ async function intake(inc: Incoming, buildings: Awaited<ReturnType<typeof listBu
       try {
         const up = await uploadInboundAttachment(f.bytes, f.filename, f.content_type, inc.providerId.replace(/[^a-zA-Z0-9_-]+/g, "_"));
         if (!up.unavailable) storage_path = up.storage_path;
-      } catch {
+      } catch (err) {
         // leave unsaved; the tray still shows the filename
+        Sentry.captureException(err, { tags: { feature: "email-intake" }, extra: { filename: f.filename } });
       }
     }
     attachments.push({ id: f.id, filename: f.filename, content_type: f.content_type, size: f.size, storage_path });
@@ -188,7 +190,10 @@ export async function POST(request: Request) {
   }
 
   const email = await resend<ReceivedEmail>(`/emails/receiving/${emailId}`);
-  if (!email) return new Response("Could not fetch email (check RESEND_API_KEY)", { status: 502 });
+  if (!email) {
+    Sentry.captureMessage("inbound email: could not fetch from Resend", { level: "error", tags: { feature: "email-intake" }, extra: { emailId } });
+    return new Response("Could not fetch email (check RESEND_API_KEY)", { status: 502 });
+  }
   const listed = await resend<{ data?: ReceivedAttachment[] }>(`/emails/receiving/${emailId}/attachments`);
   const metas = listed?.data ?? email.attachments ?? [];
 

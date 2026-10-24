@@ -1,0 +1,204 @@
+name: Autonomous QA Testing Agent
+
+# Two independent jobs, never mixed — see qa/README.md:
+#
+#   production-monitor  — the readonly tier ONLY (qa/tests/readonly), run
+#                          against the real live app, signed in as the
+#                          dedicated read-only QA monitor account. That
+#                          account's session is refused any non-GET
+#                          request at the edge (lib/supabase/middleware.ts)
+#                          and its office_users row is view-only, so this
+#                          job structurally cannot create, edit or delete
+#                          anything. Runs on the twice-daily schedule and
+#                          on demand. Never on a pull request.
+#
+#   full-suite           — everything (unit + security + readonly +
+#                          workflow + regression) against the app started
+#                          LOCALLY on the runner with NO Supabase
+#                          credentials in its environment, so lib/db.ts's
+#                          dual-mode data layer falls back to the
+#                          in-memory seed store. The write tiers can only
+#                          run against localhost / an explicitly named
+#                          isolated URL AND only after the target confirms
+#                          it has no real database behind it — both
+#                          checks live in code (playwright.config.ts,
+#                          qa/global-setup.ts), not in this file, so an
+#                          accidental env-var change here cannot defeat
+#                          them. The guard step below is a third, earlier
+#                          stop. Runs on every pull request targeting main
+#                          and on demand. Never on the schedule.
+#
+# Results are written by qa/lib/report-results.mjs as the dedicated "QA
+# results writer" Supabase Auth user, whose access is limited by RLS to
+# the QA tables plus insert-only on bug_reports — no service-role key,
+# nothing granted to the public anon key. See supabase/migrations/0039
+# and 0040.
+
+on:
+  schedule:
+    # 8:00am/8:00pm in both EDT (UTC-4) and EST (UTC-5) — the should-run
+    # job is the DST-correct gate; the other two firings each day exit
+    # immediately without touching production.
+    - cron: "0 12 * * *" # 8am EDT
+    - cron: "0 13 * * *" # 8am EST
+    - cron: "0 0 * * *" # 8pm EDT
+    - cron: "0 1 * * *" # 8pm EST
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      trigger_label:
+        description: "Who/what triggered this (shown on the QA dashboard)"
+        required: false
+        default: "manual"
+
+# Deliberately no workflow-level `env:` — secrets are passed to exactly
+# the steps that need them and nowhere else.
+
+concurrency:
+  group: qa-agent
+  cancel-in-progress: false # never cancel a run that might be mid-write to the dashboard tables
+
+jobs:
+  should-run:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          hour=$(TZ=America/New_York date +%H)
+          if [ "$hour" = "08" ] || [ "$hour" = "20" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  production-monitor:
+    needs: should-run
+    if: needs.should-run.outputs.go == 'true' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run read-only checks against production (signed in as the QA monitor)
+        id: tests
+        # --project=readonly also runs its "setup" dependency (the sign-in).
+        # The write tiers are not even registered for a non-localhost
+        # target — see playwright.config.ts — so nothing else can run here.
+        run: npx playwright test --project=readonly
+        continue-on-error: true
+        env:
+          QA_BASE_URL: ${{ vars.QA_PRODUCTION_URL || 'https://nolan-select-floors.vercel.app' }}
+          QA_MONITOR_EMAIL: ${{ secrets.QA_MONITOR_EMAIL }}
+          QA_MONITOR_PASSWORD: ${{ secrets.QA_MONITOR_PASSWORD }}
+
+      - name: Report results
+        if: always()
+        run: node qa/lib/report-results.mjs
+        env:
+          QA_TRIGGER: ${{ github.event_name == 'schedule' && 'scheduled' || 'manual' }}
+          QA_RUN_NOTES: "production read-only monitor"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          QA_RESULTS_WRITER_EMAIL: ${{ secrets.QA_RESULTS_WRITER_EMAIL }}
+          QA_RESULTS_WRITER_PASSWORD: ${{ secrets.QA_RESULTS_WRITER_PASSWORD }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-production-monitor-${{ github.run_id }}
+          path: |
+            qa/results/
+            !qa/results/.auth/
+          retention-days: 30
+
+      - name: Fail the workflow if production checks failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+
+  full-suite:
+    needs: should-run
+    if: needs.should-run.outputs.go == 'true' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Safety guard — refuse anything but an isolated local target
+        # Third, earliest stop (the two in code are the ones that can't be
+        # edited away by a YAML change). Fails loudly if this job's
+        # environment has been given a non-local target or any Supabase
+        # credential — those must never exist in this job.
+        run: |
+          if [ -n "${QA_BASE_URL:-}" ] && ! echo "$QA_BASE_URL" | grep -Eq '^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?/?$'; then
+            echo "::error::QA_BASE_URL is set to '$QA_BASE_URL' in the full-suite job. Write-capable tests only run against localhost. Refusing." >&2
+            exit 1
+          fi
+          for v in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_URL; do
+            if [ -n "${!v:-}" ]; then
+              echo "::error::$v is present in the full-suite job environment. This job must have no database credentials. Refusing." >&2
+              exit 1
+            fi
+          done
+          echo "Guard passed: no target override, no database credentials."
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Build app (no Supabase credentials — forces in-memory test data)
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Start app
+        run: |
+          npm run start -- -p 3000 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/dashboard > /dev/null && exit 0
+            sleep 2
+          done
+          echo "App never came up" >&2
+          exit 1
+
+      - name: Run full QA suite (unit + security + readonly + workflow + regression)
+        id: tests
+        run: npx playwright test
+        continue-on-error: true
+
+      - name: Report results
+        if: always()
+        run: node qa/lib/report-results.mjs
+        env:
+          QA_TRIGGER: ${{ github.event_name == 'pull_request' && 'deployment' || 'manual' }}
+          QA_RUN_NOTES: "full suite (isolated, in-memory)"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          QA_RESULTS_WRITER_EMAIL: ${{ secrets.QA_RESULTS_WRITER_EMAIL }}
+          QA_RESULTS_WRITER_PASSWORD: ${{ secrets.QA_RESULTS_WRITER_PASSWORD }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-full-suite-${{ github.run_id }}
+          path: qa/results/
+          retention-days: 30
+
+      - name: Fail the workflow if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
