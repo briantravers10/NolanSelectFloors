@@ -28,7 +28,7 @@ export const STAFF = { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", email: "sbenn
 
 const monitorRow: OfficeUser = {
   id: MONITOR.officeUserId,
-  company_id: (store.officeUsers[0] as OfficeUser).company_id,
+  company_id: (store.officeUsers[0] as unknown as OfficeUser).company_id,
   full_name: "QA Monitor",
   email: MONITOR.email,
   role: "estimator",
@@ -39,7 +39,7 @@ const monitorRow: OfficeUser = {
   is_owner: false,
 };
 store.officeUsers.push(monitorRow as unknown as Record<string, unknown>);
-(store.officeUsers.find((u) => u.id === STAFF.officeUserId) as OfficeUser).auth_user_id = STAFF.id;
+(store.officeUsers.find((u) => u.id === STAFF.officeUserId) as unknown as OfficeUser).auth_user_id = STAFF.id;
 
 // Minimum-necessary grant for monitoring: VIEW on the sections it checks,
 // nothing on pricing / company setup / QuickBooks.
@@ -79,7 +79,7 @@ const session = (u: { id: string; email: string }) => ({ access_token: mintJwt(u
 
 const camel = (t: string) => t.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
-function applyFilter(rows: Record<string, unknown>[], key: string, raw: string) {
+function applyFilter(rows: Record<string, unknown>[], key: string, raw: string): Record<string, unknown>[] {
   const [op, ...rest] = raw.split(".");
   const val = rest.join(".");
   const coerce = (v: unknown) => (v === null || v === undefined ? null : String(v));
