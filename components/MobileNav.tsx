@@ -9,8 +9,9 @@ import { NavBadge } from "./NavBadge";
 import type { SectionAccessLevel, SectionKey } from "@/lib/types";
 
 /** `access` (build 11) — see components/Sidebar.tsx for the write-up.
- * `badgeCounts` — see lib/nav-badges.ts. */
-export function MobileNav({ access, badgeCounts }: { access: Record<SectionKey, SectionAccessLevel>; badgeCounts: Record<string, number> }) {
+ * `badgeCounts` — see lib/nav-badges.ts. `isOwner` — gates the "AI
+ * Support" tile in the More menu, same as Sidebar.tsx. */
+export function MobileNav({ access, badgeCounts, isOwner }: { access: Record<SectionKey, SectionAccessLevel>; badgeCounts: Record<string, number>; isOwner: boolean }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreItems = NAV_ITEMS.filter((item) => !item.sectionKey || access[item.sectionKey] !== "none");
@@ -21,7 +22,9 @@ export function MobileNav({ access, badgeCounts }: { access: Record<SectionKey, 
   // "More" tile badge — everything not already surfaced by its own bottom
   // bar icon (Dashboard/Schedule/Projects/Staff), so nothing is double-counted.
   const bottomHrefs = new Set(bottomItems.map((i) => i.href));
-  const moreBadgeTotal = moreItems.reduce((sum, item) => (bottomHrefs.has(item.href) ? sum : sum + (badgeCounts[item.href] ?? 0)), 0);
+  const moreBadgeTotal =
+    moreItems.reduce((sum, item) => (bottomHrefs.has(item.href) ? sum : sum + (badgeCounts[item.href] ?? 0)), 0) +
+    (isOwner ? badgeCounts["/ai-support"] ?? 0 : 0);
 
   return (
     <>
@@ -38,15 +41,17 @@ export function MobileNav({ access, badgeCounts }: { access: Record<SectionKey, 
               </button>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {moreItems.map((item) => item.href === "#assistant" ? (
+              {moreItems.map((item) => item.href === "#assistant" || item.href === "#report-problem" ? (
                 <button
                   key={item.href}
                   type="button"
                   onClick={() => {
                     setMoreOpen(false);
-                    window.dispatchEvent(new CustomEvent("nsf:assistant", { detail: "open" }));
+                    window.dispatchEvent(new CustomEvent(item.href === "#assistant" ? "nsf:assistant" : "nsf:report-problem", { detail: "open" }));
                   }}
-                  className="flex flex-col items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 py-3 text-sky-800 active:bg-sky-100"
+                  className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 ${
+                    item.href === "#assistant" ? "border-sky-200 bg-sky-50 text-sky-800 active:bg-sky-100" : "border-rose-200 bg-rose-50 text-rose-800 active:bg-rose-100"
+                  }`}
                 >
                   <Icon name={item.icon} className="w-5 h-5" />
                   <span className="text-[11px] font-medium text-center leading-tight">{item.label}</span>
@@ -67,6 +72,31 @@ export function MobileNav({ access, badgeCounts }: { access: Record<SectionKey, 
                   <span className="text-[11px] font-medium text-center leading-tight">{item.label}</span>
                 </Link>
               ))}
+              {isOwner && (
+                <Link
+                  href="/ai-support"
+                  onClick={() => setMoreOpen(false)}
+                  className="relative flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 py-3 text-slate-700 active:bg-slate-50"
+                >
+                  {!!badgeCounts["/ai-support"] && (
+                    <span className="absolute top-1.5 right-1.5">
+                      <NavBadge count={badgeCounts["/ai-support"]} />
+                    </span>
+                  )}
+                  <Icon name="settings" className="w-5 h-5" />
+                  <span className="text-[11px] font-medium text-center leading-tight">AI Support</span>
+                </Link>
+              )}
+              {isOwner && (
+                <Link
+                  href="/qa"
+                  onClick={() => setMoreOpen(false)}
+                  className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 py-3 text-slate-700 active:bg-slate-50"
+                >
+                  <Icon name="clipboard" className="w-5 h-5" />
+                  <span className="text-[11px] font-medium text-center leading-tight">QA Testing</span>
+                </Link>
+              )}
             </div>
           </div>
         </div>

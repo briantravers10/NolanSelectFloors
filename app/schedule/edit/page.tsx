@@ -129,7 +129,18 @@ export default async function ScheduleEditPage({
   // over from an earlier day, is that day's entry and crew — so editing a
   // continued job doesn't start from a blank form.
   const selectedRow = selectedProjectId ? rowsForDate.find((r) => r.projectId === selectedProjectId) : undefined;
-  const selectedDay = selectedRow?.scheduleDayId ? scheduleDays.find((d) => d.id === selectedRow.scheduleDayId) : undefined;
+  const selectedDayRaw = selectedRow?.scheduleDayId ? scheduleDays.find((d) => d.id === selectedRow.scheduleDayId) : undefined;
+  // For a carried-over job with no row of its own yet, selectedDayRaw is
+  // still the earlier day it was copied from — its schedule_color is
+  // whatever that earlier day was (often "Blue — starting today"), which
+  // is wrong for a continuation. buildScheduleJobRows already computes the
+  // right color to SHOW (Blue flips to Gray past the first day — see
+  // lib/schedule.ts), so the form's default has to come from there, not
+  // from the raw carried-forward row, or saving for any other reason
+  // (crew, notes…) writes that stale Blue color right back onto the new
+  // day instead of Gray — the "carried-over jobs show up blue, have to
+  // manually change them" bug.
+  const selectedDay = selectedDayRaw && selectedRow ? { ...selectedDayRaw, schedule_color: selectedRow.scheduleColor } : selectedDayRaw;
   const selectedCrew = selectedRow ? selectedRow.crew.map((c) => c.employeeId) : [];
   const selectedPickupItems = selectedDay ? pickupItems.filter((i) => i.project_schedule_day_id === selectedDay.id) : [];
 

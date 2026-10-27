@@ -12,6 +12,7 @@ import {
   listWorkTypes,
 } from "@/lib/db";
 import { buildScheduleJobRows } from "@/lib/schedule";
+import { employeeExportName } from "@/lib/employee-name";
 import { formatJobNumber } from "@/lib/calculations";
 import { todayIso } from "@/lib/dates";
 import { getActingUser } from "@/lib/current-user";
@@ -59,6 +60,11 @@ export async function GET(request: Request) {
   const rows = buildScheduleJobRows(date, { projects, buildings, clients, contacts, buildingContacts, employees, assignments, scheduleDays, workTypes, pickupItems }).filter(
     (r) => !r.weekendOff && r.jobStatus !== "Cancelled"
   );
+  // Nickname-only on this sheet (no legal names) for anyone who has one
+  // set, per the client's ask — row.crewNames is the "Full Name
+  // (Nickname)" form used everywhere else in the app, so staff names here
+  // are rebuilt from the raw employee records instead.
+  const employeeById = new Map(employees.map((e) => [e.id, e]));
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(date);
@@ -80,7 +86,7 @@ export async function GET(request: Request) {
       building: row.buildingName ?? "Unknown building",
       address: row.address ?? "",
       unit: row.unitNumber ?? "",
-      staff: row.crewNames.join("; "),
+      staff: row.crew.map((c) => employeeExportName(employeeById.get(c.employeeId) ?? { first_name: "Unknown", last_name: "" })).join("; "),
       notes: row.notes?.trim() ?? "",
       toCollect: toCollect.join("; "),
     });

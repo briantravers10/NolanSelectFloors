@@ -9,6 +9,8 @@
 // file.
 import { randomUUID } from "crypto";
 import { getSupabaseClient } from "./supabaseClient";
+import { isQaMonitorEmail } from "./qa-monitor";
+import { fetchAll } from "./supabase/fetch-all";
 import { getStore } from "./store";
 import { getCurrentCompanyId } from "./current-user";
 import { mapJobStatusToPipelineStage, scheduleNoteMarker } from "./schedule";
@@ -23,6 +25,9 @@ import type {
   BidStatus,
   Building,
   BuildingContact,
+  BugReport,
+  QaTestRun,
+  QaFinding,
   ClientCompany,
   Communication,
   CompanySetupAnswer,
@@ -85,6 +90,10 @@ function sb() {
   return getSupabaseClient();
 }
 
+// Every unbounded list read below goes through fetchAll — Supabase caps a
+// plain select at 1000 rows with no error, and two tables are past that.
+// See lib/supabase/fetch-all.ts for the why and the paging contract.
+
 // ---------------------------------------------------------------------
 // READS
 // ---------------------------------------------------------------------
@@ -92,7 +101,7 @@ function sb() {
 export async function listClientCompanies(): Promise<ClientCompany[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("client_companies").select("*").order("name");
+    const { data, error } = await fetchAll(client.from("client_companies").select("*").order("name"));
     if (!error && data) return data as ClientCompany[];
   }
   return [...getStore().clientCompanies].sort((a, b) => a.name.localeCompare(b.name));
@@ -110,7 +119,7 @@ export async function getClientCompany(id: string): Promise<ClientCompany | unde
 export async function listContacts(): Promise<Contact[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("contacts").select("*");
+    const { data, error } = await fetchAll(client.from("contacts").select("*"));
     if (!error && data) return data as Contact[];
   }
   return getStore().contacts;
@@ -156,7 +165,7 @@ export async function createContact(input: Omit<Contact, "id" | "company_id" | "
 export async function listBuildings(): Promise<Building[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("buildings").select("*").order("name");
+    const { data, error } = await fetchAll(client.from("buildings").select("*").order("name"));
     if (!error && data) return data as Building[];
   }
   return [...getStore().buildings].sort((a, b) => a.name.localeCompare(b.name));
@@ -174,7 +183,7 @@ export async function getBuilding(id: string): Promise<Building | undefined> {
 export async function listBuildingContacts(): Promise<BuildingContact[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("building_contacts").select("*");
+    const { data, error } = await fetchAll(client.from("building_contacts").select("*"));
     if (!error && data) return data as BuildingContact[];
   }
   return getStore().buildingContacts;
@@ -236,7 +245,7 @@ export async function createBuildingContact(input: Omit<BuildingContact, "id">):
 export async function listJobRequests(): Promise<JobRequest[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("job_requests").select("*").order("received_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("job_requests").select("*").order("received_at", { ascending: false }));
     if (!error && data) return data as JobRequest[];
   }
   return [...getStore().jobRequests].sort((a, b) => (a.received_at < b.received_at ? 1 : -1));
@@ -254,7 +263,7 @@ export async function getJobRequest(id: string): Promise<JobRequest | undefined>
 export async function listProjects(): Promise<Project[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("projects").select("*");
+    const { data, error } = await fetchAll(client.from("projects").select("*"));
     if (!error && data) return data as Project[];
   }
   return getStore().projects;
@@ -289,7 +298,7 @@ export async function getProjectByJobNumber(jobNumberRaw: string): Promise<Proje
 export async function listUnitsForBuilding(buildingId: string): Promise<Unit[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("units").select("*").eq("building_id", buildingId).order("unit_number");
+    const { data, error } = await fetchAll(client.from("units").select("*").eq("building_id", buildingId).order("unit_number"));
     if (!error && data) return data as Unit[];
   }
   return getStore().units.filter((u) => u.building_id === buildingId).sort((a, b) => a.unit_number.localeCompare(b.unit_number));
@@ -312,7 +321,7 @@ export async function getUnit(id: string): Promise<Unit | undefined> {
 export async function listProjectsByUnit(unitId: string): Promise<Project[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("projects").select("*").eq("unit_id", unitId).order("created_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("projects").select("*").eq("unit_id", unitId).order("created_at", { ascending: false }));
     if (!error && data) return data as Project[];
   }
   return getStore()
@@ -328,7 +337,7 @@ export async function listProjectsByUnit(unitId: string): Promise<Project[]> {
 export async function listProjectsByBuilding(buildingId: string): Promise<Project[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("projects").select("*").eq("building_id", buildingId).order("created_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("projects").select("*").eq("building_id", buildingId).order("created_at", { ascending: false }));
     if (!error && data) return data as Project[];
   }
   return getStore()
@@ -339,7 +348,7 @@ export async function listProjectsByBuilding(buildingId: string): Promise<Projec
 export async function listOfficeUsers(): Promise<OfficeUser[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("office_users").select("*").order("full_name");
+    const { data, error } = await fetchAll(client.from("office_users").select("*").order("full_name"));
     if (!error && data) return data as OfficeUser[];
   }
   return [...getStore().officeUsers].sort((a, b) => a.full_name.localeCompare(b.full_name));
@@ -494,7 +503,7 @@ export async function listSectionPermissions(officeUserId?: string): Promise<Sec
     if (officeUserId && !isUuid(officeUserId)) return [];
     let query = client.from("section_permissions").select("*");
     if (officeUserId) query = query.eq("office_user_id", officeUserId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as SectionPermission[];
   }
   const all = getStore().sectionPermissions;
@@ -565,7 +574,7 @@ export async function listProjectWorkTypes(options?: { projectId?: string }): Pr
   if (client) {
     let query = client.from("project_work_types").select("*");
     if (options?.projectId) query = query.eq("project_id", options.projectId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as ProjectWorkType[];
   }
   const all = getStore().projectWorkTypes;
@@ -575,7 +584,7 @@ export async function listProjectWorkTypes(options?: { projectId?: string }): Pr
 export async function listEmployees(): Promise<Employee[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("employees").select("*").order("first_name");
+    const { data, error } = await fetchAll(client.from("employees").select("*").order("first_name"));
     if (!error && data) return data as Employee[];
   }
   return [...getStore().employees].sort((a, b) => a.first_name.localeCompare(b.first_name));
@@ -653,7 +662,7 @@ export async function updateEmployee(
 export async function listEmployeeSkills(): Promise<EmployeeSkill[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("employee_skills").select("*");
+    const { data, error } = await fetchAll(client.from("employee_skills").select("*"));
     if (!error && data) return data as EmployeeSkill[];
   }
   return getStore().employeeSkills;
@@ -662,7 +671,7 @@ export async function listEmployeeSkills(): Promise<EmployeeSkill[]> {
 export async function listEmployeeAvailability(): Promise<EmployeeAvailability[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("employee_availability").select("*");
+    const { data, error } = await fetchAll(client.from("employee_availability").select("*"));
     if (!error && data) return data as EmployeeAvailability[];
   }
   return getStore().employeeAvailability;
@@ -679,7 +688,7 @@ export async function listEmployeeAvailability(): Promise<EmployeeAvailability[]
 export async function listTimeOffEntries(): Promise<TimeOffEntry[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("time_off_entries").select("*").order("start_date", { ascending: false });
+    const { data, error } = await fetchAll(client.from("time_off_entries").select("*").order("start_date", { ascending: false }));
     if (!error && data) return data as TimeOffEntry[];
   }
   return [...getStore().timeOffEntries].sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
@@ -823,7 +832,7 @@ export async function listCrewRequirements(options?: { projectId?: string }): Pr
   if (client) {
     let query = client.from("project_crew_requirements").select("*");
     if (options?.projectId) query = query.eq("project_id", options.projectId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as ProjectCrewRequirement[];
   }
   const all = getStore().projectCrewRequirements;
@@ -846,7 +855,7 @@ export async function listScheduleAssignments(options?: { maxDate?: string }): P
   if (client) {
     let query = client.from("schedule_assignments").select("*");
     if (options?.maxDate) query = query.lte("schedule_date", options.maxDate);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as ScheduleAssignment[];
   }
   const all = getStore().scheduleAssignments;
@@ -856,7 +865,7 @@ export async function listScheduleAssignments(options?: { maxDate?: string }): P
 export async function listMaterials(): Promise<Material[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("materials").select("*").order("name");
+    const { data, error } = await fetchAll(client.from("materials").select("*").order("name"));
     if (!error && data) return data as Material[];
   }
   return [...getStore().materials].sort((a, b) => a.name.localeCompare(b.name));
@@ -882,7 +891,7 @@ export async function listProjectMaterials(options?: { projectId?: string }): Pr
   if (client) {
     let query = client.from("project_materials").select("*");
     if (options?.projectId) query = query.eq("project_id", options.projectId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as ProjectMaterial[];
   }
   const all = getStore().projectMaterials;
@@ -909,7 +918,7 @@ export async function listDistinctMaterialSuppliers(): Promise<string[]> {
 export async function listTasks(): Promise<Task[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("tasks").select("*").order("due_date");
+    const { data, error } = await fetchAll(client.from("tasks").select("*").order("due_date"));
     if (!error && data) return data as Task[];
   }
   return [...getStore().tasks].sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
@@ -918,7 +927,7 @@ export async function listTasks(): Promise<Task[]> {
 export async function listCommunications(): Promise<Communication[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("communications").select("*").order("occurred_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("communications").select("*").order("occurred_at", { ascending: false }));
     if (!error && data) return data as Communication[];
   }
   return [...getStore().communications].sort((a, b) => (a.occurred_at < b.occurred_at ? 1 : -1));
@@ -929,7 +938,7 @@ export async function listProjectNotes(options?: { projectId?: string }): Promis
   if (client) {
     let query = client.from("project_notes").select("*").order("created_at", { ascending: false });
     if (options?.projectId) query = query.eq("project_id", options.projectId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as ProjectNote[];
   }
   const all = [...getStore().projectNotes].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -939,7 +948,7 @@ export async function listProjectNotes(options?: { projectId?: string }): Promis
 export async function listDocuments(): Promise<DocumentRecord[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("documents").select("*");
+    const { data, error } = await fetchAll(client.from("documents").select("*"));
     if (!error && data) return data as DocumentRecord[];
   }
   return getStore().documents;
@@ -951,7 +960,7 @@ export async function listPhotos(options?: { relatedType?: RelatedRecordType; re
     let query = client.from("photos").select("*");
     if (options?.relatedType) query = query.eq("related_type", options.relatedType);
     if (options?.relatedId) query = query.eq("related_id", options.relatedId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as PhotoRecord[];
   }
   const all = getStore().photos;
@@ -963,7 +972,7 @@ export async function listPhotos(options?: { relatedType?: RelatedRecordType; re
 export async function listLeads(): Promise<NewBusinessLead[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("new_business_leads").select("*").order("created_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("new_business_leads").select("*").order("created_at", { ascending: false }));
     if (!error && data) return data as NewBusinessLead[];
   }
   return [...getStore().newBusinessLeads].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -975,7 +984,7 @@ export async function listActivityLog(options?: { relatedType?: RelatedRecordTyp
     let query = client.from("activity_log").select("*").order("created_at", { ascending: false });
     if (options?.relatedType) query = query.eq("related_type", options.relatedType);
     if (options?.relatedId) query = query.eq("related_id", options.relatedId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as ActivityLogEntry[];
   }
   const all = [...getStore().activityLog].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -987,7 +996,7 @@ export async function listActivityLog(options?: { relatedType?: RelatedRecordTyp
 export async function listCompanySetupAnswers(): Promise<CompanySetupAnswer[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("company_setup_answers").select("*");
+    const { data, error } = await fetchAll(client.from("company_setup_answers").select("*"));
     if (!error && data) return data as CompanySetupAnswer[];
   }
   return getStore().companySetupAnswers;
@@ -1005,7 +1014,7 @@ export async function getWeekStart(): Promise<string> {
 export async function listWorkTypes(): Promise<WorkTypeRecord[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("work_types").select("*").order("name");
+    const { data, error } = await fetchAll(client.from("work_types").select("*").order("name"));
     if (!error && data) return data as WorkTypeRecord[];
   }
   return [...getStore().workTypes].sort((a, b) => a.name.localeCompare(b.name));
@@ -1050,7 +1059,7 @@ export async function listProjectScheduleDays(options?: { maxDate?: string }): P
   if (client) {
     let query = client.from("project_schedule_days").select("*");
     if (options?.maxDate) query = query.lte("schedule_date", options.maxDate);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as ProjectScheduleDay[];
   }
   const all = getStore().projectScheduleDays;
@@ -1325,7 +1334,7 @@ export async function updateProjectScheduleDay(id: string, patch: ScheduleDayPat
 export async function listSchedulePickupItems(): Promise<SchedulePickupItem[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("schedule_pickup_items").select("*").order("created_at");
+    const { data, error } = await fetchAll(client.from("schedule_pickup_items").select("*").order("created_at"));
     if (!error && data) return data as SchedulePickupItem[];
   }
   return getStore().schedulePickupItems;
@@ -1458,7 +1467,7 @@ export async function deleteSchedulePickupItem(id: string, actorName: string): P
 export async function listActualLaborEntries(): Promise<ActualLaborEntry[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("actual_labor_entries").select("*");
+    const { data, error } = await fetchAll(client.from("actual_labor_entries").select("*"));
     if (!error && data) return data as ActualLaborEntry[];
   }
   return getStore().actualLaborEntries;
@@ -1561,7 +1570,7 @@ export async function setDriverWorkingDay(employeeId: string, workDate: string, 
 export async function listActualLaborEntriesForDate(date: string): Promise<ActualLaborEntry[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("actual_labor_entries").select("*").eq("work_date", date);
+    const { data, error } = await fetchAll(client.from("actual_labor_entries").select("*").eq("work_date", date));
     if (!error && data) return data as ActualLaborEntry[];
   }
   return getStore().actualLaborEntries.filter((e) => e.work_date === date);
@@ -1773,7 +1782,7 @@ export async function deleteActualLaborEntry(id: string, actorName: string): Pro
 export async function listDailyScheduleConfirmations(): Promise<DailyScheduleConfirmation[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("daily_schedule_confirmations").select("*");
+    const { data, error } = await fetchAll(client.from("daily_schedule_confirmations").select("*"));
     if (!error && data) return data as DailyScheduleConfirmation[];
   }
   return getStore().dailyScheduleConfirmations;
@@ -1846,7 +1855,7 @@ export async function saveCompletionNotes(projectId: string, body: string, actor
 export async function listMaterialRateItems(): Promise<MaterialRateItem[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("material_rate_items").select("*").order("name");
+    const { data, error } = await fetchAll(client.from("material_rate_items").select("*").order("name"));
     if (!error && data) return data as MaterialRateItem[];
   }
   return [...getStore().materialRateItems].sort((a, b) => a.name.localeCompare(b.name));
@@ -1855,7 +1864,7 @@ export async function listMaterialRateItems(): Promise<MaterialRateItem[]> {
 export async function listPricingFormulas(): Promise<PricingFormula[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("pricing_formulas").select("*").order("name");
+    const { data, error } = await fetchAll(client.from("pricing_formulas").select("*").order("name"));
     if (!error && data) return data as PricingFormula[];
   }
   return [...getStore().pricingFormulas].sort((a, b) => a.name.localeCompare(b.name));
@@ -1873,7 +1882,7 @@ export async function getPricingFormula(id: string): Promise<PricingFormula | un
 export async function listPricingFormulaComponents(): Promise<PricingFormulaComponent[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("pricing_formula_components").select("*");
+    const { data, error } = await fetchAll(client.from("pricing_formula_components").select("*"));
     if (!error && data) return data as PricingFormulaComponent[];
   }
   return getStore().pricingFormulaComponents;
@@ -1998,7 +2007,7 @@ export async function saveProjectEstimatedValue(id: string, value: number): Prom
 export async function listInvoices(): Promise<Invoice[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("invoices").select("*").order("created_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("invoices").select("*").order("created_at", { ascending: false }));
     if (!error && data) return data as Invoice[];
   }
   return [...getStore().invoices].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -2055,7 +2064,7 @@ export async function updateInvoiceStatus(id: string, status: InvoiceStatus): Pr
 export async function listEmailRoutingRules(): Promise<EmailRoutingRule[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("email_routing_rules").select("*").order("created_at");
+    const { data, error } = await fetchAll(client.from("email_routing_rules").select("*").order("created_at"));
     if (!error && data) return data as EmailRoutingRule[];
   }
   return [...getStore().emailRoutingRules].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
@@ -3245,7 +3254,7 @@ export async function listProjectDrawings(options?: { projectId?: string }): Pro
   if (client) {
     let query = client.from("project_drawings").select("*").order("uploaded_at", { ascending: false });
     if (options?.projectId) query = query.eq("project_id", options.projectId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as ProjectDrawing[];
   }
   const all = [...getStore().projectDrawings].sort((a, b) => (a.uploaded_at < b.uploaded_at ? 1 : -1));
@@ -3354,7 +3363,7 @@ export async function saveCompanySetupAnswer(section: string, questionKey: strin
 export async function listAgendaEvents(): Promise<AgendaEvent[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("agenda_events").select("*").order("event_date");
+    const { data, error } = await fetchAll(client.from("agenda_events").select("*").order("event_date"));
     if (!error && data) return data as AgendaEvent[];
   }
   return [...getStore().agendaEvents].sort((a, b) => a.event_date.localeCompare(b.event_date) || (a.start_time ?? "").localeCompare(b.start_time ?? ""));
@@ -3666,7 +3675,7 @@ export async function setQuickBooksLastSync(id: string, at: string): Promise<voi
 export async function listQuickBooksCustomerMappings(): Promise<QuickBooksCustomerMapping[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("quickbooks_customer_mappings").select("*");
+    const { data, error } = await fetchAll(client.from("quickbooks_customer_mappings").select("*"));
     if (!error && data) return data as QuickBooksCustomerMapping[];
   }
   return getStore().quickbooksCustomerMappings;
@@ -3728,7 +3737,7 @@ export async function createQuickBooksCustomerMapping(input: {
 export async function listQuickBooksDocuments(): Promise<QuickBooksDocument[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("quickbooks_documents").select("*").order("created_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("quickbooks_documents").select("*").order("created_at", { ascending: false }));
     if (!error && data) return data as QuickBooksDocument[];
   }
   return [...getStore().quickbooksDocuments].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -3737,7 +3746,7 @@ export async function listQuickBooksDocuments(): Promise<QuickBooksDocument[]> {
 export async function listQuickBooksDocumentsForProject(projectId: string): Promise<QuickBooksDocument[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("quickbooks_documents").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("quickbooks_documents").select("*").eq("project_id", projectId).order("created_at", { ascending: false }));
     if (!error && data) return data as QuickBooksDocument[];
   }
   return (await listQuickBooksDocuments()).filter((d) => d.project_id === projectId);
@@ -3871,7 +3880,7 @@ export async function recordQuickBooksWebhookEvent(input: { event_id: string; pa
 export async function listQuickBooksSyncLog(): Promise<QuickBooksSyncLogEntry[]> {
   const client = sb();
   if (client) {
-    const { data, error } = await client.from("quickbooks_sync_log").select("*").order("created_at", { ascending: false });
+    const { data, error } = await fetchAll(client.from("quickbooks_sync_log").select("*").order("created_at", { ascending: false }));
     if (!error && data) return data as QuickBooksSyncLogEntry[];
   }
   return [...getStore().quickbooksSyncLog].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -3933,7 +3942,7 @@ export async function listInboundEmails(options?: { filedProjectId?: string }): 
   if (client) {
     let query = client.from("inbound_emails").select("*").order("received_at", { ascending: false });
     if (options?.filedProjectId) query = query.eq("filed_project_id", options.filedProjectId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return data as InboundEmail[];
   }
   const all = [...getStore().inboundEmails].sort((a, b) => b.received_at.localeCompare(a.received_at));
@@ -3986,7 +3995,7 @@ export async function listProjectOutboundInvoices(options?: { projectId?: string
   if (client) {
     let query = client.from("project_outbound_invoices").select("*").order("created_at", { ascending: false });
     if (options?.projectId) query = query.eq("project_id", options.projectId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAll(query);
     if (!error && data) return (data as ProjectOutboundInvoice[]).map((r) => ({ ...r, amount: r.amount == null ? null : Number(r.amount) }));
   }
   const all = [...getStore().projectOutboundInvoices].sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -4519,6 +4528,12 @@ export async function getNavSectionLastSeen(userKey: string, section: string): P
  * currently in it will show as "New" again unless something arrives after
  * this call. */
 export async function markNavSectionSeen(userKey: string, section: string): Promise<void> {
+  // The read-only QA monitor (see lib/qa-monitor.ts) writes nothing —
+  // not even its own "last seen" bookkeeping row, which this would
+  // otherwise upsert as a side effect of merely viewing a page.
+  const viewer = (await listOfficeUsers()).find((u) => u.id === userKey);
+  if (isQaMonitorEmail(viewer?.email)) return;
+
   const now = new Date().toISOString();
   const client = sb();
   if (client) {
@@ -4527,4 +4542,161 @@ export async function markNavSectionSeen(userKey: string, section: string): Prom
   } else {
     navBadgeSeenFallback.set(`${userKey}__${section}`, now);
   }
+}
+
+// ---------------------------------------------------------------------
+// AI BUG MONITORING & SUPPORT — "Report a Problem" (Phase 3). See
+// supabase/migrations/0038_bug_reports.sql (not applied to production)
+// and docs/ai-bug-support/architecture-notes.md.
+// ---------------------------------------------------------------------
+
+export async function listBugReports(): Promise<BugReport[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await fetchAll(client.from("bug_reports").select("*").order("created_at", { ascending: false }));
+    if (!error && data) return data as BugReport[];
+  }
+  return [...getStore().bugReports].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+/** Just the current user's own reports, for the "Your reports" list in the
+ * Report a Problem panel — not the full company-wide list Phase 4's admin
+ * dashboard will show. */
+export async function listBugReportsForUser(userId: string): Promise<BugReport[]> {
+  return (await listBugReports()).filter((r) => r.reported_by_user_id === userId);
+}
+
+export async function createBugReport(input: {
+  reported_by_user_id: string;
+  reported_by_name: string;
+  page_path: string;
+  description: string;
+  additional_details?: string;
+  sentry_event_id?: string;
+}): Promise<BugReport> {
+  const now = new Date().toISOString();
+  const record: BugReport = {
+    id: randomUUID(),
+    company_id: getCurrentCompanyId(),
+    reported_by_user_id: input.reported_by_user_id,
+    reported_by_name: input.reported_by_name,
+    page_path: input.page_path,
+    description: input.description,
+    additional_details: input.additional_details || undefined,
+    sentry_event_id: input.sentry_event_id || undefined,
+    status: "Open",
+    created_at: now,
+    updated_at: now,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("bug_reports").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().bugReports.push(record);
+  }
+  logActivity({
+    action: "Bug report submitted",
+    actor_name: input.reported_by_name,
+    detail: `${input.page_path}: ${input.description.slice(0, 200)}`,
+  });
+  return record;
+}
+
+/** Admin-side status/triage update (Phase 4) — kept here now so the admin
+ * dashboard doesn't need its own data-access layer later. */
+export async function updateBugReport(id: string, patch: Partial<Pick<BugReport, "status" | "priority" | "admin_notes" | "github_pr_url">>, actorName: string): Promise<void> {
+  const now = new Date().toISOString();
+  const fullPatch = { ...patch, updated_at: now, ...(patch.status === "Resolved" ? { resolved_at: now } : {}) };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("bug_reports").update(fullPatch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const r = getStore().bugReports.find((x) => x.id === id);
+    if (r) Object.assign(r, fullPatch);
+  }
+  if (patch.status) {
+    logActivity({ action: "Bug report status changed", actor_name: actorName, detail: `Status → ${patch.status}` });
+  }
+}
+
+// ---------------------------------------------------------------------
+// AUTONOMOUS QA TESTING AGENT — see qa/README.md and
+// supabase/migrations/0040_qa_tracking.sql (not applied to production).
+// Read-only history for the admin QA dashboard (app/qa/page.tsx); every
+// write here comes from the GitHub Actions QA workflow via a
+// service-role key, never from anything employees or the live app do.
+// ---------------------------------------------------------------------
+
+export async function listQaTestRuns(limit = 30): Promise<QaTestRun[]> {
+  const client = sb();
+  if (client) {
+    const { data, error } = await client.from("qa_test_runs").select("*").order("started_at", { ascending: false }).limit(limit);
+    if (!error && data) return data as QaTestRun[];
+  }
+  return [...getStore().qaTestRuns].sort((a, b) => b.started_at.localeCompare(a.started_at)).slice(0, limit);
+}
+
+export async function createQaTestRun(input: { trigger: QaTestRun["trigger"]; commit_sha?: string; github_run_url?: string }): Promise<QaTestRun> {
+  const record: QaTestRun = {
+    id: randomUUID(),
+    company_id: getCurrentCompanyId(),
+    trigger: input.trigger,
+    status: "running",
+    total_tests: 0,
+    passed_tests: 0,
+    failed_tests: 0,
+    skipped_tests: 0,
+    started_at: new Date().toISOString(),
+    commit_sha: input.commit_sha,
+    github_run_url: input.github_run_url,
+  };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("qa_test_runs").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().qaTestRuns.push(record);
+  }
+  return record;
+}
+
+export async function finishQaTestRun(
+  id: string,
+  patch: Pick<QaTestRun, "status" | "total_tests" | "passed_tests" | "failed_tests" | "skipped_tests"> & { notes?: string }
+): Promise<void> {
+  const fullPatch = { ...patch, finished_at: new Date().toISOString() };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("qa_test_runs").update(fullPatch).eq("id", id);
+    if (error) throw error;
+  } else {
+    const r = getStore().qaTestRuns.find((x) => x.id === id);
+    if (r) Object.assign(r, fullPatch);
+  }
+}
+
+export async function listQaFindings(runId?: string): Promise<QaFinding[]> {
+  const client = sb();
+  if (client) {
+    let query = client.from("qa_findings").select("*").order("created_at", { ascending: false });
+    if (runId) query = query.eq("run_id", runId);
+    const { data, error } = await fetchAll(query);
+    if (!error && data) return data as QaFinding[];
+  }
+  const all = [...getStore().qaFindings].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return runId ? all.filter((f) => f.run_id === runId) : all;
+}
+
+export async function createQaFinding(input: Omit<QaFinding, "id" | "company_id" | "created_at">): Promise<QaFinding> {
+  const record: QaFinding = { id: randomUUID(), company_id: getCurrentCompanyId(), created_at: new Date().toISOString(), ...input };
+  const client = sb();
+  if (client) {
+    const { error } = await client.from("qa_findings").insert(record);
+    if (error) throw error;
+  } else {
+    getStore().qaFindings.push(record);
+  }
+  return record;
 }

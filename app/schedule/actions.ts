@@ -340,9 +340,15 @@ export async function saveScheduleEntryAction(formData: FormData) {
     (a) => a.project_id === project_id && a.schedule_date === schedule_date
   );
 
+  // Also drop duplicate rows for the same person on the same day — the
+  // Oct 2026 1000-row read cap (see lib/supabase/fetch-all.ts) left 44 of
+  // those behind, and a job self-heals the next time it's saved.
+  const kept = new Set<string>();
   for (const assignment of currentAssignments) {
-    if (!selectedEmployeeIds.has(assignment.employee_id)) {
+    if (!selectedEmployeeIds.has(assignment.employee_id) || kept.has(assignment.employee_id)) {
       await removeAssignmentAction(assignment.id, project_id);
+    } else {
+      kept.add(assignment.employee_id);
     }
   }
   for (const employeeId of selectedEmployeeIds) {

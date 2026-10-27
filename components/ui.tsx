@@ -97,6 +97,11 @@ const BADGE_COLORS: Record<string, string> = {
   "Completed/Sent": "bg-teal-100 text-teal-700",
   Accepted: "bg-emerald-100 text-emerald-700",
   Rejected: "bg-rose-100 text-rose-700",
+  // Bug report statuses (AI bug monitoring & support, Phase 3/4)
+  Open: "bg-rose-100 text-rose-700",
+  Investigating: "bg-amber-100 text-amber-700",
+  "Fix Proposed": "bg-indigo-100 text-indigo-700",
+  Resolved: "bg-emerald-100 text-emerald-700",
 };
 
 export function StatusBadge({ status }: { status: string }) {

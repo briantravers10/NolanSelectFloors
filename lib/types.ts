@@ -1247,3 +1247,100 @@ export interface ProjectOutboundInvoice {
   // link — see lib/db.ts#createProjectOutboundInvoice.
   document_type: "invoice" | "change_order";
 }
+
+// ---------------------------------------------------------------------
+// AI BUG MONITORING & SUPPORT — "Report a Problem" (Phase 3) + the
+// admin "AI Support" dashboard (Phase 4, not yet built). One table
+// covers both: Phase 3 only ever writes/reads reported_by*, page_path,
+// description, additional_details, sentry_event_id, status,
+// created_at/updated_at. priority/admin_notes/github_pr_url exist now so
+// Phase 4 doesn't need a second migration, but stay null/unused until
+// that admin page is built.
+// ---------------------------------------------------------------------
+export const BUG_REPORT_STATUSES = ["Open", "Investigating", "Fix Proposed", "Resolved"] as const;
+export type BugReportStatus = (typeof BUG_REPORT_STATUSES)[number];
+export const BUG_REPORT_PRIORITIES = ["Low", "Medium", "High", "Urgent"] as const;
+export type BugReportPriority = (typeof BUG_REPORT_PRIORITIES)[number];
+
+export interface BugReport {
+  id: string;
+  company_id: string;
+  // ActingUser.id (office_users.id, or the OWNER_ACTING_ID sentinel) —
+  // same plain-text "who" convention as agenda_events.owner_user_id and
+  // nav_badge_seen.user_key, since there's no single users table.
+  reported_by_user_id: string;
+  reported_by_name: string;
+  page_path: string;
+  description: string;
+  additional_details?: string | null;
+  // Links this report to a Sentry issue when the report was filed with an
+  // error already captured client-side (lib/sentry-scrub.ts/instrumentation
+  // files) — null for a plain "something seems off" report with no
+  // specific error attached.
+  sentry_event_id?: string | null;
+  status: BugReportStatus;
+  // Phase 4 fields — unused by Phase 3's submit flow, always null until
+  // the admin dashboard sets them.
+  priority?: BugReportPriority | null;
+  admin_notes?: string | null;
+  github_pr_url?: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string | null;
+}
+
+// ---------------------------------------------------------------------
+// AUTONOMOUS QA TESTING AGENT — see qa/README.md for the full design.
+// Read-only checks run against production (page loads, console errors,
+// response times); anything that creates/edits data runs only inside CI
+// against a locally-started app with no Supabase credentials set, so it
+// falls back to the in-memory seed store — the same dual-mode safety the
+// rest of this app already relies on (see lib/db.ts#sb). Nothing here
+// ever writes to production data or code.
+// ---------------------------------------------------------------------
+
+export const QA_RUN_TRIGGERS = ["scheduled", "deployment", "manual"] as const;
+export type QaRunTrigger = (typeof QA_RUN_TRIGGERS)[number];
+
+export const QA_RUN_STATUSES = ["running", "passed", "failed", "error"] as const;
+export type QaRunStatus = (typeof QA_RUN_STATUSES)[number];
+
+/** One row per GitHub Actions QA run — see .github/workflows/qa.yml. */
+export interface QaTestRun {
+  id: string;
+  company_id: string;
+  trigger: QaRunTrigger;
+  status: QaRunStatus;
+  total_tests: number;
+  passed_tests: number;
+  failed_tests: number;
+  skipped_tests: number;
+  started_at: string;
+  finished_at?: string | null;
+  // Link back to the Actions run for full logs — never stored here.
+  github_run_url?: string | null;
+  commit_sha?: string | null;
+  notes?: string | null;
+}
+
+export const QA_FINDING_SEVERITIES = ["Low", "Medium", "High", "Critical"] as const;
+export type QaFindingSeverity = (typeof QA_FINDING_SEVERITIES)[number];
+
+/** One failing test from a QaTestRun. Mirrors the shape needed to file a
+ * bug_reports row (see qa/lib/report-results.mjs) without duplicating one
+ * for a finding already reported and still unresolved. */
+export interface QaFinding {
+  id: string;
+  company_id: string;
+  run_id: string;
+  test_name: string;
+  page_path: string;
+  severity: QaFindingSeverity;
+  error_message: string;
+  screenshot_path?: string | null;
+  // Set once filed into bug_reports (see lib/db.ts#createBugReport) so a
+  // still-failing test on the next run is recognized as already reported
+  // instead of filing a duplicate.
+  bug_report_id?: string | null;
+  created_at: string;
+}
