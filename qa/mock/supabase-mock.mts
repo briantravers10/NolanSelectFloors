@@ -20,7 +20,13 @@ import { buildSeedData } from "../../lib/seed-data";
 import type { OfficeUser, SectionPermission } from "../../lib/types";
 
 const PORT = Number(process.env.MOCK_PORT || 54321);
+// PostgREST's `max-rows` behavior (Supabase default 1000): a request never
+// gets more than this many rows, whatever limit it asks for. Emulated so
+// lib/supabase/fetch-all.ts can be proven end to end through supabase-js.
+const MAX_ROWS = Number(process.env.MOCK_MAX_ROWS || 1000);
 const store = buildSeedData() as unknown as Record<string, Record<string, unknown>[]>;
+// Synthetic oversized table for the paging check.
+store.bigRows = Array.from({ length: 2345 }, (_, i) => ({ id: String(100000 + i).padStart(8, "0"), n: i }));
 
 // ---- identities ---------------------------------------------------------
 export const MONITOR = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", email: "qa-monitor@example.com", password: "monitor-pass-123", officeUserId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" };
@@ -133,8 +139,8 @@ function query(table: string, url: URL, accept: string | undefined): { status: n
     }
   }
   const offset = Number(url.searchParams.get("offset") ?? 0);
-  const limit = url.searchParams.get("limit");
-  out = out.slice(offset, limit ? offset + Number(limit) : undefined);
+  const limit = Math.min(Number(url.searchParams.get("limit") ?? MAX_ROWS), MAX_ROWS);
+  out = out.slice(offset, offset + limit);
 
   if (accept?.includes("vnd.pgrst.object")) {
     if (out.length === 1) return { status: 200, body: out[0] };
